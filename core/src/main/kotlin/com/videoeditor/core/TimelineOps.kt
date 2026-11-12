@@ -183,6 +183,42 @@ object TimelineOps {
     fun select(t: Timeline, id: String?): Timeline =
         Timeline(t.clips.map { it.copy(selected = id != null && it.id == id) })
 
+    /**
+     * Trims a main-track clip by setting a new source start and / or end (the yellow-handle
+     * gesture). The main track re-flows, so no gap appears. Nothing is cut from the file itself:
+     * dragging the handle back out restores the hidden part.
+     */
+    fun trimMain(t: Timeline, id: String, newSourceStartMs: Long? = null, newSourceEndMs: Long? = null): Timeline {
+        val clip = t.byId(id) ?: return t
+        if (clip.track != Track.MAIN) return t
+        val trimmed = if (clip.kind == MediaKind.IMAGE) {
+            // an image has no source limits; only its duration changes
+            val duration = ((newSourceEndMs ?: clip.sourceEndMs) - (newSourceStartMs ?: 0L))
+                .coerceIn(MIN_TRIM_MS, MAX_IMAGE_MS)
+            clip.copy(sourceStartMs = 0, sourceEndMs = duration)
+        } else {
+            var start = clip.sourceStartMs
+            var end = clip.sourceEndMs
+            if (newSourceStartMs != null) start = newSourceStartMs.coerceIn(0, end - MIN_SPLIT_MS)
+            if (newSourceEndMs != null) {
+                end = newSourceEndMs.coerceIn(start + MIN_SPLIT_MS, maxOf(clip.sourceDurationMs, start + MIN_SPLIT_MS))
+            }
+            clip.copy(sourceStartMs = start, sourceEndMs = end)
+        }
+        return relay(t.main.map { if (it.id == id) trimmed else it }, others(t))
+    }
+
+    /** Moves a main-track clip one place earlier (-1) or later (+1). */
+    fun moveMain(t: Timeline, id: String, delta: Int): Timeline {
+        val main = t.main.toMutableList()
+        val from = main.indexOfFirst { it.id == id }
+        if (from < 0) return t
+        val to = (from + delta).coerceIn(0, main.lastIndex)
+        if (to == from) return t
+        main.add(to, main.removeAt(from))
+        return relay(main, others(t))
+    }
+
     const val MIN_STRETCH = 0.25f
     const val MAX_STRETCH = 4f
 

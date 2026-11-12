@@ -1,8 +1,8 @@
-# Test report - v0.8 "Nock Nock V0.8" (2026-11-13)
+# Test report - v0.9 "Nock Nock V0.9" (2026-11-13)
 
 ## Executed
 
-**Core module unit tests - 38/38 passed** (desktop JVM 21, kotlinc 2.0.21, JUnit 4.13.2; not on Android)
+**Core module unit tests - 41/41 passed** (desktop JVM 21, kotlinc 2.0.21, JUnit 4.13.2; not on Android)
 
 | Area | Tests |
 |---|---|
@@ -21,6 +21,11 @@ Audio in these tests is synthetic (harmonic "voice" plus noise). Real speech rec
 **Build (GitHub Actions, run 43269596434)**
 - `./gradlew :core:test` - passed.
 - `./gradlew :app:assembleDebug` - passed; debug APK produced.
+
+**Owner's phone (version 0.8, from a screenshot and report)**
+- Sound FX library with 7+ saved sounds and search opens. Reported: sounds and Video FX placed on the
+  timeline could not be moved or trimmed - addressed in 0.9 (handles, move buttons, sturdier drag).
+  The 0.9 gestures themselves are untested on a device.
 
 **Owner's phone (version 0.5, from a screenshot)**
 - Video FX library with search field and 7+ saved clips opens; thumbnails were black because the

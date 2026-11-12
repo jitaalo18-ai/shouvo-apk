@@ -3,10 +3,10 @@
 Self-contained handoff. Another developer / AI account can continue from this file plus the source ZIP.
 Master spec: "ANDROID VIDEO EDITOR - DEVELOPMENT MASTER PROMPT V1" (Steps 1-12).
 
-PROJECT VERSION: 0.8 (versionCode 8), app name "Nock Nock", APK label "Nock Nock V0.8" - checkpoint 8, 2026-11-13
+PROJECT VERSION: 0.9 (versionCode 9), app name "Nock Nock", APK label "Nock Nock V0.9" - checkpoint 9, 2026-11-13
 VERSION RULE (set by the owner): versions go 0.2, 0.3, 0.4, 0.5, 0.6 ... (never 3, 4, 5).
 For each new version change `versionName`/`versionCode` in app/build.gradle.kts and the label in
-release_label.txt (V0.9, V0.10 ...). History: 1.0.0 (first build) -> 0.2 "V2" -> 0.3 -> 0.4 -> 0.5 -> 0.6 -> 0.7 -> 0.8.
+release_label.txt (V0.10, V0.11 ...). History: 1.0.0 (first build) -> 0.2 "V2" -> 0.3 -> 0.4 -> 0.5 -> 0.6 -> 0.7 -> 0.8 -> 0.9.
 
 STANDING RULES FROM THE OWNER (apply to every version without being asked again):
 1. Every APK delivery comes together with the project source code ZIP of the same version.
@@ -92,6 +92,15 @@ IMPLEMENTED FEATURES (source written; "JVM-tested" = unit tests really executed)
   the selected main/overlay clip or the clip under the playhead. Applied in preview and export.
 - NEW in 0.8 - DATABASE VERSION 3: columns `clips.stretchX`, `clips.stretchY` (REAL NOT NULL DEFAULT 1)
   added by MIGRATION_2_3.
+- NEW in 0.9 - Sound FX and Background Music libraries: tap the box at the left of a row to listen to
+  the sound, tap again to stop.
+- NEW in 0.9 - Trim handles on every selected timeline clip. Main track (incl. inserted Video FX):
+  drag the left/right handle to hide or bring back the start/end; the track re-flows without gaps
+  (TimelineOps.trimMain). Sound/music/overlay clips: larger handles, same behaviour as before.
+- NEW in 0.9 - Moving clips. Main track: Move left / Move right buttons in the tool row
+  (TimelineOps.moveMain). Sound/music/overlay: hold and drag at any time, or drag while selected.
+  All clips of a free track now share one box, so a drag is no longer cut off when the clip changes
+  lane. The owner had reported that sounds and Video FX could not be moved or trimmed.
 - Rendering: Export button -> Media3 Transformer composition (main sequence, one audio sequence per
   sound/music/overlay-audio clip, overlays as timed BitmapOverlay) -> Movies/VideoEditor.
 
@@ -102,6 +111,10 @@ DEVIATIONS FROM THE SPEC TO KNOW ABOUT:
 - Project and overlay media are referenced through persisted read permission, not copied (the spec
   requires copying only for the libraries). Deleting such an original from the phone breaks that clip.
 - Not added because nobody asked for it: delete project. (Delete clip and undo/redo arrived in 0.3.)
+
+FILES MODIFIED IN 0.9: core/TimelineOps.kt (trimMain, moveMain), core tests (41), ui/TimelineView.kt
+(FreeTrack, ChipView, TrimHandle, main handles), ui/EditorScreen.kt, ui/EditorController.kt,
+ui/LibraryDialog.kt, build files.
 
 FILES MODIFIED IN 0.8: core/Framing.kt (new), core/Model.kt, core/TimelineOps.kt, core tests (38),
 data/Db.kt (version 3 + migration), data/Repositories.kt, media/Exporter.kt, ui/EditorScreen.kt,
@@ -152,7 +165,8 @@ FILES FROM 1.0.0 (unchanged unless listed above):
   LibraryDialog.kt
 
 TESTS ACTUALLY RUN (see TEST_REPORT.md):
-- 38 JUnit tests of the core module (timeline, AutoCut, voice removal, zoom, rotation, snapping, stretch) run on a desktop JVM: all pass.
+- 41 JUnit tests of the core module (timeline, AutoCut, voice removal, zoom, rotation, snapping, stretch,
+  main-track trim and move) run on a desktop JVM: all pass.
 - Owner's phone, version 1.0.0 (screenshots 2026-11-13): Projects screen lists a saved project that
   was edited later; Video FX library shows 8+ imported clips with thumbnails and names. No other
   device results reported yet.
@@ -168,7 +182,7 @@ KNOWN BUGS / RISKS:
 - Voice removal cannot work on mono sound, and it also lowers instruments mixed exactly in the centre.
 - Extracted music is stored as WAV (about 10 MB per minute).
 - Video overlays render slowly on export (one frame grab per output frame).
-- Dragging a sound/overlay clip across another one can move it to a different row and end the drag.
+- Main-track clips are reordered with buttons, not by dragging (drag-to-reorder is not built).
 - Preview transitions between many short AutoCut pieces may not be perfectly seamless.
 - AutoCut treats loud non-speech sounds (music, clapping) as speech, so it keeps them.
 - Clips on other tracks do not shift when AutoCut shortens the main track.
@@ -186,4 +200,4 @@ BUILD STATUS: BUILT. GitHub Actions (repo jitaalo18-ai/shouvo-apk, run 432695964
 The debug APK has NOT been installed or run on any device yet.
 
 SOURCE ZIP / APK PATH IF AVAILABLE: source at https://github.com/jitaalo18-ai/shouvo-apk (main).
-APK: Nock_Nock_V0.8.apk and Nock_Nock_V0.8_source.zip on the v0.8 release of that repository (rebuilt on every push to main).
+APK: Nock_Nock_V0.9.apk and Nock_Nock_V0.9_source.zip on the v0.9 release of that repository (rebuilt on every push to main).

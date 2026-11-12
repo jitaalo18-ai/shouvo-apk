@@ -4,6 +4,7 @@ import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.horizontalScroll
@@ -39,9 +40,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -54,7 +58,9 @@ import kotlin.math.floor
 import kotlin.math.roundToInt
 
 private val MAIN_HEIGHT = 64.dp
-private val LANE_HEIGHT = 30.dp
+private val LANE_HEIGHT = 34.dp
+private val LANE_GAP = 4.dp
+private val HANDLE_WIDTH = 18.dp
 
 /**
  * Scrollable timeline with a fixed playhead in the middle (the content moves under it).
@@ -135,6 +141,9 @@ private fun MainClipView(ctl: EditorController, clip: Clip, pxPerMs: Float, scro
     val tiles = ceil(widthPx / tilePx).toInt().coerceAtLeast(1)
     val clipStartPx = clip.timelineStartMs * pxPerMs
 
+    var handleBaseStart by remember { mutableStateOf(0L) }
+    var handleBaseEnd by remember { mutableStateOf(0L) }
+
     // Only the thumbnails near the visible part of the timeline are composed.
     val step = 240
     val bucket by remember { derivedStateOf { scroll.value / step } }
@@ -163,13 +172,34 @@ private fun MainClipView(ctl: EditorController, clip: Clip, pxPerMs: Float, scro
             }
         }
         if (clip.selected) {
+            // Trim handles: drag the left / right handle to hide or bring back the start / end.
+            val current by rememberUpdatedState(clip)
+            val scale by rememberUpdatedState(pxPerMs)
+            TrimHandle(Modifier.align(Alignment.CenterStart)) { start, movedPx ->
+                if (start) {
+                    handleBaseStart = current.sourceStartMs
+                    handleBaseEnd = current.sourceEndMs
+                } else {
+                    val deltaMs = (movedPx / scale).toLong()
+                    if (current.kind == MediaKind.IMAGE) ctl.trimMain(current.id, sourceEndMs = handleBaseEnd - deltaMs)
+                    else ctl.trimMain(current.id, sourceStartMs = handleBaseStart + deltaMs)
+                }
+            }
+            TrimHandle(Modifier.align(Alignment.CenterEnd)) { start, movedPx ->
+                if (start) {
+                    handleBaseStart = current.sourceStartMs
+                    handleBaseEnd = current.sourceEndMs
+                } else {
+                    ctl.trimMain(current.id, sourceEndMs = handleBaseEnd + (movedPx / scale).toLong())
+                }
+            }
             Box(Modifier.matchParentSize().border(3.dp, Accent, RoundedCornerShape(6.dp)))
             Text(
                 String.format(java.util.Locale.US, "%.1fs", clip.durationMs / 1000f),
                 fontSize = 11.sp,
                 color = Color.White,
                 modifier = Modifier
-                    .padding(start = 6.dp, top = 5.dp)
+                    .padding(start = 24.dp, top = 5.dp)
                     .background(Color(0x99000000), RoundedCornerShape(4.dp))
                     .padding(horizontal = 4.dp, vertical = 1.dp),
             )
@@ -177,56 +207,77 @@ private fun MainClipView(ctl: EditorController, clip: Clip, pxPerMs: Float, scro
     }
 }
 
-/** A free-positioned track (overlay / sound effects / music). Overlapping clips get their own lane. */
+/**
+ * A free-positioned track (overlay / sound effects / music). Overlapping clips are drawn on
+ * separate lanes. All clips of the track live in one box, so a clip keeps its gesture while it is
+ * dragged past another clip and changes lane.
+ */
 @Composable
 private fun FreeTrack(ctl: EditorController, clips: List<Clip>, color: Color, pxPerMs: Float) {
     if (clips.isEmpty()) return
     val lanes = TimelineOps.lanes(clips)
     val laneCount = (lanes.values.maxOrNull() ?: 0) + 1
-    for (lane in 0 until laneCount) {
-        Box(Modifier.fillMaxWidth().height(LANE_HEIGHT)) {
-            for (clip in clips) {
-                if (lanes[clip.id] == lane) {
-                    key(clip.id) { ChipView(ctl, clip, color, pxPerMs) }
-                }
-            }
+    Box(Modifier.fillMaxWidth().height(LANE_HEIGHT * laneCount + LANE_GAP * (laneCount - 1))) {
+        for (clip in clips) {
+            key(clip.id) { ChipView(ctl, clip, color, pxPerMs, lanes[clip.id] ?: 0) }
         }
     }
 }
 
 /**
- * One clip on a free track. Tap to select. When selected: drag the body to move it along the
- * timeline, drag the white handles to change when it starts / ends.
+ * One clip on a free track.
+ *  - Tap: select.
+ *  - Hold and drag (any time), or simply drag while selected: move it earlier / later.
+ *  - While selected: drag the handles at both ends to trim where it starts / ends.
  */
 @Composable
-private fun ChipView(ctl: EditorController, clip: Clip, color: Color, pxPerMs: Float) {
+private fun ChipView(ctl: EditorController, clip: Clip, color: Color, pxPerMs: Float, lane: Int) {
     val density = LocalDensity.current
+    val haptics = LocalHapticFeedback.current
     val current by rememberUpdatedState(clip)
     val scale by rememberUpdatedState(pxPerMs)
+    val laneState by rememberUpdatedState(lane)
     val shape = RoundedCornerShape(6.dp)
+    val laneStepPx = with(density) { (LANE_HEIGHT + LANE_GAP).toPx() }
+    var baseStart by remember { mutableStateOf(0L) }
+    var baseEnd by remember { mutableStateOf(0L) }
 
     var body = Modifier
-        .offset { IntOffset((current.timelineStartMs * scale).roundToInt(), 0) }
+        .offset { IntOffset((current.timelineStartMs * scale).roundToInt(), (laneState * laneStepPx).roundToInt()) }
         .width(with(density) { (clip.durationMs * pxPerMs).toDp() })
-        .fillMaxHeight()
+        .height(LANE_HEIGHT)
         .clip(shape)
         .background(color)
         .pointerInput(clip.id) { detectTapGestures { ctl.select(current.id) } }
+        .pointerInput(clip.id) {
+            var moved = 0f
+            detectDragGesturesAfterLongPress(
+                onDragStart = {
+                    baseStart = current.timelineStartMs
+                    moved = 0f
+                    haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                    if (!current.selected) ctl.select(current.id)
+                },
+            ) { change, drag ->
+                change.consume()
+                moved += drag.x
+                ctl.move(current.id, baseStart + (moved / scale).toLong())
+            }
+        }
     if (clip.selected) {
         body = body
-            .border(2.dp, Color.White, shape)
+            .border(2.dp, Accent, shape)
             .pointerInput(clip.id) {
-                var base = 0L
                 var moved = 0f
                 detectHorizontalDragGestures(
                     onDragStart = {
-                        base = current.timelineStartMs
+                        baseStart = current.timelineStartMs
                         moved = 0f
                     },
                 ) { change, dx ->
                     change.consume()
                     moved += dx
-                    ctl.move(current.id, base + (moved / scale).toLong())
+                    ctl.move(current.id, baseStart + (moved / scale).toLong())
                 }
             }
     }
@@ -237,42 +288,48 @@ private fun ChipView(ctl: EditorController, clip: Clip, color: Color, pxPerMs: F
             fontSize = 10.sp,
             maxLines = 1,
             overflow = TextOverflow.Clip,
-            modifier = Modifier.align(Alignment.CenterStart).padding(horizontal = 18.dp),
+            modifier = Modifier.align(Alignment.CenterStart).padding(horizontal = 22.dp),
         )
         if (clip.selected) {
-            val handle = Modifier.width(14.dp).fillMaxHeight().background(Color.White)
-            Box(
-                handle.align(Alignment.CenterStart).pointerInput(clip.id) {
-                    var base = 0L
-                    var moved = 0f
-                    detectHorizontalDragGestures(
-                        onDragStart = {
-                            base = current.timelineStartMs
-                            moved = 0f
-                        },
-                    ) { change, dx ->
-                        change.consume()
-                        moved += dx
-                        ctl.trimStart(current.id, base + (moved / scale).toLong())
-                    }
-                },
-            )
-            Box(
-                handle.align(Alignment.CenterEnd).pointerInput(clip.id) {
-                    var base = 0L
-                    var moved = 0f
-                    detectHorizontalDragGestures(
-                        onDragStart = {
-                            base = current.timelineEndMs
-                            moved = 0f
-                        },
-                    ) { change, dx ->
-                        change.consume()
-                        moved += dx
-                        ctl.trimEnd(current.id, base + (moved / scale).toLong())
-                    }
-                },
-            )
+            TrimHandle(Modifier.align(Alignment.CenterStart)) { start, movedPx ->
+                if (start) baseStart = current.timelineStartMs
+                else ctl.trimStart(current.id, baseStart + (movedPx / scale).toLong())
+            }
+            TrimHandle(Modifier.align(Alignment.CenterEnd)) { start, movedPx ->
+                if (start) baseEnd = current.timelineEndMs
+                else ctl.trimEnd(current.id, baseEnd + (movedPx / scale).toLong())
+            }
         }
+    }
+}
+
+/**
+ * A trim handle at one end of a selected clip. [onDrag] is called with (true, 0) when a drag
+ * starts and with (false, total pixels moved since the start) while it continues.
+ */
+@Composable
+private fun TrimHandle(modifier: Modifier, width: Dp = HANDLE_WIDTH, onDrag: (start: Boolean, movedPx: Float) -> Unit) {
+    val callback by rememberUpdatedState(onDrag)
+    Box(
+        modifier
+            .width(width)
+            .fillMaxHeight()
+            .background(Accent)
+            .pointerInput(Unit) {
+                var moved = 0f
+                detectHorizontalDragGestures(
+                    onDragStart = {
+                        moved = 0f
+                        callback(true, 0f)
+                    },
+                ) { change, dx ->
+                    change.consume()
+                    moved += dx
+                    callback(false, moved)
+                }
+            },
+        contentAlignment = Alignment.Center,
+    ) {
+        Box(Modifier.width(3.dp).height(14.dp).background(Color.White, RoundedCornerShape(2.dp)))
     }
 }

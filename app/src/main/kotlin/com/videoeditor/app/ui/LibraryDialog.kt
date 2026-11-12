@@ -298,10 +298,16 @@ private fun LibraryRow(
                 )
             }
         } else {
-            Box(thumb.background(Color(0xFF22252C)), contentAlignment = Alignment.Center) {
+            // Tap the box to listen to the sound / stop it.
+            Box(
+                thumb.background(if (playing) Accent else Color(0xFF22252C)).clickable(onClick = onTogglePreview),
+                contentAlignment = Alignment.Center,
+            ) {
                 Icon(
-                    if (kind == LibraryKind.MUSIC) Icons.Filled.MusicNote else Icons.Filled.GraphicEq,
-                    contentDescription = null,
+                    if (playing) Icons.Filled.Stop else Icons.Filled.PlayArrow,
+                    contentDescription = if (playing) "Stop preview" else "Play preview",
+                    tint = Color.White,
+                    modifier = Modifier.size(30.dp),
                 )
             }
         }

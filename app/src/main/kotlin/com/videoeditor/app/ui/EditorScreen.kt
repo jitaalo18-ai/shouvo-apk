@@ -26,6 +26,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.filled.Redo
@@ -292,6 +294,8 @@ fun EditorScreen(app: App, projectId: Long, onBack: () -> Unit) {
                             ToolButton(Icons.Filled.MusicNote, "Music") { ctl.library = LibraryKind.MUSIC }
                             ToolButton(Icons.Filled.Layers, "Overlay") { importOverlay() }
                             ToolButton(Icons.Filled.Delete, "Delete") { ctl.deleteSelected() }
+                            ToolButton(Icons.AutoMirrored.Filled.ArrowBack, "Move left") { ctl.moveSelectedMain(-1) }
+                            ToolButton(Icons.AutoMirrored.Filled.ArrowForward, "Move right") { ctl.moveSelectedMain(1) }
                             // shown now, functions come in later versions
                             ToolButton(Icons.Filled.AutoAwesome, "Effects") { ctl.comingSoon("Effects") }
                             ToolButton(Icons.Filled.Tune, "Adjust") { ctl.comingSoon("Adjust") }

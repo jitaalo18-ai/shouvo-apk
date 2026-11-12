@@ -274,6 +274,22 @@ class EditorController(private val app: App, val projectId: Long, private val sc
     fun transformMain(id: String, x: Float, y: Float, zoom: Float, rotation: Float) =
         commitEdit(TimelineOps.transformMain(timeline, id, x, y, zoom, rotation), saveNow = false)
 
+    /** Trim handles of a main-track clip. */
+    fun trimMain(id: String, sourceStartMs: Long? = null, sourceEndMs: Long? = null) =
+        commitEdit(TimelineOps.trimMain(timeline, id, sourceStartMs, sourceEndMs), saveNow = false)
+
+    /** Moves the selected main-track clip one place earlier (-1) or later (+1). */
+    fun moveSelectedMain(delta: Int) {
+        val clip = timeline.selected ?: return
+        if (clip.track != Track.MAIN) return
+        val moved = TimelineOps.moveMain(timeline, clip.id, delta)
+        if (moved == timeline) {
+            message = if (delta < 0) "This clip is already the first one." else "This clip is already the last one."
+        } else {
+            commitEdit(moved)
+        }
+    }
+
     /** Makes a clip wider / taller (W x H control). */
     fun stretch(id: String, stretchX: Float, stretchY: Float) =
         commitEdit(TimelineOps.stretch(timeline, id, stretchX, stretchY), saveNow = false)

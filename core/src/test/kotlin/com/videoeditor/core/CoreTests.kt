@@ -186,6 +186,41 @@ class TimelineEditTests {
         assertEquals(40f, t.byId("o")!!.rotation, 1e-3f)
     }
 
+    @Test fun trimMainClipKeepsTrackGapless() {
+        var t = TimelineOps.appendMain(Timeline(), listOf(video("a", 10_000), video("b", 5_000)))
+        t = TimelineOps.trimMain(t, "a", newSourceStartMs = 2_000)
+        assertEquals(2_000, t.byId("a")!!.sourceStartMs); assertEquals(0, t.byId("a")!!.timelineStartMs)
+        assertEquals(8_000, t.byId("b")!!.timelineStartMs); assertContiguous(t)
+        t = TimelineOps.trimMain(t, "a", newSourceEndMs = 6_000)
+        assertEquals(4_000, t.byId("a")!!.durationMs); assertEquals(9_000, t.durationMs)
+        t = TimelineOps.trimMain(t, "a", newSourceStartMs = -500, newSourceEndMs = 99_000)   // drag back out: all restored
+        assertEquals(10_000, t.byId("a")!!.durationMs); assertEquals(0, t.byId("a")!!.sourceStartMs)
+        t = TimelineOps.trimMain(t, "a", newSourceStartMs = 9_990)                            // never shorter than the minimum
+        assertEquals(TimelineOps.MIN_SPLIT_MS, t.byId("a")!!.durationMs)
+        assertContiguous(t)
+    }
+
+    @Test fun trimImageOnMainTrackChangesDuration() {
+        val img = Clip("i", Track.MAIN, MediaKind.IMAGE, "content://img", sourceDurationMs = 0,
+            sourceStartMs = 0, sourceEndMs = 3_000, timelineStartMs = 0, hasAudio = false)
+        var t = TimelineOps.appendMain(Timeline(), listOf(img, video("b", 5_000)))
+        t = TimelineOps.trimMain(t, "i", newSourceEndMs = 7_000)
+        assertEquals(7_000, t.byId("i")!!.durationMs); assertEquals(7_000, t.byId("b")!!.timelineStartMs)
+        t = TimelineOps.trimMain(t, "i", newSourceStartMs = 2_000)
+        assertEquals(5_000, t.byId("i")!!.durationMs); assertEquals(0, t.byId("i")!!.sourceStartMs)
+    }
+
+    @Test fun moveMainClipEarlierAndLater() {
+        var t = TimelineOps.appendMain(Timeline(), listOf(video("a", 4_000), video("b", 3_000), video("c", 2_000)))
+        t = TimelineOps.moveMain(t, "c", -1)
+        assertEquals(listOf("a", "c", "b"), t.main.map { it.id }); assertContiguous(t)
+        t = TimelineOps.moveMain(t, "a", 1)
+        assertEquals(listOf("c", "a", "b"), t.main.map { it.id }); assertEquals(2_000, t.byId("a")!!.timelineStartMs)
+        assertEquals(t, TimelineOps.moveMain(t, "c", -1))                                      // already first
+        assertEquals(t, TimelineOps.moveMain(t, "b", 1))                                       // already last
+        assertEquals(9_000, t.durationMs)
+    }
+
     @Test fun selectIsExclusive() {
         var t = TimelineOps.appendMain(Timeline(), listOf(video("a", 1_000), video("b", 1_000)))
         t = TimelineOps.select(t, "a"); t = TimelineOps.select(t, "b")
