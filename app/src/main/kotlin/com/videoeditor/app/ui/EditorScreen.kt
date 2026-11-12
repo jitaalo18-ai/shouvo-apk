@@ -1,6 +1,5 @@
 package com.videoeditor.app.ui
 
-import android.graphics.Color as AndroidColor
 import android.view.TextureView
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -103,8 +102,6 @@ import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
-import androidx.media3.ui.AspectRatioFrameLayout
-import androidx.media3.ui.PlayerView
 import com.videoeditor.app.App
 import com.videoeditor.app.data.LibraryKind
 import com.videoeditor.app.media.CanvasFormat
@@ -190,7 +187,7 @@ fun EditorScreen(app: App, projectId: Long, onBack: () -> Unit) {
             }
 
             // video preview
-            Box(Modifier.weight(1f).fillMaxWidth().background(Color.Black), contentAlignment = Alignment.Center) {
+            Box(Modifier.weight(1f).fillMaxWidth().background(Panel).padding(vertical = 6.dp), contentAlignment = Alignment.Center) {
                 if (ctl.loaded) PreviewCanvas(ctl, position)
             }
 
@@ -266,7 +263,22 @@ fun EditorScreen(app: App, projectId: Long, onBack: () -> Unit) {
                             ToolButton(Icons.Filled.ContentCopy, "Copy") { ctl.comingSoon("Copy") }
                             ToolButton(Icons.Filled.FileCopy, "Duplicate") { ctl.comingSoon("Duplicate") }
                             ToolButton(Icons.Filled.Wallpaper, "Green screen") { ctl.comingSoon("Green screen") }
+                        } else if (selected.track == Track.OVERLAY) {
+                            // overlay tools: working ones first
+                            ToolButton(Icons.Filled.ContentCut, "Split") { ctl.split() }
+                            ToolButton(Icons.Filled.FileCopy, "Duplicate") { ctl.duplicateSelected() }
+                            ToolButton(Icons.Filled.Delete, "Delete") { ctl.deleteSelected() }
+                            // shown now, functions come in later versions
+                            ToolButton(Icons.Filled.Opacity, "Opacity") { ctl.comingSoon("Opacity") }
+                            ToolButton(Icons.Filled.SwapHoriz, "Replace") { ctl.comingSoon("Replace") }
+                            ToolButton(Icons.Filled.Vignette, "Mask") { ctl.comingSoon("Mask") }
+                            ToolButton(Icons.Filled.PhotoFilter, "Filters") { ctl.comingSoon("Filters") }
+                            ToolButton(Icons.Filled.Tune, "Adjust") { ctl.comingSoon("Adjust") }
+                            ToolButton(Icons.Filled.Flip, "Mirror") { ctl.comingSoon("Mirror") }
+                            ToolButton(Icons.Filled.Person, "Cutout") { ctl.comingSoon("Cutout") }
                         } else {
+                            ToolButton(Icons.Filled.ContentCut, "Split") { ctl.split() }
+                            ToolButton(Icons.Filled.FileCopy, "Duplicate") { ctl.duplicateSelected() }
                             ToolButton(Icons.Filled.Delete, "Delete") { ctl.deleteSelected() }
                         }
                     }
@@ -372,33 +384,61 @@ private fun PreviewCanvas(ctl: EditorController, position: Long) {
         val canvasWPx = with(density) { canvasW.toPx() }
         val canvasHPx = with(density) { canvasH.toPx() }
 
+        val current = TimelineOps.locate(ctl.timeline, position)?.clip
+        val latest by rememberUpdatedState(current)
         Box(
             Modifier
                 .size(canvasW, canvasH)
                 .clipToBounds()
                 .background(Color.Black)
-                .pointerInput(Unit) { detectTapGestures { ctl.select(null) } },
-        ) {
-            AndroidView(
-                factory = { context ->
-                    PlayerView(context).apply {
-                        useController = false
-                        resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
-                        setShutterBackgroundColor(AndroidColor.BLACK)
-                        player = ctl.player.main
+                .pointerInput(Unit) { detectTapGestures { ctl.select(null) } }
+                .pointerInput(canvasWPx, canvasHPx) {
+                    // Two fingers: pinch to make the video bigger / smaller and move it.
+                    // One finger moves it only while the clip is selected.
+                    detectTransformGestures { _, pan, zoom, _ ->
+                        val c = latest ?: return@detectTransformGestures
+                        if (zoom != 1f || c.selected) {
+                            ctl.transformMain(
+                                c.id,
+                                c.posX + pan.x / canvasWPx,
+                                c.posY + pan.y / canvasHPx,
+                                TimelineOps.mainZoom(c) * zoom,
+                            )
+                        }
                     }
                 },
-                onRelease = { it.player = null },
-                modifier = Modifier.fillMaxSize(),
-            )
-
-            // Image clips on the main track are drawn here.
-            val current = TimelineOps.locate(ctl.timeline, position)?.clip
-            if (current != null && current.kind == MediaKind.IMAGE) {
-                Thumb(
-                    current.sourceUri, MediaKind.IMAGE, 0, Modifier.fillMaxSize(),
-                    maxSize = 1280, contentScale = ContentScale.Fit, background = Color.Black,
+        ) {
+            if (current != null) {
+                // The video is fitted into the frame, then zoomed / moved as the user chose.
+                val clipAspect = current.aspect.coerceAtLeast(0.01f)
+                val fitW: Dp = if (clipAspect > aspect) canvasW else canvasH * clipAspect
+                val zoom = TimelineOps.mainZoom(current)
+                val w = fitW * zoom
+                val h = w / clipAspect
+                val place = Modifier
+                    .offset(x = canvasW * current.posX - w / 2, y = canvasH * current.posY - h / 2)
+                    .size(w, h)
+                AndroidView(
+                    factory = { context ->
+                        TextureView(context).also { ctl.player.main.setVideoTextureView(it) }
+                    },
+                    onRelease = {
+                        try {
+                            ctl.player.main.clearVideoTextureView(it)
+                        } catch (e: Exception) {
+                            // player already released
+                        }
+                    },
+                    modifier = place,
                 )
+                // Image clips on the main track are drawn here.
+                if (current.kind == MediaKind.IMAGE) {
+                    Thumb(
+                        current.sourceUri, MediaKind.IMAGE, 0, place,
+                        maxSize = 1280, contentScale = ContentScale.FillBounds, background = Color.Black,
+                    )
+                }
+                if (current.selected) Box(place.border(2.dp, Accent))
             }
 
             val total = ctl.timeline.durationMs
@@ -431,7 +471,7 @@ private fun OverlayView(ctl: EditorController, clip: Clip, canvasW: Dp, canvasH:
                     ctl.transform(c.id, c.posX + pan.x / canvasWPx, c.posY + pan.y / canvasHPx, c.scale * zoom)
                 }
             }
-            .border(2.dp, Color.White)
+            .border(2.dp, Accent)
     }
     Box(modifier) {
         if (clip.kind == MediaKind.IMAGE) {

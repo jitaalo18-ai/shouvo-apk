@@ -270,6 +270,15 @@ class EditorController(private val app: App, val projectId: Long, private val sc
         commitEdit(TimelineOps.remove(timeline, clip.id))
     }
 
+    /** Zoom / move the main video inside the frame (two-finger pinch in the preview). */
+    fun transformMain(id: String, x: Float, y: Float, zoom: Float) =
+        commitEdit(TimelineOps.transformMain(timeline, id, x, y, zoom), saveNow = false)
+
+    fun duplicateSelected() {
+        val clip = timeline.selected ?: return
+        if (clip.track != Track.MAIN) commitEdit(TimelineOps.duplicate(timeline, clip.id, ::newClipId))
+    }
+
     fun comingSoon(feature: String) {
         message = "$feature is not available yet. It is planned for a later version."
     }

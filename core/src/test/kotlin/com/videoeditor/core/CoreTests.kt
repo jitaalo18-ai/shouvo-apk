@@ -146,6 +146,27 @@ class TimelineEditTests {
         assertContiguous(t)
     }
 
+    @Test fun mainZoomDefaultsToOneAndSurvivesSplit() {
+        var t = TimelineOps.appendMain(Timeline(), listOf(video("a", 10_000)))
+        assertEquals(1f, TimelineOps.mainZoom(t.byId("a")!!))            // old projects: fitted
+        t = TimelineOps.transformMain(t, "a", 0.6f, 0.4f, 2f)
+        assertEquals(2f, TimelineOps.mainZoom(t.byId("a")!!), 1e-5f)
+        t = TimelineOps.split(t, "a", 5_000, { "a2" }).timeline
+        assertEquals(2f, TimelineOps.mainZoom(t.byId("a2")!!), 1e-5f); assertEquals(0.6f, t.byId("a2")!!.posX)
+        t = TimelineOps.transformMain(t, "a", 0.5f, 0.5f, 100f)
+        assertEquals(TimelineOps.MAX_MAIN_ZOOM, TimelineOps.mainZoom(t.byId("a")!!), 1e-4f)
+        assertEquals(10_000, t.durationMs)
+    }
+
+    @Test fun duplicateOverlayGoesOnTopAndIsSelected() {
+        var t = TimelineOps.appendMain(Timeline(), listOf(video("a", 10_000)))
+        t = TimelineOps.addClip(t, video("o1", 4_000).copy(track = Track.OVERLAY, timelineStartMs = 2_000))
+        t = TimelineOps.duplicate(t, "o1", { "o2" })
+        val o2 = t.byId("o2")!!
+        assertEquals(1, o2.layer); assertTrue(o2.selected); assertEquals(2_000, o2.timelineStartMs)
+        assertEquals(t, TimelineOps.duplicate(t, "a", { "x" }))           // main clips are not duplicated here
+    }
+
     @Test fun selectIsExclusive() {
         var t = TimelineOps.appendMain(Timeline(), listOf(video("a", 1_000), video("b", 1_000)))
         t = TimelineOps.select(t, "a"); t = TimelineOps.select(t, "b")

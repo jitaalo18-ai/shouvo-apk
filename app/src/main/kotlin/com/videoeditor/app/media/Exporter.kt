@@ -3,6 +3,7 @@ package com.videoeditor.app.media
 import android.content.ContentValues
 import android.content.Context
 import android.graphics.Bitmap
+import android.graphics.Matrix
 import android.media.MediaMetadataRetriever
 import android.net.Uri
 import android.os.Environment
@@ -13,6 +14,7 @@ import androidx.media3.common.Effect
 import androidx.media3.common.MediaItem
 import androidx.media3.common.audio.AudioProcessor
 import androidx.media3.effect.BitmapOverlay
+import androidx.media3.effect.MatrixTransformation
 import androidx.media3.effect.OverlayEffect
 import androidx.media3.effect.OverlaySettings
 import androidx.media3.effect.Presentation
@@ -29,6 +31,7 @@ import com.google.common.collect.ImmutableList
 import com.videoeditor.core.Clip
 import com.videoeditor.core.MediaKind
 import com.videoeditor.core.Timeline
+import com.videoeditor.core.TimelineOps
 import com.videoeditor.core.Track
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -140,8 +143,18 @@ class Exporter(private val context: Context) {
         val mainSequence = EditedMediaItemSequence.Builder()
         for (c in main) {
             val fit: Effect = Presentation.createForWidthAndHeight(canvasW, canvasH, Presentation.LAYOUT_SCALE_TO_FIT)
+            val videoEffects = ArrayList<Effect>()
+            videoEffects.add(fit)
+            // Zoom / position chosen in the preview: scale around the centre, then move.
+            val zoom = TimelineOps.mainZoom(c)
+            if (zoom != 1f || c.posX != 0.5f || c.posY != 0.5f) {
+                val matrix = Matrix()
+                matrix.postScale(zoom, zoom)
+                matrix.postTranslate((c.posX - 0.5f) * 2f, -(c.posY - 0.5f) * 2f)
+                videoEffects.add(MatrixTransformation { matrix })
+            }
             val item = EditedMediaItem.Builder(mediaItem(c, c.sourceStartMs, c.sourceEndMs))
-                .setEffects(Effects(noAudio, listOf(fit)))
+                .setEffects(Effects(noAudio, videoEffects))
             if (c.kind == MediaKind.IMAGE) {
                 item.setDurationUs(c.durationMs * 1000).setFrameRate(30)
             }

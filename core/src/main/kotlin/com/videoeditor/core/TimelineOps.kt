@@ -193,6 +193,40 @@ object TimelineOps {
             )
         }
 
+    /**
+     * Main-track clips reuse [Clip.scale] for their zoom inside the frame: the stored default
+     * (0.4, the same default overlays get) means "fitted, zoom 1". Keeping this mapping avoids a
+     * database change for projects created before zoom existed.
+     */
+    const val MAIN_SCALE_UNIT = 0.4f
+    const val MIN_MAIN_ZOOM = 0.2f
+    const val MAX_MAIN_ZOOM = 6f
+
+    fun mainZoom(c: Clip): Float = c.scale / MAIN_SCALE_UNIT
+
+    /** Zoom / move a main clip inside the frame. posX/posY are the centre (0..1), zoom 1 = fitted. */
+    fun transformMain(t: Timeline, id: String, posX: Float, posY: Float, zoom: Float): Timeline =
+        update(t, id) {
+            if (it.track != Track.MAIN) it else it.copy(
+                posX = posX.coerceIn(0f, 1f),
+                posY = posY.coerceIn(0f, 1f),
+                scale = zoom.coerceIn(MIN_MAIN_ZOOM, MAX_MAIN_ZOOM) * MAIN_SCALE_UNIT,
+            )
+        }
+
+    /** Copies a free-track clip (overlay / sound / music). The copy goes on top and is selected. */
+    fun duplicate(t: Timeline, id: String, newId: () -> String): Timeline {
+        val c = t.byId(id) ?: return t
+        if (c.track == Track.MAIN) return t
+        val copy = c.copy(
+            id = newId(),
+            posX = (c.posX + 0.05f).coerceIn(0f, 1f),
+            posY = (c.posY + 0.05f).coerceIn(0f, 1f),
+            selected = false,
+        )
+        return select(addClip(t, copy), copy.id)
+    }
+
     /** Display lanes for a free track so overlapping clips are drawn on separate rows. */
     fun lanes(clips: List<Clip>): Map<String, Int> {
         val laneEnds = ArrayList<Long>()
