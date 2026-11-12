@@ -183,6 +183,17 @@ object TimelineOps {
     fun select(t: Timeline, id: String?): Timeline =
         Timeline(t.clips.map { it.copy(selected = id != null && it.id == id) })
 
+    const val MIN_STRETCH = 0.25f
+    const val MAX_STRETCH = 4f
+
+    /** Makes a clip wider / taller without changing the other direction (1 = original shape). */
+    fun stretch(t: Timeline, id: String, stretchX: Float, stretchY: Float): Timeline = update(t, id) {
+        it.copy(
+            stretchX = stretchX.coerceIn(MIN_STRETCH, MAX_STRETCH),
+            stretchY = stretchY.coerceIn(MIN_STRETCH, MAX_STRETCH),
+        )
+    }
+
     /** Keeps an angle in (-180, 180]. */
     fun normalizeAngle(degrees: Float): Float {
         if (!degrees.isFinite()) return 0f

@@ -274,6 +274,10 @@ class EditorController(private val app: App, val projectId: Long, private val sc
     fun transformMain(id: String, x: Float, y: Float, zoom: Float, rotation: Float) =
         commitEdit(TimelineOps.transformMain(timeline, id, x, y, zoom, rotation), saveNow = false)
 
+    /** Makes a clip wider / taller (W x H control). */
+    fun stretch(id: String, stretchX: Float, stretchY: Float) =
+        commitEdit(TimelineOps.stretch(timeline, id, stretchX, stretchY), saveNow = false)
+
     /** Size of the rendered frame in pixels (used for the position read-out). */
     val canvasPixels: Pair<Int, Int> get() = canvasSize(targetAspect)
 

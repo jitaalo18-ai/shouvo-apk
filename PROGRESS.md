@@ -3,10 +3,10 @@
 Self-contained handoff. Another developer / AI account can continue from this file plus the source ZIP.
 Master spec: "ANDROID VIDEO EDITOR - DEVELOPMENT MASTER PROMPT V1" (Steps 1-12).
 
-PROJECT VERSION: 0.7 (versionCode 7), app name "Nock Nock", APK label "Nock Nock V0.7" - checkpoint 7, 2026-11-13
+PROJECT VERSION: 0.8 (versionCode 8), app name "Nock Nock", APK label "Nock Nock V0.8" - checkpoint 8, 2026-11-13
 VERSION RULE (set by the owner): versions go 0.2, 0.3, 0.4, 0.5, 0.6 ... (never 3, 4, 5).
 For each new version change `versionName`/`versionCode` in app/build.gradle.kts and the label in
-release_label.txt (V0.8, V0.9 ...). History: 1.0.0 (first build) -> 0.2 "V2" -> 0.3 -> 0.4 -> 0.5 -> 0.6 -> 0.7.
+release_label.txt (V0.9, V0.10 ...). History: 1.0.0 (first build) -> 0.2 "V2" -> 0.3 -> 0.4 -> 0.5 -> 0.6 -> 0.7 -> 0.8.
 
 STANDING RULES FROM THE OWNER (apply to every version without being asked again):
 1. Every APK delivery comes together with the project source code ZIP of the same version.
@@ -84,6 +84,14 @@ IMPLEMENTED FEATURES (source written; "JVM-tested" = unit tests really executed)
 - NEW in 0.7 - DATABASE VERSION 2: column `clips.rotation` (REAL NOT NULL DEFAULT 0) added by
   MIGRATION_1_2 in data/Db.kt. Any later schema change needs its own migration - never bump the
   version without one, or existing users lose their projects and libraries.
+- NEW in 0.8 - Alignment snapping while framing the main video (core/Framing.kt): locks onto the frame
+  centre, the frame edges, straight angles (0/90/180/270) and the fit / fill sizes; dashed guide lines
+  show what it locked onto and the phone vibrates once per new lock (Compose haptic feedback, follows
+  the phone's touch-vibration setting). Overlays do not snap yet.
+- NEW in 0.8 - W x H control (button left of Undo): Width and Height sliders, 50-200 %, with Reset, for
+  the selected main/overlay clip or the clip under the playhead. Applied in preview and export.
+- NEW in 0.8 - DATABASE VERSION 3: columns `clips.stretchX`, `clips.stretchY` (REAL NOT NULL DEFAULT 1)
+  added by MIGRATION_2_3.
 - Rendering: Export button -> Media3 Transformer composition (main sequence, one audio sequence per
   sound/music/overlay-audio clip, overlays as timed BitmapOverlay) -> Movies/VideoEditor.
 
@@ -94,6 +102,10 @@ DEVIATIONS FROM THE SPEC TO KNOW ABOUT:
 - Project and overlay media are referenced through persisted read permission, not copied (the spec
   requires copying only for the libraries). Deleting such an original from the phone breaks that clip.
 - Not added because nobody asked for it: delete project. (Delete clip and undo/redo arrived in 0.3.)
+
+FILES MODIFIED IN 0.8: core/Framing.kt (new), core/Model.kt, core/TimelineOps.kt, core tests (38),
+data/Db.kt (version 3 + migration), data/Repositories.kt, media/Exporter.kt, ui/EditorScreen.kt,
+ui/EditorController.kt, build files.
 
 FILES MODIFIED IN 0.7: core/Model.kt (rotation), core/TimelineOps.kt, core tests (30), data/Db.kt
 (version 2 + migration), data/Repositories.kt, media/Exporter.kt, ui/EditorScreen.kt (PreviewCanvas,
@@ -140,7 +152,7 @@ FILES FROM 1.0.0 (unchanged unless listed above):
   LibraryDialog.kt
 
 TESTS ACTUALLY RUN (see TEST_REPORT.md):
-- 30 JUnit tests of the core module (20 from 1.0.0 + 6 voice removal + delete, zoom, duplicate, rotation) run on a desktop JVM: all pass.
+- 38 JUnit tests of the core module (timeline, AutoCut, voice removal, zoom, rotation, snapping, stretch) run on a desktop JVM: all pass.
 - Owner's phone, version 1.0.0 (screenshots 2026-11-13): Projects screen lists a saved project that
   was edited later; Video FX library shows 8+ imported clips with thumbnails and names. No other
   device results reported yet.
@@ -150,8 +162,8 @@ TESTS ACTUALLY RUN (see TEST_REPORT.md):
 - NOT run: anything on a device or emulator. All 15 Step-10 device checks are still open.
 
 KNOWN BUGS / RISKS:
-- The 0.7 database migration (version 1 -> 2) is untested on a device. If the app does not start after
-  updating from 0.6, the migration is the first thing to check.
+- The database migrations (1 -> 2 in 0.7, 2 -> 3 in 0.8) are untested on a device. If the app does not
+  start after an update, the migrations are the first thing to check.
 - Most screens have been opened on the owner's phone, but no version has been fully device-tested.
 - Voice removal cannot work on mono sound, and it also lowers instruments mixed exactly in the centre.
 - Extracted music is stored as WAV (about 10 MB per minute).
@@ -174,4 +186,4 @@ BUILD STATUS: BUILT. GitHub Actions (repo jitaalo18-ai/shouvo-apk, run 432695964
 The debug APK has NOT been installed or run on any device yet.
 
 SOURCE ZIP / APK PATH IF AVAILABLE: source at https://github.com/jitaalo18-ai/shouvo-apk (main).
-APK: Nock_Nock_V0.7.apk and Nock_Nock_V0.7_source.zip on the v0.7 release of that repository (rebuilt on every push to main).
+APK: Nock_Nock_V0.8.apk and Nock_Nock_V0.8_source.zip on the v0.8 release of that repository (rebuilt on every push to main).

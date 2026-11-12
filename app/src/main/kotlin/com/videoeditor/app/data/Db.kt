@@ -59,6 +59,8 @@ data class ClipEntity(
     val scale: Float,
     val selected: Boolean,
     @ColumnInfo(defaultValue = "0") val rotation: Float = 0f,
+    @ColumnInfo(defaultValue = "1") val stretchX: Float = 1f,
+    @ColumnInfo(defaultValue = "1") val stretchY: Float = 1f,
 )
 
 /**
@@ -150,7 +152,7 @@ abstract class LibraryDao {
 
 @Database(
     entities = [ProjectEntity::class, ClipEntity::class, LibraryItemEntity::class],
-    version = 2,
+    version = 3,
     exportSchema = false,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -160,8 +162,16 @@ abstract class AppDatabase : RoomDatabase() {
     companion object {
         fun create(context: Context): AppDatabase =
             Room.databaseBuilder(context, AppDatabase::class.java, "video_editor.db")
-                .addMigrations(MIGRATION_1_2)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
                 .build()
+
+        /** 0.8: clips can be made wider / taller. */
+        val MIGRATION_2_3 = object : Migration(2, 3) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE clips ADD COLUMN stretchX REAL NOT NULL DEFAULT 1")
+                db.execSQL("ALTER TABLE clips ADD COLUMN stretchY REAL NOT NULL DEFAULT 1")
+            }
+        }
 
         /** 0.7: clips can be rotated. Existing projects keep everything; rotation starts at 0. */
         val MIGRATION_1_2 = object : Migration(1, 2) {

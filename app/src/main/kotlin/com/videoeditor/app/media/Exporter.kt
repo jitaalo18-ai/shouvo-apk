@@ -147,12 +147,12 @@ class Exporter(private val context: Context) {
             videoEffects.add(fit)
             // Zoom / position chosen in the preview: scale around the centre, then move.
             val zoom = TimelineOps.mainZoom(c)
-            if (zoom != 1f || c.posX != 0.5f || c.posY != 0.5f || c.rotation != 0f) {
+            if (zoom != 1f || c.posX != 0.5f || c.posY != 0.5f || c.rotation != 0f || c.stretchX != 1f || c.stretchY != 1f) {
                 // The matrix works in frame coordinates that run -1..1 on both axes (y up), so the
                 // rotation is done in an aspect-corrected space to avoid skewing the picture.
                 val frameAspect = canvasW.toFloat() / canvasH
                 val matrix = Matrix()
-                matrix.postScale(zoom, zoom)
+                matrix.postScale(zoom * c.stretchX, zoom * c.stretchY)
                 matrix.postScale(frameAspect, 1f)
                 matrix.postRotate(-c.rotation)
                 matrix.postScale(1f / frameAspect, 1f)
@@ -246,8 +246,9 @@ private class TimedOverlay(
     canvasW: Int,
     canvasH: Int,
 ) : BitmapOverlay() {
-    private val targetW = (clip.scale * canvasW).roundToInt().coerceAtLeast(2)
-    private val targetH = (targetW / clip.aspect.coerceAtLeast(0.01f)).roundToInt().coerceAtLeast(2)
+    private val baseW = clip.scale * canvasW
+    private val targetW = (baseW * clip.stretchX).roundToInt().coerceAtLeast(2)
+    private val targetH = (baseW / clip.aspect.coerceAtLeast(0.01f) * clip.stretchY).roundToInt().coerceAtLeast(2)
     private val visible: OverlaySettings = OverlaySettings.Builder()
         .setBackgroundFrameAnchor(clip.posX * 2f - 1f, 1f - clip.posY * 2f)
         .setRotationDegrees(-clip.rotation)       // overlay settings rotate counter-clockwise

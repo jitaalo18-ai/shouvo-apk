@@ -38,6 +38,9 @@ data class Clip(
     val scale: Float = 0.4f,
     /** Rotation in degrees, clockwise on screen, in (-180, 180]. Main clips and overlays. */
     val rotation: Float = 0f,
+    /** Extra width / height factors (1 = unchanged) to make the picture wider or taller. */
+    val stretchX: Float = 1f,
+    val stretchY: Float = 1f,
     val selected: Boolean = false,
 ) {
     val durationMs: Long get() = sourceEndMs - sourceStartMs

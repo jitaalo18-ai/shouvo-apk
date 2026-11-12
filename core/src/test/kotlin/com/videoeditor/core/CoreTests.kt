@@ -436,3 +436,67 @@ class VocalRemoverTests {
         for (i in orig.indices) assertTrue(abs(re[i] - orig[i]) < 1e-4f && abs(im[i]) < 1e-4f)
     }
 }
+
+class FramingTests {
+    private val wide = 16f / 9f      // landscape clip
+    private val tall = 9f / 16f      // 9:16 frame
+
+    @Test fun landscapeClipInTallFrameFitsWidth() {
+        val (w, h) = Framing.fitFractions(wide, tall)
+        assertEquals(1f, w, 1e-5f); assertEquals(tall / wide, h, 1e-5f)
+    }
+
+    @Test fun snapsToCentreAndStraightAngle() {
+        val r = Framing.snap(FrameState(0.507f, 0.49f, 1.4f, 2.5f), wide, tall)
+        assertEquals(0.5f, r.state.x); assertEquals(0.5f, r.state.y); assertEquals(0f, r.state.rotation)
+        assertTrue(r.centerX && r.centerY && r.angle)
+        val free = Framing.snap(FrameState(0.3f, 0.2f, 1.4f, 22f), wide, tall)
+        assertEquals(FrameState(0.3f, 0.2f, 1.4f, 22f), free.state); assertEquals(0, free.key)
+    }
+
+    @Test fun snapsBottomEdgeToFrameEdge() {
+        // fitted landscape clip in a 9:16 frame is 0.316 of the frame height; zoom 2 -> 0.633
+        val h = tall / wide * 2f
+        val r = Framing.snap(FrameState(0.4f, 1f - h / 2f + 0.01f, 2f, 0f), wide, tall)
+        assertTrue(r.bottom); assertFalse(r.top); assertFalse(r.centerY)
+        assertEquals(1f - h / 2f, r.state.y, 1e-5f)
+        val top = Framing.snap(FrameState(0.4f, h / 2f - 0.01f, 2f, 0f), wide, tall)
+        assertTrue(top.top); assertEquals(h / 2f, top.state.y, 1e-5f)
+    }
+
+    @Test fun edgesDoNotSnapWhileTilted() {
+        val h = tall / wide * 2f
+        val r = Framing.snap(FrameState(0.4f, 1f - h / 2f + 0.01f, 2f, 22f), wide, tall)
+        assertFalse(r.bottom); assertFalse(r.angle)
+    }
+
+    @Test fun snapsToFillZoomAndReportsAllEdges() {
+        val fill = wide / tall                       // zoom needed for the clip to cover the frame height
+        val r = Framing.snap(FrameState(0.5f, 0.5f, fill * 1.02f, 0f), wide, tall)
+        assertTrue(r.zoom); assertEquals(fill, r.state.zoom, 1e-4f)
+        assertTrue(r.top && r.bottom && r.centerX && r.centerY)
+        val fit = Framing.snap(FrameState(0.5f, 0.5f, 0.99f, 0f), wide, tall)
+        assertEquals(1f, fit.state.zoom, 1e-5f); assertTrue(fit.left && fit.right)
+    }
+
+    @Test fun quarterTurnSwapsWidthAndHeight() {
+        // rotated by 90 degrees the landscape clip becomes portrait and fits a 9:16 frame at zoom 16/9
+        val r = Framing.snap(FrameState(0.5f, 0.5f, wide * 0.99f, 88f), wide, tall)
+        assertEquals(90f, r.state.rotation); assertEquals(wide, r.state.zoom, 1e-3f)
+        assertTrue(r.left && r.right && r.top && r.bottom)
+    }
+
+    @Test fun newSnapChangesTheKey() {
+        val a = Framing.snap(FrameState(0.3f, 0.2f, 1.4f, 22f), wide, tall).key
+        val b = Framing.snap(FrameState(0.3f, 0.2f, 1.4f, 1f), wide, tall).key
+        assertTrue(b and a.inv() != 0)
+    }
+
+    @Test fun stretchIsClampedAndKept() {
+        var t = TimelineOps.appendMain(Timeline(), listOf(video("a", 10_000)))
+        t = TimelineOps.stretch(t, "a", 1.5f, 99f)
+        assertEquals(1.5f, t.byId("a")!!.stretchX); assertEquals(TimelineOps.MAX_STRETCH, t.byId("a")!!.stretchY)
+        t = TimelineOps.split(t, "a", 4_000, { "a2" }).timeline
+        assertEquals(1.5f, t.byId("a2")!!.stretchX)
+    }
+}

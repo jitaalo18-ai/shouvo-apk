@@ -1,8 +1,8 @@
-# Test report - v0.7 "Nock Nock V0.7" (2026-11-13)
+# Test report - v0.8 "Nock Nock V0.8" (2026-11-13)
 
 ## Executed
 
-**Core module unit tests - 30/30 passed** (desktop JVM 21, kotlinc 2.0.21, JUnit 4.13.2; not on Android)
+**Core module unit tests - 38/38 passed** (desktop JVM 21, kotlinc 2.0.21, JUnit 4.13.2; not on Android)
 
 | Area | Tests |
 |---|---|
@@ -39,6 +39,9 @@ fully run on a device yet. The 0.5 pinch-zoom, new preview surface and overlay t
 
 0.7: rotation maths is unit-tested; the two-finger gestures, the rotated export and the database
 migration are untested on a device.
+
+0.8: snapping maths (centre, edges, angles, fit/fill, quarter turns) and stretch are unit-tested; the
+guide lines, the vibration, the W x H sliders and the second database migration are untested on a device.
 
 ## Not executed
 

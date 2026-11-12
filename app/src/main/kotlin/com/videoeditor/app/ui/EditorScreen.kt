@@ -3,6 +3,7 @@ package com.videoeditor.app.ui
 import android.view.TextureView
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -65,11 +66,13 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Snackbar
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -86,11 +89,15 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -107,6 +114,8 @@ import com.videoeditor.app.App
 import com.videoeditor.app.data.LibraryKind
 import com.videoeditor.app.media.CanvasFormat
 import com.videoeditor.core.Clip
+import com.videoeditor.core.FrameState
+import com.videoeditor.core.Framing
 import com.videoeditor.core.MediaKind
 import com.videoeditor.core.TimelineOps
 import com.videoeditor.core.Track
@@ -145,6 +154,7 @@ fun EditorScreen(app: App, projectId: Long, onBack: () -> Unit) {
         ctl.importToLibrary(LibraryKind.VIDEO_FX, uris)
     }
 
+    var showStretch by remember { mutableStateOf(false) }
     val snackbar = remember { SnackbarHostState() }
     val message = ctl.message
     LaunchedEffect(message) {
@@ -212,11 +222,42 @@ fun EditorScreen(app: App, projectId: Long, onBack: () -> Unit) {
                     Text(formatTime(ctl.timeline.durationMs), fontSize = 12.sp, color = Color.Gray)
                 }
                 Spacer(Modifier.weight(1f))
+                Text(
+                    "W\u00D7H",
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = if (showStretch) Accent else Color.White,
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(Panel)
+                        .clickable { showStretch = !showStretch }
+                        .padding(horizontal = 10.dp, vertical = 8.dp),
+                )
                 IconButton(onClick = { ctl.undo() }, enabled = ctl.canUndo) {
                     Icon(Icons.AutoMirrored.Filled.Undo, contentDescription = "Undo")
                 }
                 IconButton(onClick = { ctl.redo() }, enabled = ctl.canRedo) {
                     Icon(Icons.AutoMirrored.Filled.Redo, contentDescription = "Redo")
+                }
+            }
+
+            // W x H panel: make the selected clip (or the one under the playhead) wider / taller
+            if (showStretch) {
+                val target = ctl.timeline.selected?.takeIf { it.track == Track.MAIN || it.track == Track.OVERLAY }
+                    ?: TimelineOps.locate(ctl.timeline, position)?.clip
+                if (target != null) {
+                    Column(Modifier.fillMaxWidth().background(Panel).padding(horizontal = 12.dp, vertical = 4.dp)) {
+                        StretchSlider("Width", target.stretchX) { ctl.stretch(target.id, it, target.stretchY) }
+                        StretchSlider("Height", target.stretchY) { ctl.stretch(target.id, target.stretchX, it) }
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                if (target.track == Track.OVERLAY) "Overlay" else "Main video",
+                                fontSize = 12.sp, color = Color.Gray, modifier = Modifier.weight(1f),
+                            )
+                            TextButton(onClick = { ctl.stretch(target.id, 1f, 1f) }) { Text("Reset") }
+                            TextButton(onClick = { showStretch = false }) { Text("Done") }
+                        }
+                    }
                 }
             }
 
@@ -361,6 +402,20 @@ private fun FormatMenu(ctl: EditorController) {
 }
 
 @Composable
+private fun StretchSlider(label: String, value: Float, onChange: (Float) -> Unit) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Text(label, fontSize = 12.sp, modifier = Modifier.width(52.dp))
+        Slider(
+            value = value.coerceIn(0.5f, 2f),
+            onValueChange = onChange,
+            valueRange = 0.5f..2f,
+            modifier = Modifier.weight(1f),
+        )
+        Text("${(value * 100).toInt()}%", fontSize = 12.sp, textAlign = TextAlign.End, modifier = Modifier.width(48.dp))
+    }
+}
+
+@Composable
 private fun ToolButton(icon: ImageVector, label: String, onClick: () -> Unit) {
     Column(
         Modifier.width(72.dp).clip(RoundedCornerShape(8.dp)).clickable(onClick = onClick).padding(horizontal = 4.dp, vertical = 4.dp),
@@ -393,6 +448,11 @@ private fun PreviewCanvas(ctl: EditorController, position: Long) {
         val current = TimelineOps.locate(ctl.timeline, position)?.clip
         val latest by rememberUpdatedState(current)
 
+        // running state of the current framing gesture (unsnapped values) and the active guides
+        val haptics = LocalHapticFeedback.current
+        val gesture = remember { FramingGesture() }
+        var guides by remember { mutableStateOf(0) }
+
         // small read-out (position, angle, zoom) shown while the video is being framed
         var readoutTick by remember { mutableStateOf(0L) }
         var showReadout by remember { mutableStateOf(false) }
@@ -408,8 +468,9 @@ private fun PreviewCanvas(ctl: EditorController, position: Long) {
         val place: Modifier = if (current != null) {
             val clipAspect = current.aspect.coerceAtLeast(0.01f)
             val fitW: Dp = if (clipAspect > aspect) canvasW else canvasH * clipAspect
-            val w = fitW * TimelineOps.mainZoom(current)
-            val h = w / clipAspect
+            val zoomed = fitW * TimelineOps.mainZoom(current)
+            val w = zoomed * current.stretchX
+            val h = zoomed / clipAspect * current.stretchY
             Modifier
                 .offset(x = canvasW * current.posX - w / 2, y = canvasH * current.posY - h / 2)
                 .size(w, h)
@@ -450,19 +511,41 @@ private fun PreviewCanvas(ctl: EditorController, position: Long) {
                     Modifier
                         .matchParentSize()
                         .pointerInput(Unit) { detectTapGestures { ctl.select(latest?.id) } }
-                        .pointerInput(canvasWPx, canvasHPx) {
+                        .pointerInput(canvasWPx, canvasHPx, aspect) {
                             detectTransformGestures { _, pan, zoom, rotation ->
                                 val c = latest ?: return@detectTransformGestures
                                 val twoFingers = zoom != 1f || rotation != 0f
                                 if (twoFingers || c.selected) {
-                                    ctl.transformMain(
-                                        c.id,
-                                        c.posX + pan.x / canvasWPx,
-                                        c.posY + pan.y / canvasHPx,
-                                        TimelineOps.mainZoom(c) * zoom,
-                                        c.rotation + rotation,
+                                    val now = System.nanoTime()
+                                    // a new gesture starts from where the clip is now
+                                    if (gesture.clipId != c.id || now - gesture.lastEvent > 400_000_000L) {
+                                        gesture.clipId = c.id
+                                        gesture.x = c.posX
+                                        gesture.y = c.posY
+                                        gesture.zoom = TimelineOps.mainZoom(c)
+                                        gesture.rotation = c.rotation
+                                        gesture.snapKey = 0
+                                    }
+                                    gesture.lastEvent = now
+                                    gesture.x = (gesture.x + pan.x / canvasWPx).coerceIn(0f, 1f)
+                                    gesture.y = (gesture.y + pan.y / canvasHPx).coerceIn(0f, 1f)
+                                    gesture.zoom = (gesture.zoom * zoom)
+                                        .coerceIn(TimelineOps.MIN_MAIN_ZOOM, TimelineOps.MAX_MAIN_ZOOM)
+                                    gesture.rotation += rotation
+                                    // lock onto centre / edges / straight angles when close to them
+                                    val snapped = Framing.snap(
+                                        FrameState(gesture.x, gesture.y, gesture.zoom, gesture.rotation),
+                                        c.aspect, aspect, c.stretchX, c.stretchY,
                                     )
-                                    readoutTick = System.nanoTime()
+                                    if (snapped.key and gesture.snapKey.inv() != 0) {
+                                        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    }
+                                    gesture.snapKey = snapped.key
+                                    guides = snapped.key
+                                    ctl.transformMain(
+                                        c.id, snapped.state.x, snapped.state.y, snapped.state.zoom, snapped.state.rotation,
+                                    )
+                                    readoutTick = now
                                 }
                             }
                         },
@@ -479,6 +562,22 @@ private fun PreviewCanvas(ctl: EditorController, position: Long) {
             }
 
             if (current != null && current.selected) Box(place.border(2.dp, Accent))
+
+            // alignment guides: dashed lines at the frame centre / edges the video is locked onto
+            if (showReadout && guides != 0) {
+                Canvas(Modifier.matchParentSize()) {
+                    val dash = PathEffect.dashPathEffect(floatArrayOf(14f, 10f))
+                    val stroke = 2.dp.toPx()
+                    fun vertical(x: Float) = drawLine(Accent, Offset(x, 0f), Offset(x, size.height), stroke, pathEffect = dash)
+                    fun horizontal(y: Float) = drawLine(Accent, Offset(0f, y), Offset(size.width, y), stroke, pathEffect = dash)
+                    if (guides and 1 != 0) vertical(size.width / 2f)
+                    if (guides and 2 != 0) horizontal(size.height / 2f)
+                    if (guides and 4 != 0) vertical(0f)
+                    if (guides and 8 != 0) vertical(size.width)
+                    if (guides and 16 != 0) horizontal(0f)
+                    if (guides and 32 != 0) horizontal(size.height)
+                }
+            }
 
             if (showReadout && current != null) {
                 val (outW, outH) = ctl.canvasPixels
@@ -506,8 +605,8 @@ private fun PreviewCanvas(ctl: EditorController, position: Long) {
 @Composable
 private fun OverlayView(ctl: EditorController, clip: Clip, canvasW: Dp, canvasH: Dp, canvasWPx: Float, canvasHPx: Float) {
     val current by rememberUpdatedState(clip)
-    val w = canvasW * clip.scale
-    val h = w / clip.aspect.coerceAtLeast(0.01f)
+    val w = canvasW * clip.scale * clip.stretchX
+    val h = canvasW * clip.scale / clip.aspect.coerceAtLeast(0.01f) * clip.stretchY
     // Gestures are read before the rotation is applied, so drags follow the finger on screen.
     var modifier = Modifier
         .offset(x = canvasW * clip.posX - w / 2, y = canvasH * clip.posY - h / 2)
@@ -546,4 +645,15 @@ private fun OverlayView(ctl: EditorController, clip: Clip, canvasW: Dp, canvasH:
             )
         }
     }
+}
+
+/** Unsnapped values of the framing gesture in progress. */
+private class FramingGesture {
+    var clipId: String? = null
+    var lastEvent = 0L
+    var x = 0.5f
+    var y = 0.5f
+    var zoom = 1f
+    var rotation = 0f
+    var snapKey = 0
 }
