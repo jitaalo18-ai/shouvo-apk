@@ -292,6 +292,7 @@ fun EditorScreen(app: App, projectId: Long, onBack: () -> Unit) {
     }
 
     ctl.library?.let { kind ->
+        LaunchedEffect(kind) { ctl.player.pause() }
         LibraryDialog(
             app = app,
             kind = kind,

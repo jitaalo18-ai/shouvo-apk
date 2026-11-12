@@ -1,4 +1,4 @@
-# Test report - v0.5 "Nock Nock V0.5" (2026-11-13)
+# Test report - v0.6 "Nock Nock V0.6" (2026-11-13)
 
 ## Executed
 
@@ -21,6 +21,11 @@ Audio in these tests is synthetic (harmonic "voice" plus noise). Real speech rec
 **Build (GitHub Actions, run 43269596434)**
 - `./gradlew :core:test` - passed.
 - `./gradlew :app:assembleDebug` - passed; debug APK produced.
+
+**Owner's phone (version 0.5, from a screenshot)**
+- Video FX library with search field and 7+ saved clips opens; thumbnails were black because the
+  clips start with a black frame - addressed in 0.6. The 0.6 thumbnail and in-box preview are untested
+  on a device.
 
 **Owner's phone (version 0.4, from a screenshot)**
 - New editor layout, format drop-down set to 9:16, timeline thumbnails and a 17-minute project load.

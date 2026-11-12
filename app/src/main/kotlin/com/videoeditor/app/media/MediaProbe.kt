@@ -113,6 +113,62 @@ object Thumbnails {
         return bmp
     }
 
+    /**
+     * A thumbnail that shows what a video looks like. Many clips start with a black frame, so
+     * exact frames from the middle of the clip are tried and the first clearly visible one (or
+     * else the brightest) is used.
+     */
+    suspend fun representative(context: Context, uri: String, durationMs: Long, maxSize: Int = 160): Bitmap? {
+        val key = "$uri@rep@$maxSize"
+        cache.get(key)?.let { return it }
+        val bmp = withContext(io) {
+            val r = MediaMetadataRetriever()
+            try {
+                r.setDataSource(context, Uri.parse(uri))
+                var best: Bitmap? = null
+                var bestBrightness = -1f
+                for (fraction in floatArrayOf(0.5f, 0.25f, 0.75f, 0.1f)) {
+                    val timeUs = (durationMs * fraction).toLong() * 1000
+                    val frame = r.getScaledFrameAtTime(timeUs, MediaMetadataRetriever.OPTION_CLOSEST, maxSize, maxSize)
+                        ?: continue
+                    val b = brightness(frame)
+                    if (b > bestBrightness) {
+                        best = frame
+                        bestBrightness = b
+                    }
+                    if (b > 40f) break
+                }
+                best
+            } catch (e: Exception) {
+                null
+            } finally {
+                try {
+                    r.release()
+                } catch (e: Exception) {
+                    // ignore
+                }
+            }
+        }
+        if (bmp != null) cache.put(key, bmp)
+        return bmp
+    }
+
+    /** Average brightness (0..255) of a bitmap, sampled on an 8 x 8 grid. */
+    private fun brightness(bitmap: Bitmap): Float {
+        var sum = 0L
+        var count = 0
+        for (gy in 0 until 8) {
+            for (gx in 0 until 8) {
+                val x = (bitmap.width * (gx + 0.5f) / 8f).toInt().coerceIn(0, bitmap.width - 1)
+                val y = (bitmap.height * (gy + 0.5f) / 8f).toInt().coerceIn(0, bitmap.height - 1)
+                val c = bitmap.getPixel(x, y)
+                sum += ((c shr 16) and 0xFF) + ((c shr 8) and 0xFF) + (c and 0xFF)
+                count += 3
+            }
+        }
+        return if (count == 0) 0f else sum.toFloat() / count
+    }
+
     fun decodeImage(context: Context, uri: Uri, maxSize: Int): Bitmap? {
         val source = ImageDecoder.createSource(context.contentResolver, uri)
         return ImageDecoder.decodeBitmap(source) { decoder, info, _ ->
