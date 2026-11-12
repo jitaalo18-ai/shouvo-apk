@@ -1,8 +1,8 @@
-# Test report - v0.6 "Nock Nock V0.6" (2026-11-13)
+# Test report - v0.7 "Nock Nock V0.7" (2026-11-13)
 
 ## Executed
 
-**Core module unit tests - 29/29 passed** (desktop JVM 21, kotlinc 2.0.21, JUnit 4.13.2; not on Android)
+**Core module unit tests - 30/30 passed** (desktop JVM 21, kotlinc 2.0.21, JUnit 4.13.2; not on Android)
 
 | Area | Tests |
 |---|---|
@@ -36,6 +36,9 @@ Audio in these tests is synthetic (harmonic "voice" plus noise). Real speech rec
 
 The 0.3 layout, undo/redo and delete, and the 0.4 format drop-down and import chooser, have not been
 fully run on a device yet. The 0.5 pinch-zoom, new preview surface and overlay tools are untested on a device.
+
+0.7: rotation maths is unit-tested; the two-finger gestures, the rotated export and the database
+migration are untested on a device.
 
 ## Not executed
 

@@ -36,6 +36,8 @@ data class Clip(
     val posX: Float = 0.5f,
     val posY: Float = 0.5f,
     val scale: Float = 0.4f,
+    /** Rotation in degrees, clockwise on screen, in (-180, 180]. Main clips and overlays. */
+    val rotation: Float = 0f,
     val selected: Boolean = false,
 ) {
     val durationMs: Long get() = sourceEndMs - sourceStartMs

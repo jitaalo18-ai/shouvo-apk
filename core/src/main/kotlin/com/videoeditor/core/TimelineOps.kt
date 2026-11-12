@@ -183,13 +183,23 @@ object TimelineOps {
     fun select(t: Timeline, id: String?): Timeline =
         Timeline(t.clips.map { it.copy(selected = id != null && it.id == id) })
 
-    /** Overlay position / size in canvas-relative units. */
-    fun transform(t: Timeline, id: String, posX: Float, posY: Float, scale: Float): Timeline =
+    /** Keeps an angle in (-180, 180]. */
+    fun normalizeAngle(degrees: Float): Float {
+        if (!degrees.isFinite()) return 0f
+        var a = degrees % 360f
+        if (a > 180f) a -= 360f
+        if (a <= -180f) a += 360f
+        return a
+    }
+
+    /** Overlay position / size / rotation in canvas-relative units. */
+    fun transform(t: Timeline, id: String, posX: Float, posY: Float, scale: Float, rotation: Float? = null): Timeline =
         update(t, id) {
             it.copy(
                 posX = posX.coerceIn(0f, 1f),
                 posY = posY.coerceIn(0f, 1f),
                 scale = scale.coerceIn(MIN_SCALE, MAX_SCALE),
+                rotation = if (rotation == null) it.rotation else normalizeAngle(rotation),
             )
         }
 
@@ -205,12 +215,13 @@ object TimelineOps {
     fun mainZoom(c: Clip): Float = c.scale / MAIN_SCALE_UNIT
 
     /** Zoom / move a main clip inside the frame. posX/posY are the centre (0..1), zoom 1 = fitted. */
-    fun transformMain(t: Timeline, id: String, posX: Float, posY: Float, zoom: Float): Timeline =
+    fun transformMain(t: Timeline, id: String, posX: Float, posY: Float, zoom: Float, rotation: Float? = null): Timeline =
         update(t, id) {
             if (it.track != Track.MAIN) it else it.copy(
                 posX = posX.coerceIn(0f, 1f),
                 posY = posY.coerceIn(0f, 1f),
                 scale = zoom.coerceIn(MIN_MAIN_ZOOM, MAX_MAIN_ZOOM) * MAIN_SCALE_UNIT,
+                rotation = if (rotation == null) it.rotation else normalizeAngle(rotation),
             )
         }
 

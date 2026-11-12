@@ -85,6 +85,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
@@ -109,6 +110,7 @@ import com.videoeditor.core.Clip
 import com.videoeditor.core.MediaKind
 import com.videoeditor.core.TimelineOps
 import com.videoeditor.core.Track
+import kotlinx.coroutines.delay
 
 /** Step 2: the editing screen - preview, play/pause, timeline and toolbars. */
 @Composable
@@ -372,12 +374,15 @@ private fun ToolButton(icon: ImageVector, label: String, onClick: () -> Unit) {
 
 /**
  * The preview: main video at the bottom, overlays composited above it (nothing is merged into
- * the source files). The box has the aspect ratio of the rendered output, so overlay positions
- * in the preview and in the exported video match.
+ * the source files). The black box has the aspect ratio of the rendered output, so positions in
+ * the preview and in the exported video match.
+ *
+ * Framing gestures on the main video: two fingers move, zoom and rotate it; one finger moves it
+ * while the clip is selected; a tap selects / deselects it.
  */
 @Composable
 private fun PreviewCanvas(ctl: EditorController, position: Long) {
-    BoxWithConstraints(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+    BoxWithConstraints(Modifier.fillMaxSize().clipToBounds(), contentAlignment = Alignment.Center) {
         val aspect = ctl.canvasAspect
         val canvasW: Dp = if (aspect > maxWidth / maxHeight) maxWidth else maxHeight * aspect
         val canvasH: Dp = canvasW / aspect
@@ -387,68 +392,112 @@ private fun PreviewCanvas(ctl: EditorController, position: Long) {
 
         val current = TimelineOps.locate(ctl.timeline, position)?.clip
         val latest by rememberUpdatedState(current)
-        Box(
+
+        // small read-out (position, angle, zoom) shown while the video is being framed
+        var readoutTick by remember { mutableStateOf(0L) }
+        var showReadout by remember { mutableStateOf(false) }
+        LaunchedEffect(readoutTick) {
+            if (readoutTick != 0L) {
+                showReadout = true
+                delay(900)
+                showReadout = false
+            }
+        }
+
+        // Where the main clip sits: fitted into the frame, then zoomed / moved / rotated.
+        val place: Modifier = if (current != null) {
+            val clipAspect = current.aspect.coerceAtLeast(0.01f)
+            val fitW: Dp = if (clipAspect > aspect) canvasW else canvasH * clipAspect
+            val w = fitW * TimelineOps.mainZoom(current)
+            val h = w / clipAspect
             Modifier
-                .size(canvasW, canvasH)
-                .clipToBounds()
-                .background(Color.Black)
-                .pointerInput(Unit) { detectTapGestures { ctl.select(null) } }
-                .pointerInput(canvasWPx, canvasHPx) {
-                    // Two fingers: pinch to make the video bigger / smaller and move it.
-                    // One finger moves it only while the clip is selected.
-                    detectTransformGestures { _, pan, zoom, _ ->
-                        val c = latest ?: return@detectTransformGestures
-                        if (zoom != 1f || c.selected) {
-                            ctl.transformMain(
-                                c.id,
-                                c.posX + pan.x / canvasWPx,
-                                c.posY + pan.y / canvasHPx,
-                                TimelineOps.mainZoom(c) * zoom,
-                            )
+                .offset(x = canvasW * current.posX - w / 2, y = canvasH * current.posY - h / 2)
+                .size(w, h)
+                .rotate(current.rotation)
+        } else {
+            Modifier
+        }
+
+        // Not clipped itself, so the selection border may reach outside the frame.
+        Box(Modifier.size(canvasW, canvasH)) {
+            Box(Modifier.matchParentSize().clipToBounds().background(Color.Black)) {
+                if (current != null) {
+                    AndroidView(
+                        factory = { context ->
+                            TextureView(context).also { ctl.player.main.setVideoTextureView(it) }
+                        },
+                        onRelease = {
+                            try {
+                                ctl.player.main.clearVideoTextureView(it)
+                            } catch (e: Exception) {
+                                // player already released
+                            }
+                        },
+                        modifier = place,
+                    )
+                    // Image clips on the main track are drawn here.
+                    if (current.kind == MediaKind.IMAGE) {
+                        Thumb(
+                            current.sourceUri, MediaKind.IMAGE, 0, place,
+                            maxSize = 1280, contentScale = ContentScale.FillBounds, background = Color.Black,
+                        )
+                    }
+                }
+
+                // Touch layer for the main video. It lies above the video surface so the gestures
+                // always arrive here, and below the overlays so they keep their own gestures.
+                Box(
+                    Modifier
+                        .matchParentSize()
+                        .pointerInput(Unit) { detectTapGestures { ctl.select(latest?.id) } }
+                        .pointerInput(canvasWPx, canvasHPx) {
+                            detectTransformGestures { _, pan, zoom, rotation ->
+                                val c = latest ?: return@detectTransformGestures
+                                val twoFingers = zoom != 1f || rotation != 0f
+                                if (twoFingers || c.selected) {
+                                    ctl.transformMain(
+                                        c.id,
+                                        c.posX + pan.x / canvasWPx,
+                                        c.posY + pan.y / canvasHPx,
+                                        TimelineOps.mainZoom(c) * zoom,
+                                        c.rotation + rotation,
+                                    )
+                                    readoutTick = System.nanoTime()
+                                }
+                            }
+                        },
+                )
+
+                val total = ctl.timeline.durationMs
+                for (clip in ctl.timeline.track(Track.OVERLAY).sortedBy { it.layer }) {
+                    key(clip.id) {
+                        if (position >= clip.timelineStartMs && position < clip.timelineEndMs && position < total) {
+                            OverlayView(ctl, clip, canvasW, canvasH, canvasWPx, canvasHPx)
                         }
                     }
-                },
-        ) {
-            if (current != null) {
-                // The video is fitted into the frame, then zoomed / moved as the user chose.
-                val clipAspect = current.aspect.coerceAtLeast(0.01f)
-                val fitW: Dp = if (clipAspect > aspect) canvasW else canvasH * clipAspect
-                val zoom = TimelineOps.mainZoom(current)
-                val w = fitW * zoom
-                val h = w / clipAspect
-                val place = Modifier
-                    .offset(x = canvasW * current.posX - w / 2, y = canvasH * current.posY - h / 2)
-                    .size(w, h)
-                AndroidView(
-                    factory = { context ->
-                        TextureView(context).also { ctl.player.main.setVideoTextureView(it) }
-                    },
-                    onRelease = {
-                        try {
-                            ctl.player.main.clearVideoTextureView(it)
-                        } catch (e: Exception) {
-                            // player already released
-                        }
-                    },
-                    modifier = place,
-                )
-                // Image clips on the main track are drawn here.
-                if (current.kind == MediaKind.IMAGE) {
-                    Thumb(
-                        current.sourceUri, MediaKind.IMAGE, 0, place,
-                        maxSize = 1280, contentScale = ContentScale.FillBounds, background = Color.Black,
-                    )
                 }
-                if (current.selected) Box(place.border(2.dp, Accent))
             }
 
-            val total = ctl.timeline.durationMs
-            for (clip in ctl.timeline.track(Track.OVERLAY).sortedBy { it.layer }) {
-                key(clip.id) {
-                    if (position >= clip.timelineStartMs && position < clip.timelineEndMs && position < total) {
-                        OverlayView(ctl, clip, canvasW, canvasH, canvasWPx, canvasHPx)
-                    }
-                }
+            if (current != null && current.selected) Box(place.border(2.dp, Accent))
+
+            if (showReadout && current != null) {
+                val (outW, outH) = ctl.canvasPixels
+                val x = ((current.posX - 0.5f) * outW).toInt()
+                val y = ((current.posY - 0.5f) * outH).toInt()
+                val text = String.format(
+                    java.util.Locale.US, "X%d Y%d %d\u00B0 %.2f\u00D7",
+                    x, y, current.rotation.toInt(), TimelineOps.mainZoom(current),
+                )
+                Text(
+                    text,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .padding(bottom = 12.dp)
+                        .background(Color(0xCC1B1D23), RoundedCornerShape(8.dp))
+                        .padding(horizontal = 10.dp, vertical = 5.dp),
+                )
             }
         }
     }
@@ -459,21 +508,28 @@ private fun OverlayView(ctl: EditorController, clip: Clip, canvasW: Dp, canvasH:
     val current by rememberUpdatedState(clip)
     val w = canvasW * clip.scale
     val h = w / clip.aspect.coerceAtLeast(0.01f)
+    // Gestures are read before the rotation is applied, so drags follow the finger on screen.
     var modifier = Modifier
         .offset(x = canvasW * clip.posX - w / 2, y = canvasH * clip.posY - h / 2)
         .size(w, h)
         .pointerInput(clip.id) { detectTapGestures { ctl.select(current.id) } }
     if (clip.selected) {
-        modifier = modifier
-            .pointerInput(clip.id, canvasWPx, canvasHPx) {
-                // one finger drags, two fingers resize
-                detectTransformGestures { _, pan, zoom, _ ->
-                    val c = current
-                    ctl.transform(c.id, c.posX + pan.x / canvasWPx, c.posY + pan.y / canvasHPx, c.scale * zoom)
-                }
+        modifier = modifier.pointerInput(clip.id, canvasWPx, canvasHPx) {
+            // one finger drags; two fingers resize and rotate
+            detectTransformGestures { _, pan, zoom, rotation ->
+                val c = current
+                ctl.transform(
+                    c.id,
+                    c.posX + pan.x / canvasWPx,
+                    c.posY + pan.y / canvasHPx,
+                    c.scale * zoom,
+                    c.rotation + rotation,
+                )
             }
-            .border(2.dp, Accent)
+        }
     }
+    modifier = modifier.rotate(clip.rotation)
+    if (clip.selected) modifier = modifier.border(2.dp, Accent)
     Box(modifier) {
         if (clip.kind == MediaKind.IMAGE) {
             Thumb(

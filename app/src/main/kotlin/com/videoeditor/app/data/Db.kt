@@ -1,6 +1,7 @@
 package com.videoeditor.app.data
 
 import android.content.Context
+import androidx.room.ColumnInfo
 import androidx.room.Dao
 import androidx.room.Database
 import androidx.room.Entity
@@ -12,6 +13,8 @@ import androidx.room.Query
 import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.room.Transaction
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 import kotlinx.coroutines.flow.Flow
 
 @Entity(tableName = "projects")
@@ -55,6 +58,7 @@ data class ClipEntity(
     val posY: Float,
     val scale: Float,
     val selected: Boolean,
+    @ColumnInfo(defaultValue = "0") val rotation: Float = 0f,
 )
 
 /**
@@ -146,7 +150,7 @@ abstract class LibraryDao {
 
 @Database(
     entities = [ProjectEntity::class, ClipEntity::class, LibraryItemEntity::class],
-    version = 1,
+    version = 2,
     exportSchema = false,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -155,6 +159,15 @@ abstract class AppDatabase : RoomDatabase() {
 
     companion object {
         fun create(context: Context): AppDatabase =
-            Room.databaseBuilder(context, AppDatabase::class.java, "video_editor.db").build()
+            Room.databaseBuilder(context, AppDatabase::class.java, "video_editor.db")
+                .addMigrations(MIGRATION_1_2)
+                .build()
+
+        /** 0.7: clips can be rotated. Existing projects keep everything; rotation starts at 0. */
+        val MIGRATION_1_2 = object : Migration(1, 2) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE clips ADD COLUMN rotation REAL NOT NULL DEFAULT 0")
+            }
+        }
     }
 }

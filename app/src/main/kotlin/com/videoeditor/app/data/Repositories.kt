@@ -41,6 +41,7 @@ fun ClipEntity.toClip() = Clip(
     posY = posY,
     scale = scale,
     selected = selected,
+    rotation = rotation,
 )
 
 fun Clip.toEntity(projectId: Long) = ClipEntity(
@@ -63,6 +64,7 @@ fun Clip.toEntity(projectId: Long) = ClipEntity(
     posY = posY,
     scale = scale,
     selected = selected,
+    rotation = rotation,
 )
 
 /** Builds a clip that plays the whole of [info]. */

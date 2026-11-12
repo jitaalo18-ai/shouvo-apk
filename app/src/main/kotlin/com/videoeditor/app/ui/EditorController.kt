@@ -271,8 +271,11 @@ class EditorController(private val app: App, val projectId: Long, private val sc
     }
 
     /** Zoom / move the main video inside the frame (two-finger pinch in the preview). */
-    fun transformMain(id: String, x: Float, y: Float, zoom: Float) =
-        commitEdit(TimelineOps.transformMain(timeline, id, x, y, zoom), saveNow = false)
+    fun transformMain(id: String, x: Float, y: Float, zoom: Float, rotation: Float) =
+        commitEdit(TimelineOps.transformMain(timeline, id, x, y, zoom, rotation), saveNow = false)
+
+    /** Size of the rendered frame in pixels (used for the position read-out). */
+    val canvasPixels: Pair<Int, Int> get() = canvasSize(targetAspect)
 
     fun duplicateSelected() {
         val clip = timeline.selected ?: return
@@ -283,8 +286,8 @@ class EditorController(private val app: App, val projectId: Long, private val sc
         message = "$feature is not available yet. It is planned for a later version."
     }
 
-    fun transform(id: String, x: Float, y: Float, scale: Float) =
-        commitEdit(TimelineOps.transform(timeline, id, x, y, scale), saveNow = false)
+    fun transform(id: String, x: Float, y: Float, scale: Float, rotation: Float) =
+        commitEdit(TimelineOps.transform(timeline, id, x, y, scale, rotation), saveNow = false)
 
     fun move(id: String, startMs: Long) = commitEdit(TimelineOps.move(timeline, id, startMs), saveNow = false)
 

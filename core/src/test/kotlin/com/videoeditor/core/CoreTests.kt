@@ -167,6 +167,25 @@ class TimelineEditTests {
         assertEquals(t, TimelineOps.duplicate(t, "a", { "x" }))           // main clips are not duplicated here
     }
 
+    @Test fun rotationIsStoredNormalizedAndSurvivesSplitAndAutoCut() {
+        var t = TimelineOps.appendMain(Timeline(), listOf(video("a", 10_000)))
+        assertEquals(0f, t.byId("a")!!.rotation)
+        t = TimelineOps.transformMain(t, "a", 0.5f, 0.5f, 1.45f, 22f)
+        assertEquals(22f, t.byId("a")!!.rotation)
+        t = TimelineOps.transformMain(t, "a", 0.5f, 0.5f, 1.45f)                 // rotation untouched when not given
+        assertEquals(22f, t.byId("a")!!.rotation)
+        t = TimelineOps.split(t, "a", 5_000, { "a2" }).timeline
+        assertEquals(22f, t.byId("a2")!!.rotation)
+        t = TimelineOps.applyKeepRanges(t, "a", listOf(MsRange(0, 1_000), MsRange(2_000, 5_000)), Ids().next).timeline
+        assertTrue(t.main.all { it.rotation == 22f })
+        assertEquals(-170f, TimelineOps.normalizeAngle(190f), 1e-4f)
+        assertEquals(180f, TimelineOps.normalizeAngle(-180f), 1e-4f)
+        assertEquals(10f, TimelineOps.normalizeAngle(730f), 1e-3f)
+        t = TimelineOps.addClip(t, video("o", 2_000).copy(track = Track.OVERLAY))
+        t = TimelineOps.transform(t, "o", 0.5f, 0.5f, 0.4f, 400f)
+        assertEquals(40f, t.byId("o")!!.rotation, 1e-3f)
+    }
+
     @Test fun selectIsExclusive() {
         var t = TimelineOps.appendMain(Timeline(), listOf(video("a", 1_000), video("b", 1_000)))
         t = TimelineOps.select(t, "a"); t = TimelineOps.select(t, "b")
