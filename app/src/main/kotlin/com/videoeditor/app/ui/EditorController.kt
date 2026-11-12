@@ -11,6 +11,7 @@ import com.videoeditor.app.data.clipFrom
 import com.videoeditor.app.data.newClipId
 import com.videoeditor.app.media.AutoCutEngine
 import com.videoeditor.app.media.AutoCutOutcome
+import com.videoeditor.app.media.CanvasFormat
 import com.videoeditor.app.media.Exporter
 import com.videoeditor.app.media.MediaProbe
 import com.videoeditor.app.media.PlaybackController
@@ -53,10 +54,29 @@ class EditorController(private val app: App, val projectId: Long, private val sc
     private val saveLock = Mutex()
     private var pendingSave: Job? = null
 
-    /** Width / height of the output frame (set by the first main clip). */
+    // Output format (16:9, 9:16, 1:1 or the original shape). Stored per project in app preferences.
+    private val settings = app.getSharedPreferences("project_settings", android.content.Context.MODE_PRIVATE)
+    var format by mutableStateOf(
+        try {
+            CanvasFormat.valueOf(settings.getString("format_$projectId", null) ?: CanvasFormat.ORIGINAL.name)
+        } catch (e: Exception) {
+            CanvasFormat.ORIGINAL
+        },
+    )
+        private set
+
+    fun chooseFormat(value: CanvasFormat) {
+        format = value
+        settings.edit().putString("format_$projectId", value.name).apply()
+    }
+
+    private val targetAspect: Float
+        get() = format.ratio ?: timeline.main.firstOrNull()?.aspect ?: (16f / 9f)
+
+    /** Width / height of the output frame; the videos are fitted inside it. */
     val canvasAspect: Float
         get() {
-            val (w, h) = canvasSize(timeline.main.firstOrNull()?.aspect ?: (16f / 9f))
+            val (w, h) = canvasSize(targetAspect)
             return w.toFloat() / h
         }
 
@@ -271,7 +291,7 @@ class EditorController(private val app: App, val projectId: Long, private val sc
         busy = Busy("Rendering video…", 0f)
         scope.launch {
             try {
-                Exporter(app).export(timeline) { p -> busy = Busy("Rendering video…", p) }
+                Exporter(app).export(timeline, targetAspect) { p -> busy = Busy("Rendering video…", p) }
                 message = "Saved to Movies/VideoEditor in your Gallery."
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e

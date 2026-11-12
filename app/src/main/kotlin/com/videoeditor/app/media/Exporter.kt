@@ -44,6 +44,14 @@ import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 import kotlin.math.roundToInt
 
+/** Output format of a project. ORIGINAL follows the first clip of the main track. */
+enum class CanvasFormat(val label: String, val ratio: Float?) {
+    ORIGINAL("Original", null),
+    WIDE("16:9", 16f / 9f),
+    TALL("9:16", 9f / 16f),
+    SQUARE("1:1", 1f),
+}
+
 /** Output frame size for a project: short side 1080, long side at most 1920, even numbers. */
 fun canvasSize(aspect: Float): Pair<Int, Int> {
     val a = if (aspect.isFinite() && aspect > 0f) aspect else 16f / 9f
@@ -72,10 +80,10 @@ fun canvasSize(aspect: Float): Pair<Int, Int> {
  */
 class Exporter(private val context: Context) {
 
-    suspend fun export(timeline: Timeline, onProgress: (Float) -> Unit): Uri = withContext(Dispatchers.Main) {
+    suspend fun export(timeline: Timeline, aspect: Float, onProgress: (Float) -> Unit): Uri = withContext(Dispatchers.Main) {
         val main = timeline.main
         require(main.isNotEmpty()) { "Nothing to export" }
-        val (canvasW, canvasH) = canvasSize(main.first().aspect)
+        val (canvasW, canvasH) = canvasSize(aspect)
         val overlays = timeline.track(Track.OVERLAY).sortedBy { it.layer }
             .map { TimedOverlay(context, it, canvasW, canvasH) }
         val composition = buildComposition(timeline, canvasW, canvasH, overlays)

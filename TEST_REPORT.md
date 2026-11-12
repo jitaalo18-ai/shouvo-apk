@@ -1,4 +1,4 @@
-# Test report - v0.3 "Nock Nock V0.3" (2026-11-13)
+# Test report - v0.4 "Nock Nock V0.4" (2026-11-13)
 
 ## Executed
 
@@ -25,7 +25,8 @@ Audio in these tests is synthetic (harmonic "voice" plus noise). Real speech rec
 **Owner's phone (version 1.0.0, from screenshots)**
 - Project created, saved, listed and reopened later; Video FX library holds 8+ imported clips.
 
-The 0.3 layout, undo/redo and delete have not been run on a device yet.
+The 0.3 layout, undo/redo and delete, and the 0.4 format drop-down and import chooser, have not been
+run on a device yet.
 
 ## Not executed
 

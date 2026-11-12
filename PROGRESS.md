@@ -3,10 +3,10 @@
 Self-contained handoff. Another developer / AI account can continue from this file plus the source ZIP.
 Master spec: "ANDROID VIDEO EDITOR - DEVELOPMENT MASTER PROMPT V1" (Steps 1-12).
 
-PROJECT VERSION: 0.3 (versionCode 3), app name "Nock Nock", APK label "Nock Nock V0.3" - checkpoint 3, 2026-11-13
+PROJECT VERSION: 0.4 (versionCode 4), app name "Nock Nock", APK label "Nock Nock V0.4" - checkpoint 4, 2026-11-13
 VERSION RULE (set by the owner): versions go 0.2, 0.3, 0.4, 0.5 ... (never 3, 4, 5).
 For each new version change `versionName`/`versionCode` in app/build.gradle.kts and the label in
-release_label.txt (V0.4, V0.5 ...). History: 1.0.0 (first build) -> 0.2 "V2" -> 0.3.
+release_label.txt (V0.5, V0.6 ...). History: 1.0.0 (first build) -> 0.2 "V2" -> 0.3 -> 0.4.
 
 COMPLETED STEPS:
 - None are marked complete. Completion requires validation on an Android device, which has not happened.
@@ -47,6 +47,12 @@ IMPLEMENTED FEATURES (source written; "JVM-tested" = unit tests really executed)
 - NEW in 0.3 - PLACEHOLDER buttons, shown on the owner's request, no function yet (they show a
   "not available yet" message): Search, Effects, Adjust, Filters, Crop, Transform, Mirror, Cutout,
   Mask, Opacity, Replace, Copy, Duplicate, Green screen. "FHD" is a label only.
+- NEW in 0.4 - Video format drop-down next to Play: Original, 16:9, 9:16, 1:1. Changes the preview
+  canvas and the exported frame; clips are fitted inside (black bars where needed). Stored per project
+  in SharedPreferences ("project_settings"), not in Room, so no database migration was needed.
+- NEW in 0.4 - "Import from" chooser for New Project, Overlay, Video FX and Extract Music: Gallery
+  (Android photo picker) or Files & Google Drive (Storage Access Framework). Sound FX and Music
+  imports open the file picker directly (it lists phone audio and Google Drive).
 - Rendering: Export button -> Media3 Transformer composition (main sequence, one audio sequence per
   sound/music/overlay-audio clip, overlays as timed BitmapOverlay) -> Movies/VideoEditor.
 
@@ -57,6 +63,9 @@ DEVIATIONS FROM THE SPEC TO KNOW ABOUT:
 - Project and overlay media are referenced through persisted read permission, not copied (the spec
   requires copying only for the libraries). Deleting such an original from the phone breaks that clip.
 - Not added because nobody asked for it: delete project. (Delete clip and undo/redo arrived in 0.3.)
+
+FILES MODIFIED IN 0.4: media/Exporter.kt (CanvasFormat), ui/EditorController.kt, ui/EditorScreen.kt,
+ui/Common.kt (rememberMediaImporter), ui/ProjectsScreen.kt, app/build.gradle.kts, release_label.txt.
 
 FILES MODIFIED IN 0.3: ui/EditorScreen.kt, ui/EditorController.kt, ui/TimelineView.kt, core tests (27),
 app/build.gradle.kts, release_label.txt, docs/REFERENCE_FEATURES.md (added after 0.2).
@@ -122,4 +131,4 @@ BUILD STATUS: BUILT. GitHub Actions (repo jitaalo18-ai/shouvo-apk, run 432695964
 The debug APK has NOT been installed or run on any device yet.
 
 SOURCE ZIP / APK PATH IF AVAILABLE: source at https://github.com/jitaalo18-ai/shouvo-apk (main).
-APK: Nock_Nock_V0.3.apk on the v0.3 release of that repository (rebuilt on every push to main).
+APK: Nock_Nock_V0.4.apk on the v0.4 release of that repository (rebuilt on every push to main).

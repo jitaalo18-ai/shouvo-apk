@@ -61,6 +61,8 @@ import androidx.compose.material.icons.filled.TextFields
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -75,9 +77,11 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -103,6 +107,7 @@ import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import com.videoeditor.app.App
 import com.videoeditor.app.data.LibraryKind
+import com.videoeditor.app.media.CanvasFormat
 import com.videoeditor.core.Clip
 import com.videoeditor.core.MediaKind
 import com.videoeditor.core.TimelineOps
@@ -134,8 +139,11 @@ fun EditorScreen(app: App, projectId: Long, onBack: () -> Unit) {
         val kind = ctl.library
         if (kind != null) ctl.importToLibrary(kind, uris)
     }
-    val overlayPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        if (uri != null) ctl.addOverlay(uri)
+    val importOverlay = rememberMediaImporter(videoOnly = false, multiple = false) { uris ->
+        uris.firstOrNull()?.let { ctl.addOverlay(it) }
+    }
+    val importVideoFx = rememberMediaImporter(videoOnly = true, multiple = true) { uris ->
+        ctl.importToLibrary(LibraryKind.VIDEO_FX, uris)
     }
 
     val snackbar = remember { SnackbarHostState() }
@@ -198,6 +206,7 @@ fun EditorScreen(app: App, projectId: Long, onBack: () -> Unit) {
                         modifier = Modifier.size(34.dp),
                     )
                 }
+                FormatMenu(ctl)
                 Spacer(Modifier.weight(1f))
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Text(formatTime(position), fontSize = 14.sp, fontWeight = FontWeight.Medium)
@@ -241,7 +250,7 @@ fun EditorScreen(app: App, projectId: Long, onBack: () -> Unit) {
                             ToolButton(Icons.Filled.Movie, "Video FX") { ctl.library = LibraryKind.VIDEO_FX }
                             ToolButton(Icons.Filled.GraphicEq, "Sound FX") { ctl.library = LibraryKind.SOUND_FX }
                             ToolButton(Icons.Filled.MusicNote, "Music") { ctl.library = LibraryKind.MUSIC }
-                            ToolButton(Icons.Filled.Layers, "Overlay") { overlayPicker.launch(arrayOf("image/*", "video/*")) }
+                            ToolButton(Icons.Filled.Layers, "Overlay") { importOverlay() }
                             ToolButton(Icons.Filled.Delete, "Delete") { ctl.deleteSelected() }
                             // shown now, functions come in later versions
                             ToolButton(Icons.Filled.AutoAwesome, "Effects") { ctl.comingSoon("Effects") }
@@ -275,7 +284,7 @@ fun EditorScreen(app: App, projectId: Long, onBack: () -> Unit) {
             app = app,
             kind = kind,
             onDismiss = { ctl.library = null },
-            onAdd = { libraryPicker.launch(arrayOf(kind.mime)) },
+            onAdd = { if (kind == LibraryKind.VIDEO_FX) importVideoFx() else libraryPicker.launch(arrayOf(kind.mime)) },
             onInsert = { ctl.insertFromLibrary(kind, it) },
         )
     }
@@ -295,6 +304,42 @@ fun EditorScreen(app: App, projectId: Long, onBack: () -> Unit) {
                         CircularProgressIndicator()
                     }
                 }
+            }
+        }
+    }
+}
+
+/** Drop-down to switch the video format: original shape, 16:9, 9:16 or 1:1. */
+@Composable
+private fun FormatMenu(ctl: EditorController) {
+    var open by remember { mutableStateOf(false) }
+    Box {
+        Row(
+            Modifier
+                .clip(RoundedCornerShape(8.dp))
+                .background(Panel)
+                .clickable { open = true }
+                .padding(start = 10.dp, end = 4.dp, top = 6.dp, bottom = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(ctl.format.label, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+            Icon(Icons.Filled.ArrowDropDown, contentDescription = "Change video format")
+        }
+        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+            for (option in CanvasFormat.values()) {
+                DropdownMenuItem(
+                    text = {
+                        Text(
+                            option.label,
+                            fontWeight = if (option == ctl.format) FontWeight.Bold else FontWeight.Normal,
+                            color = if (option == ctl.format) Accent else Color.White,
+                        )
+                    },
+                    onClick = {
+                        open = false
+                        ctl.chooseFormat(option)
+                    },
+                )
             }
         }
     }

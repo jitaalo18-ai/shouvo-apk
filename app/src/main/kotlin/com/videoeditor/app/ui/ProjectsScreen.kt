@@ -1,7 +1,5 @@
 package com.videoeditor.app.ui
 
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -75,7 +73,7 @@ fun ProjectsScreen(app: App, onOpen: (Long) -> Unit) {
     var importing by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
 
-    val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
+    val importMedia = rememberMediaImporter(videoOnly = false, multiple = true) { uris ->
         if (uris.isNotEmpty()) {
             scope.launch {
                 importing = true
@@ -103,7 +101,8 @@ fun ProjectsScreen(app: App, onOpen: (Long) -> Unit) {
     var extractTarget by remember { mutableStateOf(LibraryKind.MUSIC) }
     var extractProgress by remember { mutableStateOf<Float?>(null) }
     var extractResult by remember { mutableStateOf<String?>(null) }
-    val musicPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+    val musicPicker = rememberMediaImporter(videoOnly = true, multiple = false) { uris ->
+        val uri = uris.firstOrNull()
         if (uri != null && extractProgress == null) {
             val target = extractTarget
             scope.launch {
@@ -136,7 +135,7 @@ fun ProjectsScreen(app: App, onOpen: (Long) -> Unit) {
         Text("Projects", fontSize = 28.sp, fontWeight = FontWeight.Bold)
         Spacer(Modifier.height(16.dp))
         Button(
-            onClick = { picker.launch(arrayOf("video/*", "image/*")) },
+            onClick = { importMedia() },
             enabled = !importing,
             shape = RoundedCornerShape(14.dp),
             contentPadding = PaddingValues(vertical = 18.dp),
@@ -195,14 +194,14 @@ fun ProjectsScreen(app: App, onOpen: (Long) -> Unit) {
                 TextButton(onClick = {
                     chooseTarget = false
                     extractTarget = LibraryKind.MUSIC
-                    musicPicker.launch(arrayOf("video/*"))
+                    musicPicker()
                 }) { Text("Background Music") }
             },
             dismissButton = {
                 TextButton(onClick = {
                     chooseTarget = false
                     extractTarget = LibraryKind.SOUND_FX
-                    musicPicker.launch(arrayOf("video/*"))
+                    musicPicker()
                 }) { Text("Sound FX") }
             },
         )
