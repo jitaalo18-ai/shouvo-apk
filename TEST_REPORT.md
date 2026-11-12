@@ -17,9 +17,13 @@ Audio in these tests is synthetic (harmonic "voice" plus noise). Real speech rec
 - Media3 calls checked against the 1.5.1 source (sequence builder/addGap, Composition builder, overlay classes, Transformer listener, Presentation).
 - Resource and manifest XML are well-formed.
 
+**Build (GitHub Actions, run 43269596434)**
+- `./gradlew :core:test` - passed.
+- `./gradlew :app:assembleDebug` - passed; debug APK produced.
+
 ## Not executed
 
-Gradle build, APK compilation, and every device check in Step 10:
+Every device check in Step 10 (the APK has not been installed or launched yet):
 
 | # | Step-10 check | Status |
 |---|---|---|

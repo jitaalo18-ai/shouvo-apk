@@ -62,11 +62,11 @@ TESTS ACTUALLY RUN (see TEST_REPORT.md):
 - 20 JUnit tests of the core module, compiled with kotlinc 2.0.21 and run on a desktop JVM: all pass.
 - Kotlin parser pass over all Android sources: 0 syntax errors (types could not be checked - no SDK).
 - Media3 1.5.1 method signatures used by Exporter/PlaybackController compared with the 1.5.1 source.
-- NOT run: Gradle build, APK compilation, anything on a device or emulator. All 15 Step-10 device
-  checks are still open.
+- Gradle build on GitHub Actions: core tests pass under Gradle, debug APK compiles.
+- NOT run: anything on a device or emulator. All 15 Step-10 device checks are still open.
 
 KNOWN BUGS / RISKS:
-- The Android module has never been compiled. Expect a small number of compile errors on first build.
+- The app compiles but has never been launched. Expect runtime bugs in first device testing.
 - Video overlays render slowly on export (one frame grab per output frame).
 - Dragging a sound/overlay clip across another one can move it to a different row and end the drag.
 - Preview transitions between many short AutoCut pieces may not be perfectly seamless.
@@ -74,16 +74,17 @@ KNOWN BUGS / RISKS:
 - Clips on other tracks do not shift when AutoCut shortens the main track.
 
 UNFINISHED TASKS:
-- First real build; fix compile errors.
 - Run every Step-10 check on a device and record results in TEST_REPORT.md.
 - Audio/Text/Voice/Links functions (spec: to be provided later).
 
 NEXT DEVELOPMENT STEP:
-1. Build (`./gradlew :core:test :app:assembleDebug`, or push to GitHub and let Actions build).
-2. Fix compile errors without changing behaviour; keep core tests green.
-3. Device-test in Step-10 order, starting with project create/reopen, Split, AutoCut.
+1. Install the APK and device-test in Step-10 order, starting with project create/reopen, Split, AutoCut.
+2. Fix what fails without changing other behaviour; keep core tests green; push to main to rebuild.
 
-BUILD STATUS: NOT BUILT. No Android SDK and no access to Google Maven in the authoring environment.
-No APK exists.
+BUILD STATUS: BUILT. GitHub Actions (repo jitaalo18-ai/shouvo-apk, run 43269596434, 2026-11-12) ran
+`./gradlew :core:test` and `./gradlew :app:assembleDebug` successfully with no source changes.
+The debug APK has NOT been installed or run on any device yet.
 
-SOURCE ZIP / APK PATH IF AVAILABLE: VideoEditor_v1.0.0_source.zip (source only). APK: none.
+SOURCE ZIP / APK PATH IF AVAILABLE: VideoEditor_v1.0.0_source.zip; source also at
+https://github.com/jitaalo18-ai/shouvo-apk . APK: VideoEditor_v1.0.0_debug.apk, attached to the
+v1.0.0 release of that repository (rebuilt on every push to main).
