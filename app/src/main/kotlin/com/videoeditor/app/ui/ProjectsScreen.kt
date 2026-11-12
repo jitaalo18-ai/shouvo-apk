@@ -21,7 +21,13 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.MusicNote
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Surface
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
@@ -39,12 +45,18 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import com.videoeditor.app.App
+import com.videoeditor.app.data.LibraryKind
 import com.videoeditor.app.data.ProjectEntity
+import com.videoeditor.app.media.ExtractOutcome
 import com.videoeditor.app.media.MediaProbe
+import com.videoeditor.app.media.MusicExtractor
 import com.videoeditor.core.Clip
 import com.videoeditor.core.MediaKind
 import kotlinx.coroutines.Dispatchers
@@ -86,6 +98,39 @@ fun ProjectsScreen(app: App, onOpen: (Long) -> Unit) {
         }
     }
 
+    // "Extract Music from Video": pick a library, pick a video, remove the voice, save the music.
+    var chooseTarget by remember { mutableStateOf(false) }
+    var extractTarget by remember { mutableStateOf(LibraryKind.MUSIC) }
+    var extractProgress by remember { mutableStateOf<Float?>(null) }
+    var extractResult by remember { mutableStateOf<String?>(null) }
+    val musicPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null && extractProgress == null) {
+            val target = extractTarget
+            scope.launch {
+                extractProgress = 0f
+                try {
+                    val file = app.library.newFile(target, "wav")
+                    val outcome = MusicExtractor.extract(context.applicationContext, uri, file) { extractProgress = it }
+                    extractResult = when (outcome) {
+                        is ExtractOutcome.Failed -> outcome.message
+                        ExtractOutcome.Saved -> {
+                            val base = withContext(Dispatchers.IO) { MediaProbe.displayName(context, uri) }
+                                .substringBeforeLast('.').ifEmpty { "Video" }
+                            val name = "$base (music)"
+                            if (app.library.addFile(target, name, file, "audio/wav")) {
+                                "Saved to ${target.title} as \"$name\". Open a project and tap ${target.title} to use it."
+                            } else {
+                                "The extracted music could not be saved."
+                            }
+                        }
+                    }
+                } finally {
+                    extractProgress = null
+                }
+            }
+        }
+    }
+
     Column(Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
         Spacer(Modifier.height(16.dp))
         Text("Projects", fontSize = 28.sp, fontWeight = FontWeight.Bold)
@@ -109,6 +154,18 @@ fun ProjectsScreen(app: App, onOpen: (Long) -> Unit) {
             Spacer(Modifier.height(8.dp))
             Text(it, color = Color(0xFFFF8A80), fontSize = 13.sp)
         }
+        Spacer(Modifier.height(10.dp))
+        OutlinedButton(
+            onClick = { chooseTarget = true },
+            enabled = extractProgress == null,
+            shape = RoundedCornerShape(14.dp),
+            contentPadding = PaddingValues(vertical = 14.dp),
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Icon(Icons.Filled.MusicNote, contentDescription = null)
+            Spacer(Modifier.width(8.dp))
+            Text("Extract Music from Video", fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+        }
         Spacer(Modifier.height(16.dp))
         if (projects.isEmpty()) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -121,6 +178,57 @@ fun ProjectsScreen(app: App, onOpen: (Long) -> Unit) {
                 }
             }
         }
+    }
+
+    if (chooseTarget) {
+        AlertDialog(
+            onDismissRequest = { chooseTarget = false },
+            title = { Text("Extract Music from Video") },
+            text = {
+                Text(
+                    "Pick a video. The voice is removed and only the background music is saved inside the app.\n\n" +
+                        "This works when the video has stereo sound with the voice in the middle. " +
+                        "It cannot separate voice and music in mono recordings.\n\nWhere should the music be saved?",
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    chooseTarget = false
+                    extractTarget = LibraryKind.MUSIC
+                    musicPicker.launch(arrayOf("video/*"))
+                }) { Text("Background Music") }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    chooseTarget = false
+                    extractTarget = LibraryKind.SOUND_FX
+                    musicPicker.launch(arrayOf("video/*"))
+                }) { Text("Sound FX") }
+            },
+        )
+    }
+
+    extractProgress?.let { p ->
+        Dialog(onDismissRequest = { }, properties = DialogProperties(dismissOnBackPress = false, dismissOnClickOutside = false)) {
+            Surface(shape = RoundedCornerShape(16.dp), color = Panel) {
+                Column(Modifier.padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text("Removing the voice and saving the music…", textAlign = TextAlign.Center)
+                    Spacer(Modifier.height(16.dp))
+                    LinearProgressIndicator(progress = { p }, modifier = Modifier.fillMaxWidth())
+                    Spacer(Modifier.height(8.dp))
+                    Text("${(p * 100).toInt()}%", fontSize = 12.sp, color = Color.Gray)
+                }
+            }
+        }
+    }
+
+    extractResult?.let { text ->
+        AlertDialog(
+            onDismissRequest = { extractResult = null },
+            title = { Text("Extract Music from Video") },
+            text = { Text(text) },
+            confirmButton = { TextButton(onClick = { extractResult = null }) { Text("OK") } },
+        )
     }
 }
 

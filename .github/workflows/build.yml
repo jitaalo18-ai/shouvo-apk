@@ -21,7 +21,7 @@ jobs:
         run: ./gradlew :app:assembleDebug
       - uses: actions/upload-artifact@v4
         with:
-          name: VideoEditor-debug-apk
+          name: NockNock-debug-apk
           path: app/build/outputs/apk/debug/*.apk
       - name: Publish APK as a release (direct download link)
         if: github.ref == 'refs/heads/main'
@@ -29,8 +29,9 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           VERSION=$(grep -oP 'versionName = "\K[^"]+' app/build.gradle.kts)
-          APK="VideoEditor_v${VERSION}_debug.apk"
+          LABEL=$(tr -d '[:space:]' < release_label.txt)
+          APK="Nock_Nock_${LABEL}.apk"
           cp app/build/outputs/apk/debug/app-debug.apk "$APK"
-          gh release create "v${VERSION}" "$APK" --title "Video Editor v${VERSION} (debug build)" \
-            --notes "Debug APK built by GitHub Actions run ${{ github.run_number }}. Not yet tested on a device." \
+          gh release create "v${VERSION}" "$APK" --title "Nock Nock ${LABEL}" \
+            --notes "Debug APK (version ${VERSION}) built by GitHub Actions run ${{ github.run_number }}." \
             || gh release upload "v${VERSION}" "$APK" --clobber

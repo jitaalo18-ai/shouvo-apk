@@ -25,6 +25,7 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.MusicNote
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
@@ -73,6 +74,9 @@ fun LibraryDialog(
     val items by remember(kind) { app.library.observe(kind) }.collectAsState(initial = emptyList())
     var renaming by remember { mutableStateOf<LibraryItemEntity?>(null) }
     var removing by remember { mutableStateOf<RemoveCheck?>(null) }
+    val searchable = kind == LibraryKind.VIDEO_FX || kind == LibraryKind.SOUND_FX
+    var query by remember(kind) { mutableStateOf("") }
+    val shown = if (query.isBlank()) items else items.filter { it.name.contains(query.trim(), ignoreCase = true) }
 
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Surface(Modifier.fillMaxSize(), color = Bg) {
@@ -93,17 +97,36 @@ fun LibraryDialog(
                     fontSize = 12.sp,
                     color = Color.Gray,
                 )
+                if (searchable && items.isNotEmpty()) {
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = query,
+                        onValueChange = { query = it },
+                        singleLine = true,
+                        placeholder = { Text("Search by name") },
+                        leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
+                        trailingIcon = {
+                            if (query.isNotEmpty()) {
+                                IconButton(onClick = { query = "" }) {
+                                    Icon(Icons.Filled.Close, contentDescription = "Clear search")
+                                }
+                            }
+                        },
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
                 Spacer(Modifier.height(10.dp))
-                if (items.isEmpty()) {
+                if (shown.isEmpty()) {
                     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        Text("Nothing saved yet.", color = Color.Gray)
+                        Text(if (items.isEmpty()) "Nothing saved yet." else "No item matches \"${query.trim()}\".", color = Color.Gray)
                     }
                 } else {
                     LazyColumn(
                         verticalArrangement = Arrangement.spacedBy(8.dp),
                         contentPadding = PaddingValues(bottom = 24.dp),
                     ) {
-                        items(items, key = { it.id }) { item ->
+                        items(shown, key = { it.id }) { item ->
                             LibraryRow(
                                 app = app,
                                 kind = kind,

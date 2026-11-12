@@ -1,4 +1,4 @@
-# Video Editor (Android) - v1.0.0 source
+# Nock Nock (Android video editor) - v0.2 source
 
 Native Android video editor: Kotlin, Jetpack Compose, Media3 (ExoPlayer + Transformer), Room.
 Read PROGRESS.md first - it is the current checkpoint. The debug APK builds on GitHub Actions but has not been device-tested yet.
@@ -9,7 +9,7 @@ Read PROGRESS.md first - it is the current checkpoint. The debug APK builds on G
 1. Create a new private repository on github.com.
 2. Upload the contents of this folder (keep the `.github` folder).
 3. Open the repository's **Actions** tab -> "Build debug APK" -> wait for it to finish.
-4. Download `VideoEditor-debug-apk` from the run's Artifacts and install the APK on your phone.
+4. Download the APK from the repository's Releases page and install the APK on your phone.
 If the run fails, copy the red error lines and send them back for a fix.
 
 **Option B - Android Studio (Windows PC)**

@@ -286,3 +286,105 @@ class AutoCutTests {
         }
     }
 }
+
+class VocalRemoverTests {
+    private val rate = 44100
+
+    private fun voice(n: Int): FloatArray = FloatArray(n) { i ->
+        val t = i.toDouble() / rate
+        var s = 0.0
+        for (h in 1..15) s += sin(2 * PI * 220.0 * h * t) / h
+        (0.2 * (0.6 + 0.4 * sin(2 * PI * 3.0 * t)) * s).toFloat()
+    }
+
+    /** Different instruments left and right, as in a normal stereo mix. */
+    private fun music(n: Int): Pair<FloatArray, FloatArray> {
+        val l = FloatArray(n) { i -> val t = i.toDouble() / rate; (0.2 * sin(2 * PI * 330.0 * t) + 0.12 * sin(2 * PI * 1245.0 * t)).toFloat() }
+        val r = FloatArray(n) { i -> val t = i.toDouble() / rate; (0.2 * sin(2 * PI * 495.0 * t) + 0.12 * sin(2 * PI * 2093.0 * t)).toFloat() }
+        return l to r
+    }
+
+    private class Out(n: Int) { val l = FloatArray(n); val r = FloatArray(n); var size = 0 }
+
+    private fun run(l: FloatArray, r: FloatArray): Pair<Out, VocalRemovalStatus> {
+        val vr = VocalRemover(rate)
+        val out = Out(l.size + 8192)
+        val sink = { a: FloatArray, b: FloatArray, c: Int ->
+            System.arraycopy(a, 0, out.l, out.size, c); System.arraycopy(b, 0, out.r, out.size, c); out.size += c
+        }
+        var i = 0
+        while (i < l.size) {                      // odd chunk size on purpose
+            val c = minOf(3001, l.size - i)
+            vr.process(l.copyOfRange(i, i + c), r.copyOfRange(i, i + c), c, sink); i += c
+        }
+        return out to vr.finish(sink)
+    }
+
+    private fun energy(a: FloatArray, from: Int, to: Int): Double { var s = 0.0; for (i in from until to) s += a[i] * a[i]; return s }
+    private fun db(x: Double) = 10 * kotlin.math.log10(x + 1e-30)
+
+    @Test fun centredVoiceIsRemovedAndSideMusicKept() {
+        val n = rate * 4
+        val v = voice(n); val (ml, mr) = music(n)
+        val (out, status) = run(FloatArray(n) { v[it] + ml[it] }, FloatArray(n) { v[it] + mr[it] })
+        assertEquals(VocalRemovalStatus.OK, status)
+        assertEquals(n, out.size)                                   // same length, aligned
+        val a = rate / 2; val b = n - rate / 2
+        var err = 0.0
+        for (i in a until b) { val dl = out.l[i] - ml[i]; val dr = out.r[i] - mr[i]; err += dl * dl + dr * dr }
+        val musicE = energy(ml, a, b) + energy(mr, a, b)
+        // what is left is the music: residual (leftover voice + lost music) at least 12 dB below it
+        assertTrue("residual ${db(err / musicE)} dB", db(err / musicE) < -12.0)
+    }
+
+    @Test fun voiceAloneIsStronglyReduced() {
+        val n = rate * 3
+        val v = voice(n)
+        // tiny uncorrelated hiss so the source is not perfectly mono
+        val rnd = Random(3)
+        val l = FloatArray(n) { v[it] + (rnd.nextGaussian() * 0.02).toFloat() }
+        val r = FloatArray(n) { v[it] + (rnd.nextGaussian() * 0.02).toFloat() }
+        val (out, _) = run(l, r)
+        val a = rate / 2; val b = n - rate / 2
+        val reduction = db((energy(out.l, a, b) + energy(out.r, a, b)) / (2 * energy(v, a, b)))
+        assertTrue("voice only reduced by $reduction dB", reduction < -15.0)
+    }
+
+    @Test fun pureStereoMusicPassesAlmostUnchanged() {
+        val n = rate * 3
+        val (ml, mr) = music(n)
+        val (out, status) = run(ml, mr)
+        assertEquals(VocalRemovalStatus.OK, status)
+        val a = rate / 2; val b = n - rate / 2
+        val change = db((energy(out.l, a, b) + energy(out.r, a, b)) / (energy(ml, a, b) + energy(mr, a, b)))
+        assertTrue("music level changed by $change dB", change > -1.5 && change < 0.5)
+    }
+
+    @Test fun centredBassIsKept() {
+        val n = rate * 3
+        val bass = FloatArray(n) { (0.3 * sin(2 * PI * 55.0 * it / rate)).toFloat() }
+        val (ml, mr) = music(n)
+        val (out, _) = run(FloatArray(n) { bass[it] + ml[it] }, FloatArray(n) { bass[it] + mr[it] })
+        val a = rate / 2; val b = n - rate / 2
+        var dot = 0.0
+        for (i in a until b) dot += out.l[i] * bass[i]
+        val kept = dot / energy(bass, a, b)                         // projection onto the bass tone
+        assertTrue("bass kept factor $kept", kept > 0.85)
+    }
+
+    @Test fun monoSourceIsReportedNotSaved() {
+        val n = rate * 2
+        val v = voice(n)
+        assertEquals(VocalRemovalStatus.MONO_SOURCE, run(v, v.copyOf()).second)
+        assertEquals(VocalRemovalStatus.EMPTY, VocalRemover(rate).finish { _, _, _ -> })
+        assertEquals(VocalRemovalStatus.EMPTY, run(FloatArray(rate), FloatArray(rate)).second)
+    }
+
+    @Test fun fftRoundTrip() {
+        val f = Fft(1024); val rnd = Random(1)
+        val re = FloatArray(1024) { rnd.nextFloat() - 0.5f }; val im = FloatArray(1024)
+        val orig = re.copyOf()
+        f.forward(re, im); f.inverse(re, im)
+        for (i in orig.indices) assertTrue(abs(re[i] - orig[i]) < 1e-4f && abs(im[i]) < 1e-4f)
+    }
+}

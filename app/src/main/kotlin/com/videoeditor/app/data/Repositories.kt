@@ -178,6 +178,33 @@ class LibraryRepository(private val context: Context, db: AppDatabase) {
         imported
     }
 
+    /** A new, empty file inside this library's private folder (for audio the app creates itself). */
+    fun newFile(kind: LibraryKind, extension: String): File =
+        File(dir(kind), "${System.currentTimeMillis()}_${UUID.randomUUID().toString().take(8)}.$extension")
+
+    /** Registers a file that already lies in the library folder (see [newFile]). */
+    suspend fun addFile(kind: LibraryKind, name: String, file: File, mimeType: String?): Boolean =
+        withContext(Dispatchers.IO) {
+            val info = MediaProbe.probe(context, Uri.fromFile(file))
+            if (info == null || info.durationMs <= 0) {
+                file.delete()
+                return@withContext false
+            }
+            dao.insert(
+                LibraryItemEntity(
+                    kind = kind.name,
+                    name = name,
+                    fileName = file.name,
+                    mimeType = mimeType,
+                    durationMs = info.durationMs,
+                    hasAudio = info.hasAudio,
+                    aspect = info.aspect,
+                    addedAt = System.currentTimeMillis(),
+                ),
+            )
+            true
+        }
+
     suspend fun rename(id: Long, name: String) {
         val clean = name.trim()
         if (clean.isNotEmpty()) dao.rename(id, clean)

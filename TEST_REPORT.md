@@ -1,14 +1,15 @@
-# Test report - v1.0.0 (2026-11-12)
+# Test report - v0.2 "Nock Nock V2" (2026-11-13)
 
 ## Executed
 
-**Core module unit tests - 20/20 passed** (desktop JVM 21, kotlinc 2.0.21, JUnit 4.13.2; not on Android)
+**Core module unit tests - 26/26 passed** (desktop JVM 21, kotlinc 2.0.21, JUnit 4.13.2; not on Android)
 
 | Area | Tests |
 |---|---|
 | Split | two independent clips; 200 random repeated splits keep total duration and exact timeline-to-source mapping; edge splits rejected; split of an already split clip |
 | Timeline | insert inside / at start / at end; overlays and sounds never change the main track; move, start/end adjustment, source limit; image overlay extension; overlapping clips get separate rows; exclusive selection |
 | AutoCut | speech found over background noise (not digital silence); silence removed while a 300 ms pause and word margins are kept; pieces joined in order with unchanged source mapping (A/V sync by construction); trimmed clip with decoder offset; pure silence, noise-only and no-audio leave the clip unchanged; continuous speech kept whole; empty/invalid keep list rejected; louder noise; 48 kHz stereo downsampling |
+| Voice removal (0.2) | centred voice removed while side-panned music stays (residual more than 12 dB below the music); voice alone reduced by more than 15 dB; pure stereo music changes less than 1.5 dB; centred bass kept; mono source reported instead of saved; output has the same length as the input |
 
 Audio in these tests is synthetic (harmonic "voice" plus noise). Real speech recordings have not been tested.
 
@@ -20,6 +21,9 @@ Audio in these tests is synthetic (harmonic "voice" plus noise). Real speech rec
 **Build (GitHub Actions, run 43269596434)**
 - `./gradlew :core:test` - passed.
 - `./gradlew :app:assembleDebug` - passed; debug APK produced.
+
+**Owner's phone (version 1.0.0, from screenshots)**
+- Project created, saved, listed and reopened later; Video FX library holds 8+ imported clips.
 
 ## Not executed
 

@@ -3,7 +3,10 @@
 Self-contained handoff. Another developer / AI account can continue from this file plus the source ZIP.
 Master spec: "ANDROID VIDEO EDITOR - DEVELOPMENT MASTER PROMPT V1" (Steps 1-12).
 
-PROJECT VERSION: 1.0.0 (versionCode 1) - checkpoint 1, 2026-11-12
+PROJECT VERSION: 0.2 (versionCode 2), app name "Nock Nock", APK label "Nock Nock V2" - checkpoint 2, 2026-11-13
+VERSION RULE (set by the owner): the next versions are 0.3, 0.4, 0.5 ... (never 3, 4, 5).
+For each new version change `versionName`/`versionCode` in app/build.gradle.kts and the label in
+release_label.txt (V0.3, V0.4 ...). Previous version: 1.0.0 (first build, 2026-11-12).
 
 COMPLETED STEPS:
 - None are marked complete. Completion requires validation on an Android device, which has not happened.
@@ -27,6 +30,14 @@ IMPLEMENTED FEATURES (source written; "JVM-tested" = unit tests really executed)
   library but its file is kept until no project references it (no broken media).
 - Step 8 Overlay: image/video overlay track, drag to move and pinch to resize in the preview, move /
   change start and end on the timeline, multiple overlays, remove overlay.
+- NEW in 0.2 - Search field in the Video FX and Sound FX libraries (filters by name).
+- NEW in 0.2 - "Extract Music from Video" button on the Projects screen: pick a video, the audio is
+  decoded on-device, the voice is removed (centre-channel removal, core/VocalRemover.kt), and the
+  remaining music is saved as WAV into the Background Music or Sound FX library (user chooses).
+  Needs stereo sound; mono sound is detected and reported, nothing is saved. JVM-tested on synthetic
+  stereo audio only; not yet tried on a device.
+- NEW in 0.2 - fixed debug signing key (app/debug.keystore) so later versions install as updates.
+  0.2 itself has a different signature than 1.0.0, so 1.0.0 must be uninstalled once.
 - Rendering: Export button -> Media3 Transformer composition (main sequence, one audio sequence per
   sound/music/overlay-audio clip, overlays as timed BitmapOverlay) -> Movies/VideoEditor.
 
@@ -38,7 +49,15 @@ DEVIATIONS FROM THE SPEC TO KNOW ABOUT:
   requires copying only for the libraries). Deleting such an original from the phone breaks that clip.
 - Not added because the spec does not list them: delete project, delete main/sound/music clips, undo.
 
-FILES CREATED OR MODIFIED (all new in this version):
+FILES CREATED OR MODIFIED IN 0.2:
+- core/.../VocalRemover.kt (new: voice removal + FFT), core tests extended (26 tests)
+- app/.../media/MusicExtractor.kt (new: decode -> VocalRemover -> WAV)
+- app/.../data/Repositories.kt (newFile/addFile for app-generated library audio)
+- app/.../ui/ProjectsScreen.kt (Extract Music button + dialogs), ui/LibraryDialog.kt (search)
+- app/build.gradle.kts (version 0.2, signing), app/debug.keystore, res/values/strings.xml (name)
+- release_label.txt, .github/workflows/build.yml (APK name Nock_Nock_<label>.apk, release per version)
+
+FILES FROM 1.0.0 (unchanged unless listed above):
 - settings.gradle.kts, build.gradle.kts, gradle.properties, gradlew, gradlew.bat, gradle/wrapper/*
 - .github/workflows/build.yml (builds the debug APK on GitHub)
 - core/build.gradle.kts
@@ -59,7 +78,10 @@ FILES CREATED OR MODIFIED (all new in this version):
   LibraryDialog.kt
 
 TESTS ACTUALLY RUN (see TEST_REPORT.md):
-- 20 JUnit tests of the core module, compiled with kotlinc 2.0.21 and run on a desktop JVM: all pass.
+- 26 JUnit tests of the core module (20 from 1.0.0 + 6 for voice removal) run on a desktop JVM: all pass.
+- Owner's phone, version 1.0.0 (screenshots 2026-11-13): Projects screen lists a saved project that
+  was edited later; Video FX library shows 8+ imported clips with thumbnails and names. No other
+  device results reported yet.
 - Kotlin parser pass over all Android sources: 0 syntax errors (types could not be checked - no SDK).
 - Media3 1.5.1 method signatures used by Exporter/PlaybackController compared with the 1.5.1 source.
 - Gradle build on GitHub Actions: core tests pass under Gradle, debug APK compiles.
@@ -67,6 +89,8 @@ TESTS ACTUALLY RUN (see TEST_REPORT.md):
 
 KNOWN BUGS / RISKS:
 - The app compiles but has never been launched. Expect runtime bugs in first device testing.
+- Voice removal cannot work on mono sound, and it also lowers instruments mixed exactly in the centre.
+- Extracted music is stored as WAV (about 10 MB per minute).
 - Video overlays render slowly on export (one frame grab per output frame).
 - Dragging a sound/overlay clip across another one can move it to a different row and end the drag.
 - Preview transitions between many short AutoCut pieces may not be perfectly seamless.
@@ -85,6 +109,5 @@ BUILD STATUS: BUILT. GitHub Actions (repo jitaalo18-ai/shouvo-apk, run 432695964
 `./gradlew :core:test` and `./gradlew :app:assembleDebug` successfully with no source changes.
 The debug APK has NOT been installed or run on any device yet.
 
-SOURCE ZIP / APK PATH IF AVAILABLE: VideoEditor_v1.0.0_source.zip; source also at
-https://github.com/jitaalo18-ai/shouvo-apk . APK: VideoEditor_v1.0.0_debug.apk, attached to the
-v1.0.0 release of that repository (rebuilt on every push to main).
+SOURCE ZIP / APK PATH IF AVAILABLE: source at https://github.com/jitaalo18-ai/shouvo-apk (main).
+APK: Nock_Nock_V2.apk on the v0.2 release of that repository (rebuilt on every push to main).
