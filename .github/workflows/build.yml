@@ -23,7 +23,7 @@ jobs:
         with:
           name: NockNock-debug-apk
           path: app/build/outputs/apk/debug/*.apk
-      - name: Publish APK as a release (direct download link)
+      - name: Publish APK and source ZIP as a release (direct download links)
         if: github.ref == 'refs/heads/main'
         env:
           GH_TOKEN: ${{ github.token }}
@@ -31,7 +31,9 @@ jobs:
           VERSION=$(grep -oP 'versionName = "\K[^"]+' app/build.gradle.kts)
           LABEL=$(tr -d '[:space:]' < release_label.txt)
           APK="Nock_Nock_${LABEL}.apk"
+          SRC="Nock_Nock_${LABEL}_source.zip"
           cp app/build/outputs/apk/debug/app-debug.apk "$APK"
-          gh release create "v${VERSION}" "$APK" --title "Nock Nock ${LABEL}" \
-            --notes "Debug APK (version ${VERSION}) built by GitHub Actions run ${{ github.run_number }}." \
-            || gh release upload "v${VERSION}" "$APK" --clobber
+          git archive --format=zip --prefix="NockNock_${LABEL}_source/" -o "$SRC" HEAD
+          gh release create "v${VERSION}" "$APK" "$SRC" --title "Nock Nock ${LABEL}" \
+            --notes "Debug APK and source code (version ${VERSION}) built by GitHub Actions run ${{ github.run_number }}." \
+            || gh release upload "v${VERSION}" "$APK" "$SRC" --clobber

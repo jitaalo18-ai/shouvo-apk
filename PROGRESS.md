@@ -10,6 +10,8 @@ release_label.txt (V0.7, V0.8 ...). History: 1.0.0 (first build) -> 0.2 "V2" -> 
 
 STANDING RULES FROM THE OWNER (apply to every version without being asked again):
 1. Every APK delivery comes together with the project source code ZIP of the same version.
+   Give BOTH as direct download links (the build publishes Nock_Nock_<label>.apk and
+   Nock_Nock_<label>_source.zip on the GitHub release of each version).
 2. Use the Instagram "Edits" app as the reference for how the editor looks and behaves (preview,
    overlay, gestures); keep an original design - no copied branding or assets.
 3. Deliver the APK as a direct file. Report honestly what was and was not tested.
