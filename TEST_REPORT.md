@@ -1,8 +1,8 @@
-# Test report - v0.2 "Nock Nock V2" (2026-11-13)
+# Test report - v0.3 "Nock Nock V0.3" (2026-11-13)
 
 ## Executed
 
-**Core module unit tests - 26/26 passed** (desktop JVM 21, kotlinc 2.0.21, JUnit 4.13.2; not on Android)
+**Core module unit tests - 27/27 passed** (desktop JVM 21, kotlinc 2.0.21, JUnit 4.13.2; not on Android)
 
 | Area | Tests |
 |---|---|
@@ -24,6 +24,8 @@ Audio in these tests is synthetic (harmonic "voice" plus noise). Real speech rec
 
 **Owner's phone (version 1.0.0, from screenshots)**
 - Project created, saved, listed and reopened later; Video FX library holds 8+ imported clips.
+
+The 0.3 layout, undo/redo and delete have not been run on a device yet.
 
 ## Not executed
 

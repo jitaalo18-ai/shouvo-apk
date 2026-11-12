@@ -53,7 +53,7 @@ import kotlin.math.ceil
 import kotlin.math.floor
 import kotlin.math.roundToInt
 
-private val MAIN_HEIGHT = 56.dp
+private val MAIN_HEIGHT = 64.dp
 private val LANE_HEIGHT = 30.dp
 
 /**
@@ -108,16 +108,16 @@ fun TimelineView(ctl: EditorController, position: Long, modifier: Modifier = Mod
                 Modifier.width(contentWidth).padding(vertical = 8.dp),
                 verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
+                // overlays, sound effects and music sit above the main video track
+                FreeTrack(ctl, timeline.track(Track.OVERLAY), OverlayColor, pxPerMs)
+                FreeTrack(ctl, timeline.track(Track.SFX), SfxColor, pxPerMs)
+                FreeTrack(ctl, timeline.track(Track.MUSIC), MusicColor, pxPerMs)
                 // main video track
                 Row(Modifier.height(MAIN_HEIGHT)) {
                     for (clip in timeline.main) {
                         key(clip.id) { MainClipView(ctl, clip, pxPerMs, scroll, viewportPx) }
                     }
                 }
-                // overlay track(s), then sound effects, then background music
-                FreeTrack(ctl, timeline.track(Track.OVERLAY), OverlayColor, pxPerMs)
-                FreeTrack(ctl, timeline.track(Track.SFX), SfxColor, pxPerMs)
-                FreeTrack(ctl, timeline.track(Track.MUSIC), MusicColor, pxPerMs)
             }
             Spacer(Modifier.width(half))
         }
@@ -163,7 +163,16 @@ private fun MainClipView(ctl: EditorController, clip: Clip, pxPerMs: Float, scro
             }
         }
         if (clip.selected) {
-            Box(Modifier.matchParentSize().border(2.dp, Color.White, RoundedCornerShape(6.dp)))
+            Box(Modifier.matchParentSize().border(3.dp, Accent, RoundedCornerShape(6.dp)))
+            Text(
+                String.format(java.util.Locale.US, "%.1fs", clip.durationMs / 1000f),
+                fontSize = 11.sp,
+                color = Color.White,
+                modifier = Modifier
+                    .padding(start = 6.dp, top = 5.dp)
+                    .background(Color(0x99000000), RoundedCornerShape(4.dp))
+                    .padding(horizontal = 4.dp, vertical = 1.dp),
+            )
         }
     }
 }

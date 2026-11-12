@@ -9,6 +9,8 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectTransformGestures
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -24,7 +26,26 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.automirrored.filled.Redo
+import androidx.compose.material.icons.automirrored.filled.Undo
+import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.Crop
+import androidx.compose.material.icons.filled.FileCopy
+import androidx.compose.material.icons.filled.Flip
+import androidx.compose.material.icons.filled.Opacity
+import androidx.compose.material.icons.filled.OpenWith
+import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.PhotoFilter
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.SwapHoriz
+import androidx.compose.material.icons.filled.Tune
+import androidx.compose.material.icons.filled.Vignette
+import androidx.compose.material.icons.filled.Wallpaper
 import androidx.compose.material.icons.filled.AutoFixHigh
 import androidx.compose.material.icons.filled.ContentCut
 import androidx.compose.material.icons.filled.Delete
@@ -38,6 +59,7 @@ import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.TextFields
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -127,19 +149,35 @@ fun EditorScreen(app: App, projectId: Long, onBack: () -> Unit) {
 
     Box(Modifier.fillMaxSize().background(Bg)) {
         Column(Modifier.fillMaxSize()) {
-            // top bar
+            // top bar: close, project name, quality label, export
             Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                 IconButton(onClick = onBack) {
-                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back to projects")
+                    Icon(Icons.Filled.Close, contentDescription = "Close project")
                 }
-                Text(
-                    ctl.projectName,
-                    modifier = Modifier.weight(1f),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    fontWeight = FontWeight.SemiBold,
-                )
-                Button(onClick = { ctl.export() }, enabled = ctl.loaded && ctl.busy == null) { Text("Export") }
+                Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        ctl.projectName,
+                        modifier = Modifier.weight(1f, fill = false),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    Icon(Icons.Filled.ArrowDropDown, contentDescription = null, tint = Color.Gray)
+                }
+                IconButton(onClick = { ctl.comingSoon("Search") }) {
+                    Icon(Icons.Filled.Search, contentDescription = "Search")
+                }
+                Text("FHD", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                Spacer(Modifier.width(10.dp))
+                Button(
+                    onClick = { ctl.export() },
+                    enabled = ctl.loaded && ctl.busy == null,
+                    shape = RoundedCornerShape(12.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = Color.White, contentColor = Color.Black),
+                ) {
+                    Text("Export", fontWeight = FontWeight.SemiBold)
+                    Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null, modifier = Modifier.size(18.dp))
+                }
                 Spacer(Modifier.width(8.dp))
             }
 
@@ -148,13 +186,11 @@ fun EditorScreen(app: App, projectId: Long, onBack: () -> Unit) {
                 if (ctl.loaded) PreviewCanvas(ctl, position)
             }
 
-            // play / pause + time
+            // transport row: play on the left, time in the middle, undo / redo on the right
             Row(
-                Modifier.fillMaxWidth().padding(horizontal = 12.dp),
+                Modifier.fillMaxWidth().padding(horizontal = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text(formatTime(position), fontSize = 12.sp, color = Color.LightGray, modifier = Modifier.width(72.dp))
-                Spacer(Modifier.weight(1f))
                 IconButton(onClick = { ctl.player.toggle() }) {
                     Icon(
                         if (playing) Icons.Filled.Pause else Icons.Filled.PlayArrow,
@@ -163,13 +199,17 @@ fun EditorScreen(app: App, projectId: Long, onBack: () -> Unit) {
                     )
                 }
                 Spacer(Modifier.weight(1f))
-                Text(
-                    formatTime(ctl.timeline.durationMs),
-                    fontSize = 12.sp,
-                    color = Color.Gray,
-                    textAlign = TextAlign.End,
-                    modifier = Modifier.width(72.dp),
-                )
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(formatTime(position), fontSize = 14.sp, fontWeight = FontWeight.Medium)
+                    Text(formatTime(ctl.timeline.durationMs), fontSize = 12.sp, color = Color.Gray)
+                }
+                Spacer(Modifier.weight(1f))
+                IconButton(onClick = { ctl.undo() }, enabled = ctl.canUndo) {
+                    Icon(Icons.AutoMirrored.Filled.Undo, contentDescription = "Undo")
+                }
+                IconButton(onClick = { ctl.redo() }, enabled = ctl.canRedo) {
+                    Icon(Icons.AutoMirrored.Filled.Redo, contentDescription = "Redo")
+                }
             }
 
             // timeline
@@ -177,28 +217,49 @@ fun EditorScreen(app: App, projectId: Long, onBack: () -> Unit) {
 
             // toolbars
             val selected = ctl.timeline.selected
-            Row(
-                Modifier.fillMaxWidth().background(Panel).padding(vertical = 6.dp),
-                horizontalArrangement = Arrangement.SpaceEvenly,
-            ) {
-                when (selected?.track) {
-                    Track.MAIN -> {
-                        ToolButton(Icons.Filled.ContentCut, "Split") { ctl.split() }
-                        ToolButton(Icons.Filled.AutoFixHigh, "AutoCut\nRemove Silence") { ctl.autoCut() }
-                        ToolButton(Icons.Filled.Movie, "Video FX") { ctl.library = LibraryKind.VIDEO_FX }
-                        ToolButton(Icons.Filled.GraphicEq, "Sound FX") { ctl.library = LibraryKind.SOUND_FX }
-                        ToolButton(Icons.Filled.MusicNote, "Background\nMusic") { ctl.library = LibraryKind.MUSIC }
-                        ToolButton(Icons.Filled.Layers, "Overlay") { overlayPicker.launch(arrayOf("image/*", "video/*")) }
+            if (selected == null) {
+                Row(
+                    Modifier.fillMaxWidth().background(Panel).padding(vertical = 6.dp),
+                    horizontalArrangement = Arrangement.SpaceEvenly,
+                ) {
+                    // Visible buttons only; their functions are specified later.
+                    ToolButton(Icons.Filled.GraphicEq, "Audio") { }
+                    ToolButton(Icons.Filled.TextFields, "Text") { }
+                    ToolButton(Icons.Filled.Mic, "Voice") { }
+                    ToolButton(Icons.Filled.Link, "Links") { }
+                }
+            } else {
+                Row(Modifier.fillMaxWidth().background(Panel).padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(onClick = { ctl.select(null) }) {
+                        Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, contentDescription = "Back", modifier = Modifier.size(30.dp))
                     }
-                    Track.OVERLAY -> {
-                        ToolButton(Icons.Filled.Delete, "Remove\nOverlay") { ctl.removeSelectedOverlay() }
-                    }
-                    else -> {
-                        // Visible buttons only; their functions are specified later.
-                        ToolButton(Icons.Filled.GraphicEq, "Audio") { }
-                        ToolButton(Icons.Filled.TextFields, "Text") { }
-                        ToolButton(Icons.Filled.Mic, "Voice") { }
-                        ToolButton(Icons.Filled.Link, "Links") { }
+                    Row(Modifier.weight(1f).horizontalScroll(rememberScrollState())) {
+                        if (selected.track == Track.MAIN) {
+                            // working tools
+                            ToolButton(Icons.Filled.ContentCut, "Split") { ctl.split() }
+                            ToolButton(Icons.Filled.AutoFixHigh, "AutoCut") { ctl.autoCut() }
+                            ToolButton(Icons.Filled.Movie, "Video FX") { ctl.library = LibraryKind.VIDEO_FX }
+                            ToolButton(Icons.Filled.GraphicEq, "Sound FX") { ctl.library = LibraryKind.SOUND_FX }
+                            ToolButton(Icons.Filled.MusicNote, "Music") { ctl.library = LibraryKind.MUSIC }
+                            ToolButton(Icons.Filled.Layers, "Overlay") { overlayPicker.launch(arrayOf("image/*", "video/*")) }
+                            ToolButton(Icons.Filled.Delete, "Delete") { ctl.deleteSelected() }
+                            // shown now, functions come in later versions
+                            ToolButton(Icons.Filled.AutoAwesome, "Effects") { ctl.comingSoon("Effects") }
+                            ToolButton(Icons.Filled.Tune, "Adjust") { ctl.comingSoon("Adjust") }
+                            ToolButton(Icons.Filled.PhotoFilter, "Filters") { ctl.comingSoon("Filters") }
+                            ToolButton(Icons.Filled.Crop, "Crop") { ctl.comingSoon("Crop") }
+                            ToolButton(Icons.Filled.OpenWith, "Transform") { ctl.comingSoon("Transform") }
+                            ToolButton(Icons.Filled.Flip, "Mirror") { ctl.comingSoon("Mirror") }
+                            ToolButton(Icons.Filled.Person, "Cutout") { ctl.comingSoon("Cutout") }
+                            ToolButton(Icons.Filled.Vignette, "Mask") { ctl.comingSoon("Mask") }
+                            ToolButton(Icons.Filled.Opacity, "Opacity") { ctl.comingSoon("Opacity") }
+                            ToolButton(Icons.Filled.SwapHoriz, "Replace") { ctl.comingSoon("Replace") }
+                            ToolButton(Icons.Filled.ContentCopy, "Copy") { ctl.comingSoon("Copy") }
+                            ToolButton(Icons.Filled.FileCopy, "Duplicate") { ctl.comingSoon("Duplicate") }
+                            ToolButton(Icons.Filled.Wallpaper, "Green screen") { ctl.comingSoon("Green screen") }
+                        } else {
+                            ToolButton(Icons.Filled.Delete, "Delete") { ctl.deleteSelected() }
+                        }
                     }
                 }
             }
@@ -242,12 +303,12 @@ fun EditorScreen(app: App, projectId: Long, onBack: () -> Unit) {
 @Composable
 private fun ToolButton(icon: ImageVector, label: String, onClick: () -> Unit) {
     Column(
-        Modifier.clip(RoundedCornerShape(8.dp)).clickable(onClick = onClick).padding(horizontal = 6.dp, vertical = 4.dp),
+        Modifier.width(72.dp).clip(RoundedCornerShape(8.dp)).clickable(onClick = onClick).padding(horizontal = 4.dp, vertical = 4.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Icon(icon, contentDescription = null, modifier = Modifier.size(22.dp))
         Spacer(Modifier.height(2.dp))
-        Text(label, fontSize = 10.sp, lineHeight = 12.sp, textAlign = TextAlign.Center)
+        Text(label, fontSize = 11.sp, lineHeight = 13.sp, textAlign = TextAlign.Center, maxLines = 1, color = Color.LightGray)
     }
 }
 

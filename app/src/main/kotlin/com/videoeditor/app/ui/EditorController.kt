@@ -71,10 +71,51 @@ class EditorController(private val app: App, val projectId: Long, private val sc
         }
     }
 
-    private fun commitEdit(t: Timeline, saveNow: Boolean = true) {
+    // ---- Undo / redo ---------------------------------------------------------------------
+    private val undoStack = ArrayDeque<Timeline>()
+    private val redoStack = ArrayDeque<Timeline>()
+    private var dragOpen = false
+    var canUndo by mutableStateOf(false)
+        private set
+    var canRedo by mutableStateOf(false)
+        private set
+
+    private fun commitEdit(t: Timeline, saveNow: Boolean = true, undoable: Boolean = true) {
+        if (undoable && t != timeline) {
+            // a whole drag (many small changes) counts as one undo step
+            if (saveNow || !dragOpen) {
+                undoStack.addLast(timeline)
+                if (undoStack.size > 50) undoStack.removeFirst()
+            }
+            dragOpen = !saveNow
+            redoStack.clear()
+            canUndo = true
+            canRedo = false
+        }
         timeline = t
         player.setTimeline(t)
         if (saveNow) save() else saveSoon()
+    }
+
+    private fun restore(t: Timeline) {
+        dragOpen = false
+        timeline = t
+        player.setTimeline(t)
+        canUndo = undoStack.isNotEmpty()
+        canRedo = redoStack.isNotEmpty()
+        save()
+    }
+
+    fun undo() {
+        if (busy != null || undoStack.isEmpty()) return
+        redoStack.addLast(timeline)
+        restore(undoStack.removeLast())
+    }
+
+    fun redo() {
+        if (busy != null || redoStack.isEmpty()) return
+        undoStack.addLast(timeline)
+        restore(redoStack.removeLast())
     }
 
     /** Saves the latest timeline. Runs on the app scope so it finishes even if the screen closes. */
@@ -92,6 +133,7 @@ class EditorController(private val app: App, val projectId: Long, private val sc
         pendingSave?.cancel()
         pendingSave = scope.launch {
             delay(400)
+            dragOpen = false
             save()
         }
     }
@@ -99,7 +141,7 @@ class EditorController(private val app: App, val projectId: Long, private val sc
     fun select(id: String?) {
         val target = if (id != null && timeline.selected?.id == id) null else id
         if (target == null && timeline.selected == null) return
-        commitEdit(TimelineOps.select(timeline, target))
+        commitEdit(TimelineOps.select(timeline, target), undoable = false)
     }
 
     // ---- Step 3: Split -------------------------------------------------------------------
@@ -198,9 +240,18 @@ class EditorController(private val app: App, val projectId: Long, private val sc
         }
     }
 
-    fun removeSelectedOverlay() {
+    /** Deletes the selected clip (any track). The last main clip cannot be deleted. */
+    fun deleteSelected() {
         val clip = timeline.selected ?: return
-        if (clip.track == Track.OVERLAY) commitEdit(TimelineOps.remove(timeline, clip.id))
+        if (clip.track == Track.MAIN && timeline.main.size <= 1) {
+            message = "A project needs at least one clip on the main track."
+            return
+        }
+        commitEdit(TimelineOps.remove(timeline, clip.id))
+    }
+
+    fun comingSoon(feature: String) {
+        message = "$feature is not available yet. It is planned for a later version."
     }
 
     fun transform(id: String, x: Float, y: Float, scale: Float) =

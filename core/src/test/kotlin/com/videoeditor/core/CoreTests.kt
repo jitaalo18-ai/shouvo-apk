@@ -138,6 +138,14 @@ class TimelineEditTests {
         assertEquals(4_000, t.byId("i")!!.timelineStartMs); assertEquals(9_000, t.byId("i")!!.timelineEndMs)
     }
 
+    @Test fun deletingMainClipClosesTheGap() {
+        var t = TimelineOps.appendMain(Timeline(), listOf(video("a", 4_000), video("b", 3_000), video("c", 2_000)))
+        t = TimelineOps.remove(t, "b")
+        assertEquals(listOf("a", "c"), t.main.map { it.id })
+        assertEquals(4_000, t.byId("c")!!.timelineStartMs); assertEquals(6_000, t.durationMs)
+        assertContiguous(t)
+    }
+
     @Test fun selectIsExclusive() {
         var t = TimelineOps.appendMain(Timeline(), listOf(video("a", 1_000), video("b", 1_000)))
         t = TimelineOps.select(t, "a"); t = TimelineOps.select(t, "b")

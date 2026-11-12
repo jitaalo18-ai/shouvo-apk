@@ -15,8 +15,8 @@ android {
         applicationId = "com.videoeditor.app"
         minSdk = 29
         targetSdk = 35
-        versionCode = 2
-        versionName = "0.2"
+        versionCode = 3
+        versionName = "0.3"
     }
 
     // Fixed debug key kept in the repository so every build has the same signature and a new

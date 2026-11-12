@@ -3,10 +3,10 @@
 Self-contained handoff. Another developer / AI account can continue from this file plus the source ZIP.
 Master spec: "ANDROID VIDEO EDITOR - DEVELOPMENT MASTER PROMPT V1" (Steps 1-12).
 
-PROJECT VERSION: 0.2 (versionCode 2), app name "Nock Nock", APK label "Nock Nock V2" - checkpoint 2, 2026-11-13
-VERSION RULE (set by the owner): the next versions are 0.3, 0.4, 0.5 ... (never 3, 4, 5).
+PROJECT VERSION: 0.3 (versionCode 3), app name "Nock Nock", APK label "Nock Nock V0.3" - checkpoint 3, 2026-11-13
+VERSION RULE (set by the owner): versions go 0.2, 0.3, 0.4, 0.5 ... (never 3, 4, 5).
 For each new version change `versionName`/`versionCode` in app/build.gradle.kts and the label in
-release_label.txt (V0.3, V0.4 ...). Previous version: 1.0.0 (first build, 2026-11-12).
+release_label.txt (V0.4, V0.5 ...). History: 1.0.0 (first build) -> 0.2 "V2" -> 0.3.
 
 COMPLETED STEPS:
 - None are marked complete. Completion requires validation on an Android device, which has not happened.
@@ -38,6 +38,15 @@ IMPLEMENTED FEATURES (source written; "JVM-tested" = unit tests really executed)
   stereo audio only; not yet tried on a device.
 - NEW in 0.2 - fixed debug signing key (app/debug.keystore) so later versions install as updates.
   0.2 itself has a different signature than 1.0.0, so 1.0.0 must be uninstalled once.
+- NEW in 0.3 - Editor layout rearranged after the owner's reference screenshot (original colours and
+  icons): top bar (close, project name, search, FHD label, Export), transport row (play, current/total
+  time, undo, redo), overlay/sound/music tracks ABOVE the main video track, duration label on the
+  selected clip, horizontally scrolling tool row with a back arrow.
+- NEW in 0.3 - Working: Undo/Redo (50 steps, per editing session), Delete for any selected clip
+  (the last main clip is protected).
+- NEW in 0.3 - PLACEHOLDER buttons, shown on the owner's request, no function yet (they show a
+  "not available yet" message): Search, Effects, Adjust, Filters, Crop, Transform, Mirror, Cutout,
+  Mask, Opacity, Replace, Copy, Duplicate, Green screen. "FHD" is a label only.
 - Rendering: Export button -> Media3 Transformer composition (main sequence, one audio sequence per
   sound/music/overlay-audio clip, overlays as timed BitmapOverlay) -> Movies/VideoEditor.
 
@@ -47,7 +56,10 @@ DEVIATIONS FROM THE SPEC TO KNOW ABOUT:
 - minSdk is 29 (Android 10) so export can save to the Gallery without a storage permission.
 - Project and overlay media are referenced through persisted read permission, not copied (the spec
   requires copying only for the libraries). Deleting such an original from the phone breaks that clip.
-- Not added because the spec does not list them: delete project, delete main/sound/music clips, undo.
+- Not added because nobody asked for it: delete project. (Delete clip and undo/redo arrived in 0.3.)
+
+FILES MODIFIED IN 0.3: ui/EditorScreen.kt, ui/EditorController.kt, ui/TimelineView.kt, core tests (27),
+app/build.gradle.kts, release_label.txt, docs/REFERENCE_FEATURES.md (added after 0.2).
 
 FILES CREATED OR MODIFIED IN 0.2:
 - core/.../VocalRemover.kt (new: voice removal + FFT), core tests extended (26 tests)
@@ -78,7 +90,7 @@ FILES FROM 1.0.0 (unchanged unless listed above):
   LibraryDialog.kt
 
 TESTS ACTUALLY RUN (see TEST_REPORT.md):
-- 26 JUnit tests of the core module (20 from 1.0.0 + 6 for voice removal) run on a desktop JVM: all pass.
+- 27 JUnit tests of the core module (20 from 1.0.0 + 6 voice removal + 1 main-clip delete) run on a desktop JVM: all pass.
 - Owner's phone, version 1.0.0 (screenshots 2026-11-13): Projects screen lists a saved project that
   was edited later; Video FX library shows 8+ imported clips with thumbnails and names. No other
   device results reported yet.
@@ -110,4 +122,4 @@ BUILD STATUS: BUILT. GitHub Actions (repo jitaalo18-ai/shouvo-apk, run 432695964
 The debug APK has NOT been installed or run on any device yet.
 
 SOURCE ZIP / APK PATH IF AVAILABLE: source at https://github.com/jitaalo18-ai/shouvo-apk (main).
-APK: Nock_Nock_V2.apk on the v0.2 release of that repository (rebuilt on every push to main).
+APK: Nock_Nock_V0.3.apk on the v0.3 release of that repository (rebuilt on every push to main).

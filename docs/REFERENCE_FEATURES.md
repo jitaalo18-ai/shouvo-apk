@@ -4,7 +4,7 @@ Research notes (2026-11-13) from public articles and store listings, not from ha
 Purpose: a shared memory for whoever continues this project, so features are chosen deliberately.
 Nothing here is a commitment; the owner decides what gets built, one version at a time.
 
-Legend: [HAVE] in Nock Nock 0.2 - [PART] partly - [NO] not built.
+Legend (state as of Nock Nock 0.2; 0.3 added undo/redo and delete clip): [HAVE] - [PART] partly - [NO] not built.
 
 ## Instagram "Edits: Video Editor" (primary UI reference)
 
