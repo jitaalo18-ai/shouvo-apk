@@ -1,3 +1,14 @@
+# V0.12 validation
+
+Run core unit tests and debug APK compilation using GitHub Actions for this version.
+Phone testing still required: spread/pinch on ruler, filmstrip, waveform and selected
+trim handles; single-finger scroll/trim; lift one finger then both; pinch during playback;
+zoom at start/end; long projects and scale bounds. Check time at central playhead stays
+fixed and zoom does not change clip timings or add Undo entries.
+
+Historical reports below describe earlier versions, not V0.12 results.
+
+---
 # V0.11 validation — 2026-11-13
 
 Performed: reviewed changed source, verified version metadata, XML parse and ZIP integrity;

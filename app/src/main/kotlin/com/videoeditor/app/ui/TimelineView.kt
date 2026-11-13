@@ -7,6 +7,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.calculateZoom
+import androidx.compose.foundation.gestures.stopScroll
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.interaction.collectIsDraggedAsState
 import androidx.compose.foundation.layout.Arrangement
@@ -37,6 +39,7 @@ import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
@@ -48,6 +51,7 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -103,34 +107,82 @@ fun TimelineView(ctl: EditorController, position: Long, modifier: Modifier = Mod
     val density = LocalDensity.current
     val timeline = ctl.timeline
     val contentEndMs = maxOf(timeline.durationMs, timeline.clips.maxOfOrNull { it.timelineEndMs } ?: 0L, 1L)
-    // A wider time overview like the reference; cap long projects to layout limits.
-    val pxPerMs = remember(contentEndMs, density) {
-        minOf(with(density) { 12.dp.toPx() } / 1000f, 200_000f / contentEndMs)
-    }
+    // Store the view scale separately from edit decisions (no Undo entry or media changes).
+    val baseScale = with(density) { 12.dp.toPx() } / 1000f
+    val maxZoom = minOf(16f, 200_000f / contentEndMs / baseScale)
+    val minZoom = minOf(0.25f, maxZoom)
+    var zoom by rememberSaveable(ctl.projectId) { mutableStateOf(1f) }
+    val pxPerMs = baseScale * zoom.coerceIn(minZoom, maxZoom)
+    var pinching by remember { mutableStateOf(false) }
+    var zoomAnchorMs by remember { mutableStateOf(0L) }
+    val currentMinZoom by rememberUpdatedState(minZoom)
+    val currentMaxZoom by rememberUpdatedState(maxZoom)
 
     val scroll = rememberScrollState()
     val verticalScroll = rememberScrollState()
     val dragged = scroll.interactionSource.collectIsDraggedAsState()
     var scrubbing by remember { mutableStateOf(false) }
-    LaunchedEffect(dragged.value) {
-        if (dragged.value) {
+    LaunchedEffect(dragged.value, pinching) {
+        if (dragged.value && !pinching) {
             ctl.player.pause()
             scrubbing = true
         }
     }
-    LaunchedEffect(scrubbing, pxPerMs) {
-        if (scrubbing) {
+    LaunchedEffect(scrubbing, pxPerMs, pinching) {
+        if (scrubbing && !pinching) {
             snapshotFlow { Triple(scroll.value, scroll.isScrollInProgress, dragged.value) }.collect { (value, moving, drag) ->
-                ctl.player.seekTo((value / pxPerMs).toLong())
+                if (!pinching) ctl.player.seekTo((value / pxPerMs).toLong())
                 if (!moving && !drag) scrubbing = false
             }
         }
     }
-    LaunchedEffect(position, pxPerMs, scrubbing) {
-        if (!scrubbing) scroll.scrollTo((position * pxPerMs).roundToInt())
+    LaunchedEffect(pinching) {
+        if (pinching) scroll.stopScroll()
+    }
+    // maxValue changes after measurement: retry against the new extent when zooming in.
+    LaunchedEffect(position, pxPerMs, scrubbing, pinching, scroll.maxValue) {
+        if (!scrubbing) {
+            val anchor = if (pinching) zoomAnchorMs else position
+            scroll.scrollTo((anchor * pxPerMs).roundToInt())
+        }
     }
 
-    BoxWithConstraints(modifier.background(Bg)) {
+    BoxWithConstraints(modifier.background(Bg).pointerInput(ctl.projectId) {
+        // Initial pass intercepts two-finger movement before clip/trim/scroll handlers.
+        // Leave all single-finger events untouched; after a pinch consume until BOTH lift.
+        awaitPointerEventScope {
+            var claimed = false
+            try {
+                while (true) {
+                    val event = awaitPointerEvent(PointerEventPass.Initial)
+                    val pressed = event.changes.count { it.pressed }
+                    if (pressed >= 2) {
+                        if (!claimed) {
+                            claimed = true
+                            zoomAnchorMs = ctl.player.positionMs.value
+                            ctl.player.pause()
+                            scrubbing = false
+                            pinching = true
+                        }
+                        val factor = event.calculateZoom()
+                        if (factor.isFinite() && factor > 0f) {
+                            zoom = (zoom.coerceIn(currentMinZoom, currentMaxZoom) * factor)
+                                .coerceIn(currentMinZoom, currentMaxZoom)
+                        }
+                    }
+                    if (claimed) {
+                        event.changes.forEach { it.consume() }
+                        if (pressed == 0) {
+                            claimed = false
+                            pinching = false
+                        }
+                    }
+                }
+            } finally {
+                pinching = false
+            }
+        }
+    }) {
         val half = maxWidth / 2
         val viewportPx = with(density) { maxWidth.toPx() }
         val contentWidth = with(density) { (contentEndMs * pxPerMs).toDp() }

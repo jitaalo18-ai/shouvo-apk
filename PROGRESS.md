@@ -1,3 +1,17 @@
+# V0.12 — two-finger timeline zoom
+
+Spread two fingers over the timeline to zoom in; pinch to zoom out. One-finger scrolling,
+selection and trimming retain their handlers. A two-finger gesture takes priority over
+child handlers and consumes input until both fingers lift. Playback pauses and the time
+under the central playhead is retained. Ruler, thumbnails, waveforms and trim/move mapping
+all use the same scale. Zoom is saved across configuration changes per open project.
+Scale is bounded to 0.25–16 times the default, additionally limited by the existing
+200,000-pixel content-width cap for long projects. No media or database edits for zoom.
+
+Validation: GitHub Actions build/tests to be checked for this commit. Device pinch,
+remaining-finger behavior, long projects and edge positions still need phone testing.
+
+---
 # V0.11 update — 2026-11-13
 
 Current version: 0.11 (versionCode 11). Prior checkpoint retained below as history.
