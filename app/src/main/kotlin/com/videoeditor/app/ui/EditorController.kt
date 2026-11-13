@@ -19,6 +19,7 @@ import com.videoeditor.app.media.PlaybackController
 import com.videoeditor.app.media.canvasSize
 import com.videoeditor.core.AutoCutStrength
 import com.videoeditor.core.Clip
+import com.videoeditor.app.captions.CaptionModel
 import com.videoeditor.app.captions.CaptionModels
 import com.videoeditor.app.captions.CaptionLanguage
 import com.videoeditor.app.captions.AutoCaptioner
