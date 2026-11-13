@@ -1,3 +1,26 @@
+# V0.11 validation — 2026-11-13
+
+Performed: reviewed changed source, verified version metadata, XML parse and ZIP integrity;
+confirmed the unchanged core module against V0.10. These are not Kotlin compilation tests.
+
+Blocked: Gradle bootstrap attempts to fetch gradle-8.9-bin.zip and fails with
+"Network is unreachable". No V0.11 APK or executed unit-test result is available.
+No Android device/emulator UI verification has been performed.
+
+Device checklist after building:
+1. Open an existing project; verify preview, saved framing and original clips.
+2. Scrub/start/pause a 17-minute project and verify fixed playhead/ruler alignment.
+3. Add multiple overlay, SFX and music tracks; scroll vertically and check add button.
+4. Select, trim, move, split and undo clips; verify handles and playback.
+5. Open BG MUSIC with no selection, main selection, overlay and audio selection.
+6. Import WAV/MP3, search mixed-case names, clear query and check no-match state.
+7. Preview/stop, rename, insert at playhead, remove, restart and reopen music library.
+8. Export a short project containing music; check duration, image and audio.
+9. Inspect small screens and large font settings; horizontally scroll both toolbars.
+
+---
+# Historical report supplied with V0.10 (not re-executed)
+
 # Test report - v0.10 "Nock Nock V0.10" (2026-11-13)
 
 ## Executed

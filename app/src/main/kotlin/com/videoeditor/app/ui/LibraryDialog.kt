@@ -91,7 +91,6 @@ fun LibraryDialog(
     val items by remember(kind) { app.library.observe(kind) }.collectAsState(initial = emptyList())
     var renaming by remember { mutableStateOf<LibraryItemEntity?>(null) }
     var removing by remember { mutableStateOf<RemoveCheck?>(null) }
-    val searchable = kind == LibraryKind.VIDEO_FX || kind == LibraryKind.SOUND_FX
 
     // Preview: one small player; the clip that is playing is shown inside its own thumbnail box.
     val context = LocalContext.current
@@ -139,7 +138,7 @@ fun LibraryDialog(
                     fontSize = 12.sp,
                     color = Color.Gray,
                 )
-                if (searchable && items.isNotEmpty()) {
+                run {
                     Spacer(Modifier.height(8.dp))
                     OutlinedTextField(
                         value = query,

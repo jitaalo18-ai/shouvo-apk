@@ -59,21 +59,35 @@ import androidx.compose.ui.unit.sp
 import com.videoeditor.app.media.Waveforms
 import com.videoeditor.core.Clip
 import com.videoeditor.core.MediaKind
+import com.videoeditor.core.Timeline
 import com.videoeditor.core.TimelineOps
 import com.videoeditor.core.Track
 import kotlin.math.ceil
 import kotlin.math.floor
 import kotlin.math.roundToInt
 
-private val RULER_HEIGHT = 18.dp
+private val RULER_HEIGHT = 26.dp
 private val THUMB_HEIGHT = 56.dp
-private val WAVE_HEIGHT = 16.dp
+private val WAVE_HEIGHT = 20.dp
 private val MAIN_HEIGHT = THUMB_HEIGHT + WAVE_HEIGHT
 private val VISUAL_LANE = 44.dp      // overlay clips (thumbnails)
-private val AUDIO_LANE = 34.dp       // sound effects and music (waveform)
+private val AUDIO_LANE = 30.dp       // sound effects and music (waveform)
 private val LANE_GAP = 2.dp
 private val HANDLE_WIDTH = 18.dp
-private val WaveColor = Color(0xFF9B6BE0)
+private val WaveColor = Color(0xFFB42DA8)
+private val WaveBackground = Color(0xFF510D50)
+
+private fun laneHeight(clips: List<Clip>, height: Dp): Dp {
+    if (clips.isEmpty()) return 0.dp
+    val count = (TimelineOps.lanes(clips).values.maxOrNull() ?: 0) + 1
+    return height * count + LANE_GAP * count
+}
+
+/** Keep the preview large for simple projects; scroll vertically when many tracks overlap. */
+fun timelineHeight(timeline: Timeline): Dp = (RULER_HEIGHT + 28.dp + MAIN_HEIGHT +
+    laneHeight(timeline.track(Track.OVERLAY), VISUAL_LANE) +
+    laneHeight(timeline.track(Track.SFX), AUDIO_LANE) +
+    laneHeight(timeline.track(Track.MUSIC), AUDIO_LANE)).coerceIn(164.dp, 248.dp)
 
 /** The part of the timeline content (in pixels from its start) that is on or near the screen. */
 private class Visible(val left: Float, val right: Float)
@@ -81,7 +95,7 @@ private class Visible(val left: Float, val right: Float)
 /**
  * Scrollable timeline with a fixed playhead in the middle (the content moves under it).
  * Dragging the timeline scrubs the video; during playback the timeline follows the player.
- * Layout from top to bottom: time ruler, overlay track(s), sound effects, music, main video
+ * Layout from top to bottom: time ruler, music, sound effects, overlay track(s), main video
  * track with its audio waveform. [onAddMedia] is the "+" button at the right.
  */
 @Composable
@@ -89,12 +103,13 @@ fun TimelineView(ctl: EditorController, position: Long, modifier: Modifier = Mod
     val density = LocalDensity.current
     val timeline = ctl.timeline
     val contentEndMs = maxOf(timeline.durationMs, timeline.clips.maxOfOrNull { it.timelineEndMs } ?: 0L, 1L)
-    // 60 dp per second, reduced for very long projects so the row stays within layout limits.
+    // A wider time overview like the reference; cap long projects to layout limits.
     val pxPerMs = remember(contentEndMs, density) {
-        minOf(with(density) { 60.dp.toPx() } / 1000f, 200_000f / contentEndMs)
+        minOf(with(density) { 12.dp.toPx() } / 1000f, 200_000f / contentEndMs)
     }
 
     val scroll = rememberScrollState()
+    val verticalScroll = rememberScrollState()
     val dragged = scroll.interactionSource.collectIsDraggedAsState()
     var scrubbing by remember { mutableStateOf(false) }
     LaunchedEffect(dragged.value) {
@@ -128,20 +143,20 @@ fun TimelineView(ctl: EditorController, position: Long, modifier: Modifier = Mod
         Row(
             Modifier
                 .fillMaxHeight()
-                .verticalScroll(rememberScrollState())
+                .verticalScroll(verticalScroll)
                 .horizontalScroll(scroll)
                 .pointerInput(Unit) { detectTapGestures { ctl.select(null) } },
         ) {
             Spacer(Modifier.width(half))
             Column(
-                Modifier.width(contentWidth).padding(bottom = 8.dp),
+                Modifier.width(contentWidth).padding(top = 8.dp, bottom = 18.dp),
                 verticalArrangement = Arrangement.spacedBy(LANE_GAP),
             ) {
                 Ruler(contentEndMs, pxPerMs, visible)
-                // overlays, sound effects and music sit above the main video track
-                FreeTrack(ctl, timeline.track(Track.OVERLAY), OverlayColor, pxPerMs, VISUAL_LANE, visible)
-                FreeTrack(ctl, timeline.track(Track.SFX), SfxColor, pxPerMs, AUDIO_LANE, visible)
+                // Audio above the visual stack, then overlay filmstrips and the main clip.
                 FreeTrack(ctl, timeline.track(Track.MUSIC), MusicColor, pxPerMs, AUDIO_LANE, visible)
+                FreeTrack(ctl, timeline.track(Track.SFX), SfxColor, pxPerMs, AUDIO_LANE, visible)
+                FreeTrack(ctl, timeline.track(Track.OVERLAY), OverlayColor, pxPerMs, VISUAL_LANE, visible)
                 // main video track
                 Row(Modifier.height(MAIN_HEIGHT)) {
                     for (clip in timeline.main) {
@@ -153,12 +168,20 @@ fun TimelineView(ctl: EditorController, position: Long, modifier: Modifier = Mod
         }
 
         // playhead
-        Box(Modifier.align(Alignment.Center).width(2.dp).fillMaxHeight().background(Color.White))
+        Box(Modifier.align(Alignment.Center).padding(vertical = 4.dp).width(2.dp)
+            .fillMaxHeight().clip(RoundedCornerShape(2.dp)).background(Color.White))
 
+        // Pin the import button to the main filmstrip, including during vertical scrolling.
+        val mainTop = 8.dp + RULER_HEIGHT + LANE_GAP +
+            laneHeight(timeline.track(Track.MUSIC), AUDIO_LANE) +
+            laneHeight(timeline.track(Track.SFX), AUDIO_LANE) +
+            laneHeight(timeline.track(Track.OVERLAY), VISUAL_LANE)
+        val addY = with(density) { mainTop.toPx() + THUMB_HEIGHT.toPx() / 2 - 22.dp.toPx() } - verticalScroll.value
         // add more videos / images to the end of the main track
         Box(
             Modifier
-                .align(Alignment.CenterEnd)
+                .align(Alignment.TopEnd)
+                .offset { IntOffset(0, addY.roundToInt().coerceIn(0, (with(density) { maxHeight.toPx() - 44.dp.toPx() }).roundToInt().coerceAtLeast(0))) }
                 .padding(end = 10.dp)
                 .size(44.dp)
                 .clip(RoundedCornerShape(12.dp))
@@ -248,7 +271,7 @@ private fun WaveStrip(clip: Clip, pxPerMs: Float, visible: Visible, color: Color
             if (index >= 0 && index < p.size) {
                 val level = (p[index].toInt() and 0xFF) / 255f
                 val h = (level * size.height).coerceAtLeast(1f)
-                drawRect(color, topLeft = Offset(x, size.height - h), size = Size(barWidth, h))
+                drawRect(color, topLeft = Offset(x, (size.height - h) / 2f), size = Size(barWidth, h))
             }
             x += stepPx
         }
@@ -267,8 +290,8 @@ private fun MainClipView(ctl: EditorController, clip: Clip, pxPerMs: Float, visi
             .width(with(density) { widthPx.toDp() })
             .fillMaxHeight()
             .padding(horizontal = 1.dp)
-            .clip(RoundedCornerShape(8.dp))
-            .background(Color(0xFF2A1F3D))
+            .clip(RoundedCornerShape(4.dp))
+            .background(Bg)
             .clickable { ctl.select(clip.id) },
     ) {
         // thumbnails on top, the clip's own sound as a waveform underneath
@@ -278,7 +301,7 @@ private fun MainClipView(ctl: EditorController, clip: Clip, pxPerMs: Float, visi
         if (clip.hasAudio) {
             WaveStrip(
                 clip, pxPerMs, visible, WaveColor,
-                Modifier.align(Alignment.BottomStart).fillMaxWidth().height(WAVE_HEIGHT),
+                Modifier.align(Alignment.BottomStart).fillMaxWidth().height(WAVE_HEIGHT).background(WaveBackground),
             )
         }
         if (clip.selected) {
@@ -303,7 +326,7 @@ private fun MainClipView(ctl: EditorController, clip: Clip, pxPerMs: Float, visi
                     ctl.trimMain(current.id, sourceEndMs = handleBaseEnd + (movedPx / scale).toLong())
                 }
             }
-            Box(Modifier.matchParentSize().border(3.dp, Accent, RoundedCornerShape(8.dp)))
+            Box(Modifier.matchParentSize().border(2.dp, Color.White, RoundedCornerShape(4.dp)))
             Text(
                 String.format(java.util.Locale.US, "%.1fs", clip.durationMs / 1000f),
                 fontSize = 11.sp,
@@ -355,7 +378,7 @@ private fun ChipView(
     val current by rememberUpdatedState(clip)
     val scale by rememberUpdatedState(pxPerMs)
     val laneState by rememberUpdatedState(lane)
-    val shape = RoundedCornerShape(8.dp)
+    val shape = RoundedCornerShape(5.dp)
     val laneStepPx = with(density) { (laneHeight + LANE_GAP).toPx() }
     var baseStart by remember { mutableStateOf(0L) }
     var baseEnd by remember { mutableStateOf(0L) }
@@ -384,7 +407,7 @@ private fun ChipView(
         }
     if (clip.selected) {
         body = body
-            .border(2.dp, Accent, shape)
+            .border(2.dp, Color.White, shape)
             .pointerInput(clip.id) {
                 var moved = 0f
                 detectHorizontalDragGestures(
@@ -437,7 +460,7 @@ private fun TrimHandle(modifier: Modifier, width: Dp = HANDLE_WIDTH, onDrag: (st
         modifier
             .width(width)
             .fillMaxHeight()
-            .background(Accent)
+            .background(Color.White)
             .pointerInput(Unit) {
                 var moved = 0f
                 detectHorizontalDragGestures(
@@ -453,6 +476,6 @@ private fun TrimHandle(modifier: Modifier, width: Dp = HANDLE_WIDTH, onDrag: (st
             },
         contentAlignment = Alignment.Center,
     ) {
-        Box(Modifier.width(3.dp).height(14.dp).background(Color.White, RoundedCornerShape(2.dp)))
+        Box(Modifier.width(3.dp).height(14.dp).background(Color.Black, RoundedCornerShape(2.dp)))
     }
 }

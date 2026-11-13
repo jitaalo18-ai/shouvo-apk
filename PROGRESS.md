@@ -1,3 +1,29 @@
+# V0.11 update — 2026-11-13
+
+Current version: 0.11 (versionCode 11). Prior checkpoint retained below as history.
+
+Requested changes implemented in source:
+- Compact reference-based timeline: wider time overview (12 dp/second), stacked thumbnail
+  tracks, magenta centred audio waveforms, thin white fixed playhead, white trim handles.
+- Height adapts to tracks (164–248 dp), with vertical scrolling for additional lanes.
+- Main-track add button follows the main filmstrip vertically.
+- BG MUSIC appears in the bottom bar with and without clip selection.
+- BG MUSIC uses the same LibraryDialog and audio-row interface as Sound FX: import,
+  name search, clear query, play/stop preview, rename, remove and insert at playhead.
+- Search remains visible even when a library is empty.
+- Existing tools, data schema, signing key and media processing preserved.
+- Captions shown in the reference are not implemented; no fake caption track was added.
+
+Validation: source/diff and XML/archive checks only. Gradle distribution is not installed
+and download is blocked in this environment. No APK build, JVM tests, emulator run,
+or screenshot comparison of the actual Android UI was possible for V0.11.
+Next: run ./gradlew :core:test :app:assembleDebug, then the V0.11 device checklist.
+Prior review findings (save-before-load, Undo media cleanup, buffering sync) are unchanged
+and outside this UI update.
+
+---
+# Historical V0.10 checkpoint (build/test claims below apply to V0.10 only)
+
 # Android Video Editor - Progress Checkpoint
 
 Self-contained handoff. Another developer / AI account can continue from this file plus the source ZIP.

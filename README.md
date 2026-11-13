@@ -1,7 +1,7 @@
-# Nock Nock (Android video editor) - v0.10 source
+# Nock Nock (Android video editor) - v0.11 source
 
 Native Android video editor: Kotlin, Jetpack Compose, Media3 (ExoPlayer + Transformer), Room.
-Read PROGRESS.md first - it is the current checkpoint. The debug APK builds on GitHub Actions but has not been device-tested yet.
+Read PROGRESS.md first - it is the current checkpoint. V0.11 source has not yet been compiled or device-tested. V0.10 had a successful build according to the supplied report.
 
 ## Get an APK
 

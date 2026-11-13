@@ -121,7 +121,7 @@ class ProjectRepository(private val db: AppDatabase) {
 enum class LibraryKind(val folder: String, val title: String, val addLabel: String, val mime: String) {
     VIDEO_FX("video_fx", "Video FX", "Add Video", "video/*"),
     SOUND_FX("sound_fx", "Sound FX", "Add Sound", "audio/*"),
-    MUSIC("music", "Background Music", "Add Music", "audio/*"),
+    MUSIC("music", "BG MUSIC", "Add Music", "audio/*"),
 }
 
 data class RemoveCheck(val item: LibraryItemEntity, val usedInProjects: List<String>)

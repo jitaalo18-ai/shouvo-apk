@@ -267,17 +267,20 @@ fun EditorScreen(app: App, projectId: Long, onBack: () -> Unit) {
             }
 
             // timeline
-            TimelineView(ctl, position, Modifier.fillMaxWidth().height(232.dp), onAddMedia = { importMain() })
+            TimelineView(ctl, position, Modifier.fillMaxWidth().height(timelineHeight(ctl.timeline)), onAddMedia = { importMain() })
 
             // toolbars
             val selected = ctl.timeline.selected
             if (selected == null) {
                 Row(
-                    Modifier.fillMaxWidth().background(Panel).padding(vertical = 6.dp),
-                    horizontalArrangement = Arrangement.SpaceEvenly,
+                    Modifier.fillMaxWidth().background(Bg).horizontalScroll(rememberScrollState()).padding(vertical = 6.dp),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
                     // Visible buttons only; their functions are specified later.
-                    ToolButton(Icons.Filled.GraphicEq, "Audio") { }
+                    ToolButton(Icons.Filled.GraphicEq, "Sound FX") { ctl.library = LibraryKind.SOUND_FX }
+                    ToolButton(Icons.Filled.MusicNote, "BG MUSIC") { ctl.library = LibraryKind.MUSIC }
+                    ToolButton(Icons.Filled.Movie, "Video FX") { ctl.library = LibraryKind.VIDEO_FX }
+                    ToolButton(Icons.Filled.Layers, "Overlay") { importOverlay() }
                     ToolButton(Icons.Filled.TextFields, "Text") { }
                     ToolButton(Icons.Filled.Mic, "Voice") { }
                     ToolButton(Icons.Filled.Link, "Links") { }
@@ -288,13 +291,13 @@ fun EditorScreen(app: App, projectId: Long, onBack: () -> Unit) {
                         Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, contentDescription = "Back", modifier = Modifier.size(30.dp))
                     }
                     Row(Modifier.weight(1f).horizontalScroll(rememberScrollState())) {
+                        ToolButton(Icons.Filled.MusicNote, "BG MUSIC") { ctl.library = LibraryKind.MUSIC }
                         if (selected.track == Track.MAIN) {
                             // working tools
                             ToolButton(Icons.Filled.ContentCut, "Split") { ctl.split() }
                             ToolButton(Icons.Filled.AutoFixHigh, "AutoCut") { ctl.autoCut() }
                             ToolButton(Icons.Filled.Movie, "Video FX") { ctl.library = LibraryKind.VIDEO_FX }
                             ToolButton(Icons.Filled.GraphicEq, "Sound FX") { ctl.library = LibraryKind.SOUND_FX }
-                            ToolButton(Icons.Filled.MusicNote, "Music") { ctl.library = LibraryKind.MUSIC }
                             ToolButton(Icons.Filled.Layers, "Overlay") { importOverlay() }
                             ToolButton(Icons.Filled.Delete, "Delete") { ctl.deleteSelected() }
                             ToolButton(Icons.AutoMirrored.Filled.ArrowBack, "Move left") { ctl.moveSelectedMain(-1) }
