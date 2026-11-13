@@ -103,6 +103,27 @@ class CaptionsTest {
         assertTrue("character error rate ${cer * 100}% under 30%", cer < 0.30f)
     }
 
+    @Test fun longBanglaSpeechIsCaptionedCompletely() = runBlocking {
+        assertTrue("Bangla model pushed by CI", model(CaptionModel.BANGLA_TURBO))
+        val wav = Pushed.file("bn_long.wav")
+        val truth = Pushed.file("bn_long.txt")?.readText()?.trim()
+        assertNotNull("long Bangla passage pushed by CI", wav)
+        val clip = clipFrom(MediaProbe.probe(ctx, Uri.fromFile(wav))!!, Track.MAIN)
+        val t = TimelineOps.appendMain(Timeline(), listOf(clip))
+        val t0 = System.currentTimeMillis()
+        val pieces = AutoCaptioner.recognise(ctx, t.main, CaptionLanguage.BANGLA) { _, _ -> }
+        val spent = System.currentTimeMillis() - t0
+        val heard = pieces.joinToString(" ") { it.text }
+        val cer = distance(norm(heard), norm(truth!!)).toFloat() / norm(truth).length
+        val covered = norm(heard).length.toFloat() / norm(truth).length
+        Report.note("captions: long Bangla ${t.durationMs} ms in $spent ms (emulator CPU), ${pieces.size} pieces, CER ${"%.1f".format(cer * 100)}%, length ${"%.0f".format(covered * 100)}% of the truth")
+        Report.note("captions: long Bangla heard: $heard")
+        assertTrue("nothing cut off: ${covered * 100}% of the text", covered > 0.85f)
+        assertTrue("character error rate ${cer * 100}% under 30%", cer < 0.30f)
+        val last = pieces.last()
+        assertTrue("captions reach the end of the speech (${last.endMs} of ${t.durationMs})", last.endMs > t.durationMs - 3_000)
+    }
+
     private fun frame(uri: Uri, ms: Long): Bitmap {
         val r = MediaMetadataRetriever()
         try {

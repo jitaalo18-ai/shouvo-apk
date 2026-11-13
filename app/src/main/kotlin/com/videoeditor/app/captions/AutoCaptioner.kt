@@ -47,20 +47,59 @@ object AutoCaptioner {
             // stopping the coroutine stops the native work too
             val stop = coroutineContext[Job]?.invokeOnCompletion { if (it is CancellationException) WhisperNative.cancel() }
             try {
-                onProgress("Listening… 0%", 0.1f)
-                val vad = CaptionModels.vadFile(context).takeIf { CaptionModels.looksLikeVad(it) }?.absolutePath
-                val lines = WhisperNative.transcribe(
-                    ctx, audio, language.code, threads(), model.maxLen, model.beamSize, vad,
-                ) { p -> onProgress("Listening… $p%", 0.1f + 0.9f * p / 100f) }
-                coroutineContext[Job]?.let { if (it.isCancelled) throw CancellationException() }
-                lines ?: throw Failed("Speech recognition stopped before it finished.")
-                val pieces = lines.mapNotNull(::parse)
+                // short parts at pauses: the recogniser can only write so much per part (Bangla
+                // needs many tokens), and silences are skipped
+                val chunks = Captions.planChunks(audio.size * 1000L / SpeechAudio.RATE, speech, { from, to -> quietest(audio, from, to) })
+                val total = chunks.sumOf { it.lengthMs }.coerceAtLeast(1)
+                var done = 0L
+                val pieces = ArrayList<SpeechPiece>()
+                for (chunk in chunks) {
+                    coroutineContext[Job]?.let { if (it.isCancelled) throw CancellationException() }
+                    val from = (chunk.startMs * SpeechAudio.RATE / 1000).toInt().coerceIn(0, audio.size)
+                    val to = (chunk.endMs * SpeechAudio.RATE / 1000).toInt().coerceIn(from, audio.size)
+                    if (to - from < SpeechAudio.RATE / 5) continue
+                    val doneBefore = done
+                    val lines = WhisperNative.transcribe(
+                        ctx, audio.copyOfRange(from, to), language.code, threads(), model.maxLen, model.beamSize, null,
+                    ) { p ->
+                        val whole = (doneBefore + chunk.lengthMs * p / 100f) / total
+                        onProgress("Listening… ${(whole * 100).toInt()}%", 0.1f + 0.9f * whole)
+                    }
+                    coroutineContext[Job]?.let { if (it.isCancelled) throw CancellationException() }
+                    lines ?: throw Failed("Speech recognition stopped before it finished.")
+                    for (piece in lines.mapNotNull(::parse)) {
+                        val start = (chunk.startMs + piece.startMs).coerceAtMost(chunk.endMs)
+                        val end = (chunk.startMs + piece.endMs).coerceIn(start, chunk.endMs)
+                        pieces += piece.copy(startMs = start, endMs = end)
+                    }
+                    done += chunk.lengthMs
+                }
                 if (speech.isEmpty()) pieces else Captions.alignToSpeech(pieces, speech)
             } finally {
                 stop?.dispose()
                 WhisperNative.free(ctx)
             }
         }
+    }
+
+    /** The quietest 100 ms between [fromMs] and [toMs] (a good place to cut). */
+    fun quietest(audio: FloatArray, fromMs: Long, toMs: Long): Long {
+        val step = SpeechAudio.RATE / 10
+        var best = fromMs
+        var bestEnergy = Double.MAX_VALUE
+        var ms = fromMs
+        while (ms + 100 <= toMs) {
+            val i0 = (ms * SpeechAudio.RATE / 1000).toInt()
+            if (i0 + step > audio.size) break
+            var e = 0.0
+            for (k in i0 until i0 + step) e += audio[k] * audio[k]
+            if (e < bestEnergy) {
+                bestEnergy = e
+                best = ms + 50
+            }
+            ms += 50
+        }
+        return best
     }
 
     /** Speech ranges (ms) found by the voice detector, or empty when it is not sure. */

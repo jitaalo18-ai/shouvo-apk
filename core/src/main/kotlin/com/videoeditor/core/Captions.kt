@@ -38,6 +38,50 @@ object Captions {
             if (end - start >= 200) p.copy(startMs = start, endMs = end) else p
         }
 
+    /**
+     * Cuts the sound into parts of at most [maxMs] for the speech recogniser, at pauses: a
+     * recogniser can only write so much text per part, and Bangla needs a lot of it. Long
+     * silences between speech are left out (faster, and nothing gets invented there). Speech
+     * without a pause is cut at the quietest moment that [quietest] finds between [minMs] and
+     * [maxMs] into the part. Without [speech] (the voice detector was unsure) the whole sound is
+     * cut the same way.
+     */
+    fun planChunks(
+        totalMs: Long,
+        speech: List<MsRange>,
+        quietest: (fromMs: Long, toMs: Long) -> Long,
+        maxMs: Long = 15_000,
+        minMs: Long = 8_000,
+        padMs: Long = 300,
+    ): List<MsRange> {
+        val regions = if (speech.isEmpty()) listOf(MsRange(0, totalMs))
+        else speech.map { MsRange((it.startMs - padMs).coerceAtLeast(0), (it.endMs + padMs).coerceAtMost(totalMs)) }
+        // join regions that fit into one part
+        val joined = ArrayList<MsRange>()
+        for (r in regions.sortedBy { it.startMs }) {
+            val last = joined.lastOrNull()
+            if (last != null && r.startMs <= last.endMs + 1_500 && r.endMs - last.startMs <= maxMs) {
+                joined[joined.lastIndex] = MsRange(last.startMs, maxOf(last.endMs, r.endMs))
+            } else if (last != null && r.startMs < last.endMs) {
+                joined += MsRange(last.endMs, r.endMs)            // overlapping pads
+            } else {
+                joined += r
+            }
+        }
+        // cut parts that are still too long at their quietest moment
+        val out = ArrayList<MsRange>()
+        for (r in joined) {
+            var start = r.startMs
+            while (r.endMs - start > maxMs) {
+                val cut = quietest(start + minMs, start + maxMs).coerceIn(start + minMs, start + maxMs)
+                out += MsRange(start, cut)
+                start = cut
+            }
+            if (r.endMs - start >= 200) out += MsRange(start, r.endMs)
+        }
+        return out
+    }
+
     fun clean(text: String): String = text.replace(Regex("\\s+"), " ").trim()
 
     fun isNoise(text: String): Boolean = clean(text).isEmpty() || noise.matches(clean(text))

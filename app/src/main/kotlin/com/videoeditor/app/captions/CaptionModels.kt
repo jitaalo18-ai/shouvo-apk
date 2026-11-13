@@ -85,13 +85,6 @@ object CaptionModels {
                 target.delete()
                 throw IllegalStateException("The downloaded file is not a speech model")
             }
-            // small voice-activity model: fewer invented words in silence and music (optional)
-            try {
-                val vad = vadFile(context)
-                if (!vad.isFile) fetch("${CaptionModel.RELEASE}/${CaptionModel.VAD_FILE}", vad) { _, _ -> }
-            } catch (e: Exception) {
-                vadFile(context).delete()
-            }
         }
 
     private suspend fun fetch(url: String, target: File, onProgress: (Long, Long) -> Unit) {

@@ -7202,7 +7202,9 @@ int whisper_full_with_state(
                 }
             }
 
-            for (int i = 0, n_max = whisper_n_text_ctx(ctx)/2 - 4; i < n_max; ++i) {
+            // Nock Nock change: the output may use all of the text context the prompt leaves free
+            // (Bangla needs many tokens per word; half of it cut long sentences off)
+            for (int i = 0, n_max = whisper_n_text_ctx(ctx) - (int) prompt.size() - 4; i < n_max; ++i) {
                 const int64_t t_start_sample_us = ggml_time_us();
 
                 if (params.strategy == whisper_sampling_strategy::WHISPER_SAMPLING_BEAM_SEARCH) {

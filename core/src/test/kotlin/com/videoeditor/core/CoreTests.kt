@@ -969,6 +969,27 @@ class CaptionTests {
     }
 
     @Test
+    fun soundIsCutIntoShortPartsAtPauses() {
+        val quiet: (Long, Long) -> Long = { from, to -> (from + to) / 2 }
+        // two sentences with a pause, one long stretch without a pause, silence in between
+        val speech = listOf(MsRange(1_000, 5_000), MsRange(6_000, 10_000), MsRange(30_000, 70_000))
+        val parts = Captions.planChunks(80_000, speech, quiet)
+        assertTrue("every part short enough", parts.all { it.lengthMs <= 15_000 })
+        assertEquals(MsRange(700, 10_300), parts.first())
+        assertTrue("the silence 10-30 s is skipped", parts.none { it.startMs < 29_000 && it.endMs > 11_000 })
+        // the long stretch is covered without gaps
+        val long = parts.filter { it.startMs >= 29_000 }
+        assertEquals(29_700L, long.first().startMs)
+        assertEquals(70_300L, long.last().endMs)
+        for (i in 1 until long.size) assertEquals(long[i - 1].endMs, long[i].startMs)
+        // nothing known about speech: the whole sound in parts
+        val blind = Captions.planChunks(40_000, emptyList(), quiet)
+        assertEquals(0L, blind.first().startMs)
+        assertEquals(40_000L, blind.last().endMs)
+        assertTrue(blind.all { it.lengthMs <= 15_000 })
+    }
+
+    @Test
     fun noiseIsRecognised() {
         assertTrue(Captions.isNoise(" (music) "))
         assertTrue(Captions.isNoise("♪♪"))

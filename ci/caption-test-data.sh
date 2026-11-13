@@ -31,4 +31,27 @@ for r in csv.reader(open('/tmp/test.tsv', encoding='utf8'), delimiter='\t', quot
         print('bangla clip', r[1], r[3])
         break
 PY
+# about 40 s of Bangla: several different FLEURS sentences one after the other (checks that long
+# speech is captioned completely, not cut off)
+python3 - "$OUT" <<'PY'
+import csv, os, sys, wave
+out = sys.argv[1]
+seen, parts, texts = set(), [], []
+for r in csv.reader(open('/tmp/test.tsv', encoding='utf8'), delimiter='\t', quoting=csv.QUOTE_NONE):
+    wav = os.path.join('/tmp/fleurs', r[1])
+    if r[3] in seen or not os.path.exists(wav):
+        continue
+    seen.add(r[3])
+    parts.append(wav); texts.append(r[3])
+    if sum((os.path.getsize(p) - 44) / 32000 for p in parts) > 38:
+        break
+with wave.open(os.path.join(out, 'bn_long.wav'), 'wb') as w:
+    w.setnchannels(1); w.setsampwidth(2); w.setframerate(16000)
+    for p in parts:
+        with wave.open(p) as r:
+            w.writeframes(r.readframes(r.getnframes()))
+        w.writeframes(b'\0\0' * 8000)      # half a second between sentences
+open(os.path.join(out, 'bn_long.txt'), 'w', encoding='utf8').write(' '.join(texts))
+print('bangla long:', len(parts), 'sentences')
+PY
 ls -la "$OUT"
