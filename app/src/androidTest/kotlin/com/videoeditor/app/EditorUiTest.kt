@@ -211,6 +211,7 @@ class EditorUiTest {
         Report.note("ui: after reopen, handles $ls and $le")
         assertTrue("trim handles do not overlap", ls.right <= le.left)
         Shots.take("12_short_clip_handles")
+        assertTrue("trim was saved", abs(editor.timeline.main[0].durationMs - after) < 5)
 
         // ---- Duplicate a main clip: the copy comes right after it and is selected ----
         val countBefore = editor.timeline.main.size
@@ -326,6 +327,5 @@ class EditorUiTest {
         val projectsAfter = runBlocking { app.projects.count() }
         Report.note("ui: projects $projectsBefore -> $projectsAfter")
         assertEquals("project deleted", projectsBefore - 1, projectsAfter)
-        assertTrue(abs(editor.timeline.main[0].durationMs - after) < 5)
     }
 }
