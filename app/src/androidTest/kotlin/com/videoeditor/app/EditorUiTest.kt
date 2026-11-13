@@ -302,8 +302,8 @@ class EditorUiTest {
         Shots.take("20_compound_reopened")
         assertTrue("compound kept after reopening", editor.timeline.main.all { it.groupId == group })
 
-        // break it apart
-        rule.onNodeWithTag("compound_0").performClick()
+        // break it apart (the selection is saved too, so it may already be selected)
+        if (editor.timeline.selected == null) rule.onNodeWithTag("compound_0").performClick()
         pause(500)
         tool("Break apart")
         Shots.take("21_broken_apart")
