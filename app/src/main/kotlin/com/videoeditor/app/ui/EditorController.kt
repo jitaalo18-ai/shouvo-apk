@@ -40,7 +40,13 @@ data class Busy(val label: String, val progress: Float? = null)
  * (see TimelineOps), pushes it to the preview player and saves it to Room, so closing the app at
  * any moment keeps the project.
  */
-class EditorController(private val app: App, val projectId: Long, private val scope: CoroutineScope) {
+class EditorController(private val app: App, val projectId: Long, uiScope: CoroutineScope) {
+    /**
+     * The screen's scope, pinned to the main thread. ExoPlayer and Compose state must only be touched
+     * from the main thread; a plain composition scope does not promise which thread a coroutine
+     * resumes on after a Room call (seen on the emulator: "Player is accessed on the wrong thread").
+     */
+    private val scope = CoroutineScope(uiScope.coroutineContext + Dispatchers.Main.immediate)
     val player = PlaybackController(app, scope)
 
     var timeline by mutableStateOf(Timeline())
