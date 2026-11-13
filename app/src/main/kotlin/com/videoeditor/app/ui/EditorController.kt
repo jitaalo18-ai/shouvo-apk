@@ -166,6 +166,17 @@ class EditorController(private val app: App, val projectId: Long, private val sc
 
     // ---- Step 3: Split -------------------------------------------------------------------
 
+    fun extractAudio() {
+        if (busy != null || !loaded) return
+        val selected = timeline.selected ?: return
+        player.pause()
+        val result = TimelineOps.extractAudio(timeline, selected.id, ::newClipId)
+        if (result.changed) {
+            commitEdit(result.timeline)
+            message = "Audio extracted to its own track. Video audio muted. Undo restores both."
+        } else message = result.reason
+    }
+
     fun split() {
         val clip = timeline.selected ?: return
         val result = TimelineOps.split(timeline, clip.id, position, ::newClipId)

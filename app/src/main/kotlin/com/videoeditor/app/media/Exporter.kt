@@ -160,6 +160,7 @@ class Exporter(private val context: Context) {
                 videoEffects.add(MatrixTransformation { matrix })
             }
             val item = EditedMediaItem.Builder(mediaItem(c, c.sourceStartMs, c.sourceEndMs))
+                .setRemoveAudio(!c.hasAudio)
                 .setEffects(Effects(noAudio, videoEffects))
             if (c.kind == MediaKind.IMAGE) {
                 item.setDurationUs(c.durationMs * 1000).setFrameRate(30)

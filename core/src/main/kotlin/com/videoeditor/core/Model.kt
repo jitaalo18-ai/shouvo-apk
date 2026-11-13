@@ -30,6 +30,7 @@ data class Clip(
     val sourceStartMs: Long,
     val sourceEndMs: Long,
     val timelineStartMs: Long,
+    /** Audible audio enabled for this clip; false after detaching video audio. */
     val hasAudio: Boolean,
     val aspect: Float = 1f,
     val layer: Int = 0,

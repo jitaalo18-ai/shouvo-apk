@@ -1,3 +1,22 @@
+# V0.13 — Extract Audio
+
+Select a main/overlay video, then Extract Audio in the bottom toolbar. The selected
+source range becomes a separately selected audio clip on SFX at the same timeline time.
+Original video audio is disabled. Split/trim/move/delete/duplicate apply independently.
+Undo/Redo restores the complete edit; existing Room hasAudio persists the audible state,
+so no schema migration is needed. Playback and export now honor that state.
+Extraction is non-destructive: it references the existing media (not a standalone WAV).
+Library references are retained. Do not delete the original project video from Gallery.
+No vocal removal or filtering is applied. Silent/already-extracted clips show a message.
+Audio-only players disable video decoding. Auxiliary playback pauses while main buffers.
+
+Four new JVM tests cover trimmed-source mapping, rejection cases, overlay extraction,
+and independent audio edits. GitHub Actions test/build results must be checked.
+Phone verification still required: preview/export audio exactly once, transitions between
+muted/unmuted clips, Undo/Redo, reopen project, overlay audio, and split/trim after extraction.
+Earlier save/Undo library-file cleanup risks remain outside this feature.
+
+---
 # V0.12 — two-finger timeline zoom
 
 Spread two fingers over the timeline to zoom in; pinch to zoom out. One-finger scrolling,

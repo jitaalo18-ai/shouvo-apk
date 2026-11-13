@@ -292,6 +292,10 @@ fun EditorScreen(app: App, projectId: Long, onBack: () -> Unit) {
                     }
                     Row(Modifier.weight(1f).horizontalScroll(rememberScrollState())) {
                         ToolButton(Icons.Filled.MusicNote, "BG MUSIC") { ctl.library = LibraryKind.MUSIC }
+                        if (selected.kind == MediaKind.VIDEO &&
+                            (selected.track == Track.MAIN || selected.track == Track.OVERLAY)) {
+                            ToolButton(Icons.Filled.GraphicEq, "Extract Audio") { ctl.extractAudio() }
+                        }
                         if (selected.track == Track.MAIN) {
                             // working tools
                             ToolButton(Icons.Filled.ContentCut, "Split") { ctl.split() }

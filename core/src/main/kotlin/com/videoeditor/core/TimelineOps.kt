@@ -6,6 +6,26 @@ package com.videoeditor.core
  * positioning logic for overlays / sound effects / music.
  */
 object TimelineOps {
+    /** Detach only the selected video's audible source range, without recompressing it. */
+    fun extractAudio(t: Timeline, clipId: String, newId: () -> String): EditResult {
+        val clip = t.byId(clipId) ?: return EditResult(t, false, "Select a video clip first.")
+        if (clip.kind != MediaKind.VIDEO || clip.track !in listOf(Track.MAIN, Track.OVERLAY)) {
+            return EditResult(t, false, "Select a video clip to extract its audio.")
+        }
+        if (!clip.hasAudio) return EditResult(t, false, "No audio to extract, or audio already extracted.")
+        val audio = clip.copy(
+            id = newId(), track = Track.SFX, kind = MediaKind.AUDIO,
+            name = "Extracted audio · ${clip.name.ifBlank { "Video" }}",
+            aspect = 1f, layer = 0, posX = 0.5f, posY = 0.5f, scale = 0.4f,
+            rotation = 0f, stretchX = 1f, stretchY = 1f, selected = true,
+        )
+        val clips = t.clips.map {
+            if (it.id == clipId) it.copy(hasAudio = false, selected = false)
+            else it.copy(selected = false)
+        }
+        return EditResult(Timeline(clips + audio), true)
+    }
+
     const val MIN_SPLIT_MS = 100L
     const val MIN_TRIM_MS = 200L
     const val MAX_IMAGE_MS = 10 * 60 * 1000L

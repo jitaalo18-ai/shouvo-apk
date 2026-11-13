@@ -2,6 +2,7 @@ package com.videoeditor.app.media
 
 import android.content.Context
 import android.view.TextureView
+import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
@@ -38,6 +39,18 @@ class PlaybackController(private val context: Context, scope: CoroutineScope) {
     private val overlayViews = HashMap<String, TextureView>()
     private var released = false
 
+    init {
+        main.addListener(object : Player.Listener {
+            override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+                updateMainVolume()
+            }
+        })
+    }
+
+    private fun updateMainVolume() {
+        main.volume = if (mainClips.getOrNull(main.currentMediaItemIndex)?.hasAudio == true) 1f else 0f
+    }
+
     private val ticker: Job = scope.launch {
         while (isActive) {
             tick()
@@ -59,6 +72,7 @@ class PlaybackController(private val context: Context, scope: CoroutineScope) {
             main.prepare()
             seekTo(keep)
         }
+        updateMainVolume()
         syncAuxPlayers(timeline)
     }
 
@@ -87,6 +101,10 @@ class PlaybackController(private val context: Context, scope: CoroutineScope) {
         for (c in wanted) {
             if (c.id !in aux) {
                 val p = ExoPlayer.Builder(context).build()
+                if (c.kind == MediaKind.AUDIO) {
+                    p.trackSelectionParameters = p.trackSelectionParameters.buildUpon()
+                        .setTrackTypeDisabled(C.TRACK_TYPE_VIDEO, true).build()
+                }
                 p.setMediaItem(MediaItem.fromUri(c.sourceUri))
                 p.playWhenReady = false
                 p.prepare()
@@ -94,6 +112,7 @@ class PlaybackController(private val context: Context, scope: CoroutineScope) {
                 aux[c.id] = p
             }
         }
+        for (c in wanted) aux[c.id]?.volume = if (c.hasAudio) 1f else 0f
         auxClips = wanted
     }
 
@@ -128,6 +147,7 @@ class PlaybackController(private val context: Context, scope: CoroutineScope) {
         val ms = timelineMs.coerceIn(0, durationMs)
         val pos = TimelineOps.locate(Timeline(mainClips), ms) ?: return
         val inClip = (ms - pos.clip.timelineStartMs).coerceIn(0, (pos.clip.durationMs - 1).coerceAtLeast(0))
+        main.volume = if (pos.clip.hasAudio) 1f else 0f
         main.seekTo(pos.index, inClip)
         positionMs.value = ms
     }
@@ -142,7 +162,8 @@ class PlaybackController(private val context: Context, scope: CoroutineScope) {
             pos = durationMs
             if (main.playWhenReady) main.pause()
         }
-        val playing = main.playWhenReady && !ended
+        updateMainVolume()
+        val playing = main.isPlaying && !ended
         positionMs.value = pos
         isPlaying.value = playing
         val total = durationMs

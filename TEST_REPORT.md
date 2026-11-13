@@ -1,3 +1,12 @@
+# V0.13 validation
+
+Added ExtractAudioTests (4): trimmed source/time mapping and reference retention;
+repeat/silent/non-video rejection; overlay detachment; independent audio editing.
+Run existing core suite plus these tests and :app:assembleDebug in GitHub Actions.
+No Android device/audio-output test performed. Verify export and preview, Undo/Redo,
+restart persistence, main/overlay videos and trimmed/split sources on phone.
+
+---
 # V0.12 validation
 
 Run core unit tests and debug APK compilation using GitHub Actions for this version.
