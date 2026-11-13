@@ -41,6 +41,13 @@ jobs:
           curl -sSLf -o ggml-large-v3-turbo-q5_0.bin https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3-turbo-q5_0.bin
           curl -sSLf -o ggml-silero-v6.2.0.bin https://huggingface.co/ggml-org/whisper-vad/resolve/main/ggml-silero-v6.2.0.bin
           ls -la
+      - name: Publish
+        env: { GH_TOKEN: '${{ github.token }}' }
+        run: |
+          sha256sum out/ggml-turbo-bn-q5_0.bin out/ggml-small-q5_1.bin out/ggml-silero-v6.2.0.bin > out/SHA256SUMS
+          gh release delete models-v1 --yes --cleanup-tag 2>/dev/null || true
+          gh release create models-v1 --title "Caption models v1" --notes "Speech models for Auto Captions (accuracy report follows)." \
+            out/ggml-turbo-bn-q5_0.bin out/ggml-small-q5_1.bin out/ggml-silero-v6.2.0.bin out/SHA256SUMS
       - name: Accuracy on real Bangla speech (FLEURS)
         run: |
           mkdir -p fleurs/audio && cd fleurs
@@ -48,15 +55,13 @@ jobs:
           curl -sSLf -o test.tar.gz https://huggingface.co/datasets/google/fleurs/resolve/main/data/bn_in/audio/test.tar.gz
           tar -xzf test.tar.gz -C audio --strip-components=1 && rm test.tar.gz
           ls audio | head -3; cd ..
-          EVAL_CLIPS=15 python ci/eval_captions.py fleurs wbuild/bin/whisper-cli out/ACCURACY.md \
+          EVAL_CLIPS=10 python ci/eval_captions.py fleurs wbuild/bin/whisper-cli out/ACCURACY.md \
             "Bangla Turbo (app)=out/ggml-turbo-bn-q5_0.bin:bn" \
             "Plain Turbo=out/ggml-large-v3-turbo-q5_0.bin:bn" \
             "Small (app, fast)=out/ggml-small-q5_1.bin:bn"
           cat out/ACCURACY.md
-      - name: Publish
+      - name: Attach the accuracy report
         env: { GH_TOKEN: '${{ github.token }}' }
         run: |
-          sha256sum out/ggml-turbo-bn-q5_0.bin out/ggml-small-q5_1.bin out/ggml-silero-v6.2.0.bin > out/SHA256SUMS
-          gh release delete models-v1 --yes --cleanup-tag 2>/dev/null || true
-          gh release create models-v1 --title "Caption models v1" --notes-file out/ACCURACY.md \
-            out/ggml-turbo-bn-q5_0.bin out/ggml-small-q5_1.bin out/ggml-silero-v6.2.0.bin out/SHA256SUMS out/ACCURACY.md
+          gh release upload models-v1 out/ACCURACY.md --clobber
+          gh release edit models-v1 --notes-file out/ACCURACY.md

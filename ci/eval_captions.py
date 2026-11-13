@@ -51,8 +51,12 @@ for name, spec in models:
     spent = audio = 0.0
     for i, (wav, ref) in enumerate(clips):
         t0 = time.time()
-        raw = subprocess.run([cli, "-m", path, "-l", lang, "-f", wav, "-nt", "-t", str(os.cpu_count() or 4)],
-                             capture_output=True).stdout
+        # same settings as the app: beam search 3, no context carried between windows
+        try:
+            raw = subprocess.run([cli, "-m", path, "-l", lang, "-f", wav, "-nt", "-bs", "3", "-mc", "0",
+                                  "-t", str(os.cpu_count() or 4)], capture_output=True, timeout=120).stdout
+        except subprocess.TimeoutExpired:
+            raw = b""
         # one Bangla letter is 3 bytes; the CLI may split it over two lines: join, then decode
         out = raw.replace(b"\n", b"").decode("utf8", errors="replace").replace("\ufffd", "")
         spent += time.time() - t0
