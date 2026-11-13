@@ -56,7 +56,7 @@ class CompoundUiTest {
         Thread.sleep(ms)
         rule.mainClock.advanceTimeBy(ms)
         rule.waitForIdle()
-        Thread.sleep(250)
+        Thread.sleep(600) // let the new frame reach the screen before a screenshot
     }
 
     /** Taps a bottom-bar button (scrolling the bar to it first). */

@@ -112,7 +112,7 @@ class CompoundDataTest {
         t = TimelineOps.split(t, compound.id, 8_000, ::id).timeline
         val second = t.main[1]
         t = TimelineOps.trimMain(t, second.id, newSourceEndMs = second.sourceEndMs - 1_000)
-        assertEquals(13_000L, t.durationMs)
+        assertEquals(5_000L + portrait.durationMs + image.durationMs - 1_000L, t.durationMs)
         assertTrue(t.main.all { it.isCompound })
         val t0 = System.currentTimeMillis()
         val out = Exporter(ctx).export(t, 9f / 16f) { }

@@ -1,3 +1,32 @@
+# V0.14 — compound clips, Copy / Paste / Duplicate, project delete (2026-11-14)
+
+Current version: 0.14 (versionCode 14), label V0.14. Branch v0.14-compound-clip merged to main.
+(An earlier, unreleased attempt at the same request is kept untouched on branch v0.14-compound:
+it used a shared groupId instead of a real compound clip. Not merged.)
+
+What changed
+- Compound clip (core/Compound.kt): MediaKind.COMPOUND clip with `children` (inner timeline from
+  0) and a source window into it, so split / trim / move / delete / copy work unchanged.
+  Compound.flatten() turns compounds into playable pieces for the player, the exporter and the
+  preview; the compound's framing (position / zoom / rotation / stretch) is applied to every piece
+  (Compound.place). Nested compounds work. Uncompound gives back the clips (new ids), keeping how
+  they look and only what is inside the window.
+- UI: "Compound" button (no selection and main-clip bar) -> pick mode: tap clips to tick them,
+  "All", everything between the first and last tick joins; "Compound" makes it. Compound clips
+  show the thumbnails / waveform of their pieces and a purple badge with the clip count.
+  Selected compound: Split, Uncompound, Copy, Paste, Duplicate, Compound, Delete, Move.
+  AutoCut on a compound asks to Uncompound first.
+- Copy / Paste / Duplicate now work for main clips (and all tracks). Copy keeps the clip while the
+  app runs, so it can be pasted into another project. Paste goes to the playhead (a main clip
+  under the playhead is split). Duplicate puts the copy right after the clip.
+- Projects screen: ⋮ menu -> Delete project (confirmation; clips deleted first, then the project;
+  library files that were only kept for it are cleaned up; gallery files untouched).
+- Database version 4: clips.childrenJson (inner clips as JSON, data/ClipJson.kt) and
+  clips.childLibraryIds (",3,7,") so library items used inside compounds count as in use.
+  Migration 3->4 only adds the two nullable columns.
+- Long toolbar labels use a smaller font.
+
+---
 # V0.13 — dynamic timeline, AutoCut review, on-device tests (2026-11-13)
 
 Current version: 0.13 (versionCode 13), label V0.13. Branch v0.13-dynamic-timeline merged to main.

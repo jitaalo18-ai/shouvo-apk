@@ -543,7 +543,13 @@ private fun ToolButton(icon: ImageVector, label: String, onClick: () -> Unit) {
     ) {
         Icon(icon, contentDescription = null, modifier = Modifier.size(22.dp))
         Spacer(Modifier.height(2.dp))
-        Text(label, fontSize = 11.sp, lineHeight = 13.sp, textAlign = TextAlign.Center, maxLines = 1, color = Color.LightGray)
+        // long labels ("Uncompound", "Green screen") get a slightly smaller font so they fit
+        val size = when {
+            label.length > 11 -> 9.sp
+            label.length > 9 -> 10.sp
+            else -> 11.sp
+        }
+        Text(label, fontSize = size, lineHeight = 13.sp, textAlign = TextAlign.Center, maxLines = 1, softWrap = false, color = Color.LightGray)
     }
 }
 
