@@ -7,7 +7,7 @@ set -u
 OUT=${1:-ci-data}
 mkdir -p "$OUT"
 gh release download models-v1 -p 'ggml-small-q5_1.bin' -p 'ggml-turbo-bn-q5_0.bin' -D "$OUT" --clobber || echo "models not available"
-sudo apt-get install -y -qq espeak-ng > /dev/null 2>&1 || true
+sudo apt-get update -qq > /dev/null 2>&1; sudo apt-get install -y -qq espeak-ng ffmpeg > /dev/null 2>&1 || true
 TEXT="Hello everyone. Today I will show you how to make a video. First open the editor. Then add your clips and press export."
 if command -v espeak-ng > /dev/null; then
   espeak-ng -v en-us -s 150 -w "$OUT/speech.wav" "$TEXT"
