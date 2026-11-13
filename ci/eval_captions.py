@@ -51,8 +51,10 @@ for name, spec in models:
     spent = audio = 0.0
     for i, (wav, ref) in enumerate(clips):
         t0 = time.time()
-        out = subprocess.run([cli, "-m", path, "-l", lang, "-f", wav, "-nt", "-t", str(os.cpu_count() or 4)],
-                             capture_output=True, text=True).stdout
+        raw = subprocess.run([cli, "-m", path, "-l", lang, "-f", wav, "-nt", "-t", str(os.cpu_count() or 4)],
+                             capture_output=True).stdout
+        # one Bangla letter is 3 bytes; the CLI may split it over two lines: join, then decode
+        out = raw.replace(b"\n", b"").decode("utf8", errors="replace").replace("\ufffd", "")
         spent += time.time() - t0
         audio += audio_seconds(wav)
         hyp, r = norm(out), norm(ref)
