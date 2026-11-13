@@ -29,6 +29,7 @@ import androidx.media3.transformer.ProgressHolder
 import androidx.media3.transformer.Transformer
 import com.google.common.collect.ImmutableList
 import com.videoeditor.core.Clip
+import com.videoeditor.core.Compound
 import com.videoeditor.core.MediaKind
 import com.videoeditor.core.Timeline
 import com.videoeditor.core.TimelineOps
@@ -83,7 +84,9 @@ fun canvasSize(aspect: Float): Pair<Int, Int> {
  */
 class Exporter(private val context: Context) {
 
-    suspend fun export(timeline: Timeline, aspect: Float, onProgress: (Float) -> Unit): Uri = withContext(Dispatchers.Main) {
+    suspend fun export(project: Timeline, aspect: Float, onProgress: (Float) -> Unit): Uri = withContext(Dispatchers.Main) {
+        // compound clips are rendered as the pieces inside them, placed through their framing
+        val timeline = Compound.flatten(project, aspect)
         val main = timeline.main
         require(main.isNotEmpty()) { "Nothing to export" }
         val (canvasW, canvasH) = canvasSize(aspect)

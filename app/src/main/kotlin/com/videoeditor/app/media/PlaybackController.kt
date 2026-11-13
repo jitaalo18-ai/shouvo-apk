@@ -7,6 +7,7 @@ import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.SeekParameters
 import com.videoeditor.core.Clip
+import com.videoeditor.core.Compound
 import com.videoeditor.core.MediaKind
 import com.videoeditor.core.Timeline
 import com.videoeditor.core.TimelineOps
@@ -80,7 +81,8 @@ class PlaybackController(private val context: Context, private val scope: Corout
      */
     fun setTimeline(timeline: Timeline, interactive: Boolean = false) {
         if (released) return
-        wantedClips = timeline.main
+        // compound clips play as the pieces inside them (framing does not matter to the player)
+        wantedClips = Compound.flatten(timeline, 1f).main
         syncAuxPlayers(timeline)
         pendingApply?.cancel()
         if (interactive) {

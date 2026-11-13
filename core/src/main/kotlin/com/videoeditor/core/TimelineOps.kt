@@ -272,6 +272,29 @@ object TimelineOps {
             )
         }
 
+    /** Copies a main clip; the copy goes right after it and is selected. */
+    fun duplicateMain(t: Timeline, id: String, newId: () -> String): Timeline {
+        val c = t.byId(id) ?: return t
+        if (c.track != Track.MAIN) return t
+        val copy = c.copy(id = newId(), selected = true)
+        val main = t.main.flatMap { if (it.id == id) listOf(it.copy(selected = false), copy) else listOf(it.copy(selected = false)) }
+        return relay(main, others(t).map { it.copy(selected = false) })
+    }
+
+    /**
+     * Pastes a copied clip at [atMs]: a main clip is inserted there (a clip under the playhead is
+     * split), any other clip starts there on its own track. The pasted clip is selected.
+     */
+    fun paste(t: Timeline, clip: Clip, atMs: Long, newId: () -> String): Timeline {
+        val incoming = clip.copy(id = newId(), selected = false)
+        val placed = if (clip.track == Track.MAIN) {
+            insertMainAt(t, atMs.coerceIn(0, t.durationMs), incoming, newId)
+        } else {
+            addClip(t, incoming.copy(timelineStartMs = atMs.coerceAtLeast(0)))
+        }
+        return select(placed, incoming.id)
+    }
+
     /** Copies a free-track clip (overlay / sound / music). The copy goes on top and is selected. */
     fun duplicate(t: Timeline, id: String, newId: () -> String): Timeline {
         val c = t.byId(id) ?: return t

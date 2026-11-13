@@ -599,3 +599,173 @@ class SnapTests {
         assertEquals(Snapped(2_700, null), Snap.edge(2_700, targets, 150))
     }
 }
+
+class CompoundTests {
+    private var n = 0
+    private val ids: () -> String = { "n${n++}" }
+
+    private fun video(id: String, uri: String, start: Long, end: Long, aspect: Float = 16f / 9f) = Clip(
+        id = id, track = Track.MAIN, kind = MediaKind.VIDEO, sourceUri = uri, sourceDurationMs = 60_000,
+        sourceStartMs = start, sourceEndMs = end, timelineStartMs = 0, hasAudio = true, aspect = aspect,
+    )
+
+    private fun project(): Timeline {
+        val main = listOf(
+            video("a", "u1", 1_000, 4_000),      // 3 s
+            video("b", "u2", 0, 2_000),          // 2 s
+            video("c", "u1", 10_000, 15_000),    // 5 s
+            video("d", "u3", 0, 1_000),          // 1 s
+        )
+        val music = Clip(
+            id = "m", track = Track.MUSIC, kind = MediaKind.AUDIO, sourceUri = "music", sourceDurationMs = 30_000,
+            sourceStartMs = 0, sourceEndMs = 30_000, timelineStartMs = 0, hasAudio = true,
+        )
+        return TimelineOps.normalize(Timeline(main + music))
+    }
+
+    /** What the player sees: (uri, sourceStart, sourceEnd, timelineStart) of every main piece. */
+    private fun plays(t: Timeline, aspect: Float = 9f / 16f) =
+        Compound.flatten(t, aspect).main.map { listOf(it.sourceUri, it.sourceStartMs, it.sourceEndMs, it.timelineStartMs) }
+
+    @Test
+    fun compoundPlaysExactlyLikeTheClipsItWasMadeFrom() {
+        val t = project()
+        val r = Compound.create(t, listOf("b", "c"), ids, 9f / 16f)
+        assertTrue(r.changed)
+        assertEquals(3, r.timeline.main.size)
+        val compound = r.timeline.main[1]
+        assertTrue(compound.isCompound)
+        assertTrue(compound.selected)
+        assertEquals(7_000L, compound.durationMs)
+        assertEquals(3_000L, compound.timelineStartMs)
+        assertEquals(t.durationMs, r.timeline.durationMs)
+        assertEquals(plays(t), plays(r.timeline))
+        assertEquals("music track untouched", t.track(Track.MUSIC), r.timeline.track(Track.MUSIC).map { it.copy(selected = false) })
+    }
+
+    @Test
+    fun clipsBetweenTheChosenOnesAreIncluded() {
+        val r = Compound.create(project(), listOf("d", "a"), ids, 1f)
+        assertEquals(1, r.timeline.main.size)
+        assertEquals(4, r.timeline.main[0].children.size)
+        assertEquals(listOf("a", "b", "c", "d"), r.timeline.main[0].children.map { it.id })
+    }
+
+    @Test
+    fun oneClipIsNotEnough() {
+        val r = Compound.create(project(), listOf("a"), ids, 1f)
+        assertFalse(r.changed)
+    }
+
+    @Test
+    fun trimmingAndSplittingACompoundCutsThroughItsClips() {
+        val made = Compound.create(project(), listOf("a", "b", "c", "d"), ids, 1f).timeline
+        val c = made.main.single()
+        // hide the first 3.5 s (all of a, half a second of b) and the last 1.5 s (d and 0.5 s of c)
+        val trimmed = TimelineOps.trimMain(made, c.id, newSourceStartMs = 3_500, newSourceEndMs = 9_500)
+        assertEquals(
+            listOf(
+                listOf("u2", 500L, 2_000L, 0L),
+                listOf("u1", 10_000L, 14_500L, 1_500L),
+            ),
+            plays(trimmed),
+        )
+        // split at 1 s: both halves still play the same thing
+        val split = TimelineOps.split(trimmed, c.id, 1_000, ids)
+        assertTrue(split.changed)
+        assertEquals(2, split.timeline.main.size)
+        assertTrue(split.timeline.main.all { it.isCompound })
+        val joined = plays(split.timeline).map { it[0] to (it[2] as Long - (it[1] as Long)) }
+        assertEquals(listOf("u2" to 1_000L, "u2" to 500L, "u1" to 4_500L), joined)
+        assertEquals(6_000L, split.timeline.durationMs)
+    }
+
+    @Test
+    fun uncompoundGivesBackTheClipsWithNewIds() {
+        val t = project()
+        val made = Compound.create(t, listOf("a", "d"), ids, 9f / 16f).timeline
+        val back = Compound.uncompound(made, made.main.single().id, ids, 9f / 16f)
+        assertTrue(back.changed)
+        assertEquals(plays(t), plays(back.timeline))
+        assertEquals(4, back.timeline.main.size)
+        assertTrue(back.timeline.main.none { it.id in setOf("a", "b", "c", "d") })
+        assertTrue(back.timeline.main.none { it.isCompound })
+    }
+
+    @Test
+    fun nestedCompoundsFlattenAllTheWay() {
+        val inner = Compound.create(project(), listOf("a", "b"), ids, 1f).timeline
+        val outer = Compound.create(inner, inner.main.map { it.id }, ids, 1f)
+        assertTrue(outer.changed)
+        val top = outer.timeline.main.single()
+        assertEquals(4, Compound.leafCount(top))
+        assertEquals(plays(project(), 1f), plays(outer.timeline, 1f))
+        val ids = Compound.flatten(outer.timeline, 1f).main.map { it.id }
+        assertEquals("piece ids are unique", ids.size, ids.toSet().size)
+    }
+
+    @Test
+    fun compoundTransformMovesEverythingInside() {
+        val aspect = 9f / 16f
+        val made = Compound.create(project(), listOf("a", "b"), ids, aspect).timeline
+        val c = made.main[0]
+        // identity: pieces keep their own framing
+        val plain = Compound.flatten(made, aspect).main[0]
+        assertEquals(0.5f, plain.posX, 1e-4f)
+        assertEquals(TimelineOps.MAIN_SCALE_UNIT, plain.scale, 1e-4f)
+        // zoom the compound x2 and move it to the right: the piece doubles and moves with it
+        val zoomed = TimelineOps.transformMain(made, c.id, 0.75f, 0.5f, 2f, 90f)
+        val p = Compound.flatten(zoomed, aspect).main[0]
+        assertEquals(2f, TimelineOps.mainZoom(p), 1e-3f)
+        assertEquals(0.75f, p.posX, 1e-4f)
+        assertEquals(0.5f, p.posY, 1e-4f)
+        assertEquals(90f, p.rotation, 1e-3f)
+    }
+
+    @Test
+    fun offCentreChildRotatesAroundTheCompoundCentre() {
+        val aspect = 1f
+        val made = Compound.create(project(), listOf("a", "b"), ids, aspect).timeline
+        val c = made.main[0]
+        // put the first child at the right edge inside the compound
+        val moved = made.copy(clips = made.clips.map {
+            if (it.id == c.id) it.copy(children = it.children.mapIndexed { i, ch -> if (i == 0) ch.copy(posX = 1f) else ch }) else it
+        })
+        val turned = TimelineOps.transformMain(moved, c.id, 0.5f, 0.5f, 1f, 90f)
+        val p = Compound.flatten(turned, aspect).main[0]
+        // right edge turned a quarter clockwise (screen y down) ends at the bottom centre
+        assertEquals(0.5f, p.posX, 1e-4f)
+        assertEquals(1f, p.posY, 1e-4f)
+    }
+
+    @Test
+    fun duplicateMainPutsTheCopyRightAfter() {
+        val t = TimelineOps.duplicateMain(project(), "b", ids)
+        assertEquals(listOf("a", "b", "n0", "c", "d"), t.main.map { it.id })
+        assertTrue(t.byId("n0")!!.selected)
+        assertEquals(project().durationMs + 2_000, t.durationMs)
+        assertEquals(t.main[1].copy(id = "n0", timelineStartMs = 5_000, selected = true), t.main[2])
+    }
+
+    @Test
+    fun pasteInsertsAtThePlayheadAndSplitsTheClipThere() {
+        val copied = project().byId("d")!!
+        val t = TimelineOps.paste(project(), copied, 6_000, ids)
+        // c (5..10 s) is split at 6 s and the pasted clip goes in between
+        assertEquals(listOf("a", "b", "c", "n0", "n1", "d"), t.main.map { it.id })
+        assertEquals(6_000L, t.byId("n0")!!.timelineStartMs)
+        assertTrue(t.byId("n0")!!.selected)
+        assertEquals(project().durationMs + 1_000, t.durationMs)
+        val music = project().byId("m")!!
+        val t2 = TimelineOps.paste(project(), music, 4_000, ids)
+        assertEquals(2, t2.track(Track.MUSIC).size)
+        assertEquals(4_000L, t2.track(Track.MUSIC).last().timelineStartMs)
+    }
+
+    @Test
+    fun libraryIdsInsideACompoundAreFound() {
+        val t = TimelineOps.normalize(Timeline(listOf(video("a", "u", 0, 1000), video("b", "fx", 0, 1000).copy(libraryItemId = 7))))
+        val c = Compound.create(t, listOf("a", "b"), ids, 1f).timeline.main.single()
+        assertEquals(setOf(7L), Compound.libraryIds(c))
+    }
+}

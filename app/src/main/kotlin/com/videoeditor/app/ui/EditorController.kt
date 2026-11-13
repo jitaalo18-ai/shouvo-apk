@@ -18,6 +18,8 @@ import com.videoeditor.app.media.MediaProbe
 import com.videoeditor.app.media.PlaybackController
 import com.videoeditor.app.media.canvasSize
 import com.videoeditor.core.AutoCutStrength
+import com.videoeditor.core.Clip
+import com.videoeditor.core.Compound
 import com.videoeditor.core.MediaKind
 import com.videoeditor.core.Snap
 import com.videoeditor.core.Timeline
@@ -91,6 +93,20 @@ class EditorController(private val app: App, val projectId: Long, uiScope: Corou
 
     private val position: Long get() = player.positionMs.value
 
+    private var flatKey: Pair<Timeline, Float>? = null
+    private var flatValue: Timeline = Timeline()
+
+    /** The timeline as it plays: compound clips replaced by the pieces inside them. */
+    val flat: Timeline
+        get() {
+            val key = timeline to canvasAspect
+            if (key != flatKey) {
+                flatValue = Compound.flatten(timeline, canvasAspect)
+                flatKey = key
+            }
+            return flatValue
+        }
+
     init {
         current = this
         scope.launch {
@@ -102,6 +118,12 @@ class EditorController(private val app: App, val projectId: Long, uiScope: Corou
     }
 
     companion object {
+        /**
+         * Copied clip (Copy button). Kept for as long as the app runs, so a clip can be copied in
+         * one project and pasted into another.
+         */
+        var clipboard by mutableStateOf<Clip?>(null)
+
         /** The open editor (used by the on-device tests to look at the state). */
         @Volatile
         var current: EditorController? = null
@@ -145,12 +167,14 @@ class EditorController(private val app: App, val projectId: Long, uiScope: Corou
 
     fun undo() {
         if (busy != null || undoStack.isEmpty()) return
+        compoundPick = null
         redoStack.addLast(timeline)
         restore(undoStack.removeLast())
     }
 
     fun redo() {
         if (busy != null || redoStack.isEmpty()) return
+        compoundPick = null
         undoStack.addLast(timeline)
         restore(redoStack.removeLast())
     }
@@ -178,6 +202,11 @@ class EditorController(private val app: App, val projectId: Long, uiScope: Corou
     }
 
     fun select(id: String?) {
+        // while picking clips for a compound, a tap ticks / unticks a main clip instead
+        if (compoundPick != null) {
+            if (id != null && timeline.byId(id)?.track == Track.MAIN) togglePick(id)
+            return
+        }
         val target = if (id != null && timeline.selected?.id == id) null else id
         if (target == null && timeline.selected == null) return
         commitEdit(TimelineOps.select(timeline, target), undoable = false)
@@ -200,6 +229,10 @@ class EditorController(private val app: App, val projectId: Long, uiScope: Corou
 
     fun autoCut() {
         val clip = timeline.selected ?: return
+        if (clip.isCompound) {
+            message = "AutoCut works on single video clips. Tap Uncompound first, then AutoCut the clip you want."
+            return
+        }
         if (clip.track != Track.MAIN || clip.kind != MediaKind.VIDEO) {
             message = "AutoCut works on video clips."
             return
@@ -351,6 +384,10 @@ class EditorController(private val app: App, val projectId: Long, uiScope: Corou
         private set
     private var trimEdgeTimelineMs: Long? = null
 
+    /** The playable clip whose frame the preview shows while a trim handle is dragged. */
+    var liveTrimPiece by mutableStateOf<Clip?>(null)
+        private set
+
     private fun targets(excludeId: String) = Snap.targets(timeline, excludeId, position)
 
     /** Trim handles of a main-track clip. The preview follows the edge being dragged. */
@@ -370,12 +407,15 @@ class EditorController(private val app: App, val projectId: Long, uiScope: Corou
         val t = TimelineOps.trimMain(timeline, id, sourceStartMs, end)
         commitEdit(t, saveNow = false)
         val after = t.byId(id) ?: return
-        if (after.kind == MediaKind.VIDEO) {
+        val edge = if (sourceStartMs != null) after.timelineStartMs else (after.timelineEndMs - 40).coerceAtLeast(after.timelineStartMs)
+        // inside a compound the frame comes from the piece at the edge
+        val piece = if (after.isCompound) Compound.pieceAt(after, edge, canvasAspect) else after
+        if (piece.kind == MediaKind.VIDEO) {
             liveTrimClipId = id
-            val frameMs = if (sourceStartMs != null) after.sourceStartMs else (after.sourceEndMs - 40).coerceAtLeast(after.sourceStartMs)
-            LiveFrames.request(app, after.sourceUri, frameMs)
+            liveTrimPiece = piece
+            LiveFrames.request(app, piece.sourceUri, piece.timelineToSource(edge))
         }
-        trimEdgeTimelineMs = if (sourceStartMs != null) after.timelineStartMs else after.timelineEndMs - 40
+        trimEdgeTimelineMs = edge
     }
 
     fun move(id: String, startMs: Long, snapMs: Long = 0) {
@@ -406,6 +446,7 @@ class EditorController(private val app: App, val projectId: Long, uiScope: Corou
         player.flush()
         if (liveTrimClipId != null) {
             liveTrimClipId = null
+            liveTrimPiece = null
             LiveFrames.clear()
             if (edge != null) player.seekTo(edge)
         }
@@ -431,9 +472,112 @@ class EditorController(private val app: App, val projectId: Long, uiScope: Corou
     /** Size of the rendered frame in pixels (used for the position read-out). */
     val canvasPixels: Pair<Int, Int> get() = canvasSize(targetAspect)
 
+    /** Duplicate: a main clip's copy goes right after it, other clips get a copy on top. */
     fun duplicateSelected() {
         val clip = timeline.selected ?: return
-        if (clip.track != Track.MAIN) commitEdit(TimelineOps.duplicate(timeline, clip.id, ::newClipId))
+        if (clip.track == Track.MAIN) {
+            commitEdit(TimelineOps.duplicateMain(timeline, clip.id, ::newClipId))
+            message = "Duplicated - the copy is right after the clip."
+        } else {
+            commitEdit(TimelineOps.duplicate(timeline, clip.id, ::newClipId))
+        }
+    }
+
+    // ---- Copy / paste --------------------------------------------------------------------
+
+    fun copySelected() {
+        val clip = timeline.selected ?: return
+        clipboard = clip.copy(selected = false)
+        message = "Copied. Move the playhead and tap Paste (also works in another project)."
+    }
+
+    /** Pastes the copied clip at the playhead (a main clip under the playhead is split there). */
+    fun paste() {
+        val clip = clipboard ?: return
+        val missing = leaves(clip).firstOrNull { leaf ->
+            val uri = Uri.parse(leaf.sourceUri)
+            uri.scheme == "file" && uri.path?.let { !java.io.File(it).exists() } == true
+        }
+        if (missing != null) {
+            message = "The copied clip's file no longer exists, so it cannot be pasted."
+            return
+        }
+        commitEdit(TimelineOps.paste(timeline, clip, position, ::newClipId))
+        message = if (clip.track == Track.MAIN) "Pasted at the playhead." else "Pasted at the playhead on its own track."
+    }
+
+    private fun leaves(c: Clip): List<Clip> = if (c.isCompound) c.children.flatMap { leaves(it) } else listOf(c)
+
+    // ---- Compound clips ------------------------------------------------------------------
+
+    /**
+     * Compound picking mode: the main clips the user has ticked (null = not picking). The clips
+     * from the first to the last ticked one go into the compound clip.
+     */
+    var compoundPick by mutableStateOf<Set<String>?>(null)
+        private set
+
+    /** Index range of the main clips that will be packed (first to last ticked). */
+    val compoundRange: IntRange?
+        get() {
+            val pick = compoundPick ?: return null
+            val idx = timeline.main.mapIndexedNotNull { i, c -> if (c.id in pick) i else null }
+            return if (idx.isEmpty()) null else idx.min()..idx.max()
+        }
+
+    fun startCompound() {
+        if (busy != null) return
+        if (timeline.main.size < 2) {
+            message = "Add at least two clips to the main track to make a compound clip."
+            return
+        }
+        player.pause()
+        val selected = timeline.selected?.takeIf { it.track == Track.MAIN }
+        compoundPick = setOfNotNull(selected?.id)
+        if (timeline.selected != null) commitEdit(TimelineOps.select(timeline, null), undoable = false)
+    }
+
+    fun togglePick(id: String) {
+        val pick = compoundPick ?: return
+        compoundPick = if (id in pick) pick - id else pick + id
+    }
+
+    fun pickAll() {
+        if (compoundPick == null) return
+        val all = timeline.main.map { it.id }.toSet()
+        compoundPick = if (compoundPick == all) emptySet() else all
+    }
+
+    fun cancelCompound() {
+        compoundPick = null
+    }
+
+    fun makeCompound() {
+        val range = compoundRange ?: run {
+            message = "Tick the first and the last clip that should go into the compound clip."
+            return
+        }
+        val main = timeline.main
+        val ids = main.subList(range.first, range.last + 1).map { it.id }
+        val result = Compound.create(timeline, ids, ::newClipId, canvasAspect)
+        if (!result.changed) {
+            message = result.reason
+            return
+        }
+        compoundPick = null
+        commitEdit(result.timeline)
+        message = "Compound clip made from ${ids.size} clips. Tap Uncompound to take them apart again."
+    }
+
+    fun uncompoundSelected() {
+        val clip = timeline.selected ?: return
+        val result = Compound.uncompound(timeline, clip.id, ::newClipId, canvasAspect)
+        if (result.changed) {
+            commitEdit(result.timeline)
+            message = "Compound clip taken apart into ${clip.children.size} clips."
+        } else {
+            message = result.reason
+        }
     }
 
     fun comingSoon(feature: String) {

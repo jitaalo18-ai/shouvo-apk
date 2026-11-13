@@ -43,6 +43,9 @@ import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.CallSplit
+import androidx.compose.material.icons.filled.MergeType
+import androidx.compose.material.icons.filled.ContentPaste
 import androidx.compose.material.icons.filled.Crop
 import androidx.compose.material.icons.filled.FileCopy
 import androidx.compose.material.icons.filled.Flip
@@ -286,19 +289,22 @@ fun EditorScreen(app: App, projectId: Long, onBack: () -> Unit) {
 
             // toolbars
             val selected = ctl.timeline.selected
-            if (selected == null) {
+            val clipboard = EditorController.clipboard
+            if (ctl.compoundPick != null) {
+                CompoundPickBar(ctl)
+            } else if (selected == null) {
                 Row(
                     Modifier.fillMaxWidth().background(Bg).horizontalScroll(rememberScrollState()).padding(vertical = 6.dp),
                     horizontalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
-                    // Visible buttons only; their functions are specified later.
+                    if (clipboard != null) ToolButton(Icons.Filled.ContentPaste, "Paste") { ctl.paste() }
                     ToolButton(Icons.Filled.GraphicEq, "Sound FX") { ctl.library = LibraryKind.SOUND_FX }
                     ToolButton(Icons.Filled.MusicNote, "BG MUSIC") { ctl.library = LibraryKind.MUSIC }
                     ToolButton(Icons.Filled.Movie, "Video FX") { ctl.library = LibraryKind.VIDEO_FX }
                     ToolButton(Icons.Filled.Layers, "Overlay") { importOverlay() }
-                    ToolButton(Icons.Filled.TextFields, "Text") { }
-                    ToolButton(Icons.Filled.Mic, "Voice") { }
-                    ToolButton(Icons.Filled.Link, "Links") { }
+                    ToolButton(Icons.Filled.MergeType, "Compound") { ctl.startCompound() }
+                    ToolButton(Icons.Filled.TextFields, "Text") { ctl.comingSoon("Text") }
+                    ToolButton(Icons.Filled.Mic, "Voice") { ctl.comingSoon("Voice") }
                 }
             } else {
                 Row(Modifier.fillMaxWidth().background(Panel).padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -306,34 +312,40 @@ fun EditorScreen(app: App, projectId: Long, onBack: () -> Unit) {
                         Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, contentDescription = "Back", modifier = Modifier.size(30.dp))
                     }
                     Row(Modifier.weight(1f).horizontalScroll(rememberScrollState())) {
-                        ToolButton(Icons.Filled.MusicNote, "BG MUSIC") { ctl.library = LibraryKind.MUSIC }
                         if (selected.track == Track.MAIN) {
-                            // working tools
+                            // working tools first
                             ToolButton(Icons.Filled.ContentCut, "Split") { ctl.split() }
-                            ToolButton(Icons.Filled.AutoFixHigh, "AutoCut") { ctl.autoCut() }
-                            ToolButton(Icons.Filled.Movie, "Video FX") { ctl.library = LibraryKind.VIDEO_FX }
-                            ToolButton(Icons.Filled.GraphicEq, "Sound FX") { ctl.library = LibraryKind.SOUND_FX }
-                            ToolButton(Icons.Filled.Layers, "Overlay") { importOverlay() }
+                            if (selected.isCompound) {
+                                ToolButton(Icons.Filled.CallSplit, "Uncompound") { ctl.uncompoundSelected() }
+                            } else {
+                                ToolButton(Icons.Filled.AutoFixHigh, "AutoCut") { ctl.autoCut() }
+                            }
+                            ToolButton(Icons.Filled.ContentCopy, "Copy") { ctl.copySelected() }
+                            if (clipboard != null) ToolButton(Icons.Filled.ContentPaste, "Paste") { ctl.paste() }
+                            ToolButton(Icons.Filled.FileCopy, "Duplicate") { ctl.duplicateSelected() }
+                            ToolButton(Icons.Filled.MergeType, "Compound") { ctl.startCompound() }
                             ToolButton(Icons.Filled.Delete, "Delete") { ctl.deleteSelected() }
                             ToolButton(Icons.AutoMirrored.Filled.ArrowBack, "Move left") { ctl.moveSelectedMain(-1) }
                             ToolButton(Icons.AutoMirrored.Filled.ArrowForward, "Move right") { ctl.moveSelectedMain(1) }
+                            ToolButton(Icons.Filled.MusicNote, "BG MUSIC") { ctl.library = LibraryKind.MUSIC }
+                            ToolButton(Icons.Filled.Movie, "Video FX") { ctl.library = LibraryKind.VIDEO_FX }
+                            ToolButton(Icons.Filled.GraphicEq, "Sound FX") { ctl.library = LibraryKind.SOUND_FX }
+                            ToolButton(Icons.Filled.Layers, "Overlay") { importOverlay() }
                             // shown now, functions come in later versions
                             ToolButton(Icons.Filled.AutoAwesome, "Effects") { ctl.comingSoon("Effects") }
                             ToolButton(Icons.Filled.Tune, "Adjust") { ctl.comingSoon("Adjust") }
                             ToolButton(Icons.Filled.PhotoFilter, "Filters") { ctl.comingSoon("Filters") }
                             ToolButton(Icons.Filled.Crop, "Crop") { ctl.comingSoon("Crop") }
-                            ToolButton(Icons.Filled.OpenWith, "Transform") { ctl.comingSoon("Transform") }
                             ToolButton(Icons.Filled.Flip, "Mirror") { ctl.comingSoon("Mirror") }
                             ToolButton(Icons.Filled.Person, "Cutout") { ctl.comingSoon("Cutout") }
                             ToolButton(Icons.Filled.Vignette, "Mask") { ctl.comingSoon("Mask") }
                             ToolButton(Icons.Filled.Opacity, "Opacity") { ctl.comingSoon("Opacity") }
                             ToolButton(Icons.Filled.SwapHoriz, "Replace") { ctl.comingSoon("Replace") }
-                            ToolButton(Icons.Filled.ContentCopy, "Copy") { ctl.comingSoon("Copy") }
-                            ToolButton(Icons.Filled.FileCopy, "Duplicate") { ctl.comingSoon("Duplicate") }
                             ToolButton(Icons.Filled.Wallpaper, "Green screen") { ctl.comingSoon("Green screen") }
                         } else if (selected.track == Track.OVERLAY) {
-                            // overlay tools: working ones first
                             ToolButton(Icons.Filled.ContentCut, "Split") { ctl.split() }
+                            ToolButton(Icons.Filled.ContentCopy, "Copy") { ctl.copySelected() }
+                            if (clipboard != null) ToolButton(Icons.Filled.ContentPaste, "Paste") { ctl.paste() }
                             ToolButton(Icons.Filled.FileCopy, "Duplicate") { ctl.duplicateSelected() }
                             ToolButton(Icons.Filled.Delete, "Delete") { ctl.deleteSelected() }
                             // shown now, functions come in later versions
@@ -346,6 +358,8 @@ fun EditorScreen(app: App, projectId: Long, onBack: () -> Unit) {
                             ToolButton(Icons.Filled.Person, "Cutout") { ctl.comingSoon("Cutout") }
                         } else {
                             ToolButton(Icons.Filled.ContentCut, "Split") { ctl.split() }
+                            ToolButton(Icons.Filled.ContentCopy, "Copy") { ctl.copySelected() }
+                            if (clipboard != null) ToolButton(Icons.Filled.ContentPaste, "Paste") { ctl.paste() }
                             ToolButton(Icons.Filled.FileCopy, "Duplicate") { ctl.duplicateSelected() }
                             ToolButton(Icons.Filled.Delete, "Delete") { ctl.deleteSelected() }
                         }
@@ -551,8 +565,11 @@ private fun PreviewCanvas(ctl: EditorController, position: Long) {
         val canvasWPx = with(density) { canvasW.toPx() }
         val canvasHPx = with(density) { canvasH.toPx() }
 
-        val current = TimelineOps.locate(ctl.timeline, position)?.clip
-        val latest by rememberUpdatedState(current)
+        // `top` is the clip the user edits (a compound counts as one clip); `current` is what is
+        // drawn: for a compound, the piece inside it that plays at this moment.
+        val top = TimelineOps.locate(ctl.timeline, position)?.clip
+        val current = TimelineOps.locate(ctl.flat, position)?.clip
+        val latest by rememberUpdatedState(top)
 
         // running state of the current framing gesture (unsnapped values) and the active guides
         val haptics = LocalHapticFeedback.current
@@ -612,7 +629,7 @@ private fun PreviewCanvas(ctl: EditorController, position: Long) {
                 }
 
                 // While a trim handle is dragged: the exact frame at the moving edge.
-                val trimmed = ctl.liveTrimClipId?.let { ctl.timeline.byId(it) }
+                val trimmed = ctl.liveTrimPiece
                 val frame = liveFrame
                 if (trimmed != null && frame != null && frame.uri == trimmed.sourceUri) {
                     Box(Modifier.matchParentSize().background(Color.Black))
@@ -680,7 +697,7 @@ private fun PreviewCanvas(ctl: EditorController, position: Long) {
                 }
             }
 
-            if (current != null && current.selected) Box(place.border(2.dp, Accent))
+            if (top != null && top.selected) Box(placeFor(top).border(2.dp, Accent))
 
             // alignment guides: dashed lines at the frame centre / edges the video is locked onto
             if (showReadout && guides != 0) {
@@ -698,13 +715,13 @@ private fun PreviewCanvas(ctl: EditorController, position: Long) {
                 }
             }
 
-            if (showReadout && current != null) {
+            if (showReadout && top != null) {
                 val (outW, outH) = ctl.canvasPixels
-                val x = ((current.posX - 0.5f) * outW).toInt()
-                val y = ((current.posY - 0.5f) * outH).toInt()
+                val x = ((top.posX - 0.5f) * outW).toInt()
+                val y = ((top.posY - 0.5f) * outH).toInt()
                 val text = String.format(
                     java.util.Locale.US, "X%d Y%d %d\u00B0 %.2f\u00D7",
-                    x, y, current.rotation.toInt(), TimelineOps.mainZoom(current),
+                    x, y, top.rotation.toInt(), TimelineOps.mainZoom(top),
                 )
                 Text(
                     text,
@@ -775,4 +792,41 @@ private class FramingGesture {
     var zoom = 1f
     var rotation = 0f
     var snapKey = 0
+}
+
+/**
+ * Bar shown while clips are being picked for a compound clip: tap clips on the timeline to tick
+ * them; everything from the first to the last ticked clip goes into the compound clip.
+ */
+@Composable
+private fun CompoundPickBar(ctl: EditorController) {
+    val range = ctl.compoundRange
+    val count = range?.let { it.last - it.first + 1 } ?: 0
+    Row(
+        Modifier.fillMaxWidth().background(Panel).padding(horizontal = 4.dp, vertical = 6.dp).testTag("compoundBar"),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        IconButton(onClick = { ctl.cancelCompound() }) {
+            Icon(Icons.Filled.Close, contentDescription = "Cancel compound")
+        }
+        Column(Modifier.weight(1f)) {
+            Text(
+                if (count == 0) "Tap clips to put into one" else "$count clips selected",
+                fontSize = 14.sp, fontWeight = FontWeight.SemiBold,
+            )
+            Text("Clips between the ticked ones join too", fontSize = 11.sp, color = Color.Gray)
+        }
+        TextButton(onClick = { ctl.pickAll() }, modifier = Modifier.testTag("compoundAll")) {
+            Text(if (count == ctl.timeline.main.size) "None" else "All")
+        }
+        Button(
+            onClick = { ctl.makeCompound() },
+            enabled = count >= 2,
+            modifier = Modifier.testTag("compoundMake"),
+        ) {
+            Icon(Icons.Filled.MergeType, contentDescription = null, modifier = Modifier.size(18.dp))
+            Spacer(Modifier.width(6.dp))
+            Text("Compound")
+        }
+    }
 }

@@ -3,7 +3,8 @@ package com.videoeditor.core
 /** Timeline layers. MAIN is the gap-less primary video track; the others are free-positioned. */
 enum class Track { MAIN, OVERLAY, SFX, MUSIC }
 
-enum class MediaKind { VIDEO, IMAGE, AUDIO }
+/** COMPOUND = a main-track clip that holds other clips (see [Compound]). */
+enum class MediaKind { VIDEO, IMAGE, AUDIO, COMPOUND }
 
 /** Half-open range in milliseconds: [startMs, endMs). */
 data class MsRange(val startMs: Long, val endMs: Long) {
@@ -42,7 +43,15 @@ data class Clip(
     val stretchX: Float = 1f,
     val stretchY: Float = 1f,
     val selected: Boolean = false,
+    /**
+     * Only for COMPOUND clips: the clips inside, laid out one after another from 0 (their
+     * timelineStartMs is the time inside the compound). The compound's source range is a window
+     * into that inner timeline, so split / trim / move work on it like on any other clip.
+     */
+    val children: List<Clip> = emptyList(),
 ) {
+    val isCompound: Boolean get() = kind == MediaKind.COMPOUND
+
     val durationMs: Long get() = sourceEndMs - sourceStartMs
     val timelineEndMs: Long get() = timelineStartMs + durationMs
 

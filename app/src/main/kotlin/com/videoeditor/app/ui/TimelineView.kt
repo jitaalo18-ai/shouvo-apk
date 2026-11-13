@@ -23,6 +23,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
@@ -71,6 +72,10 @@ import androidx.compose.ui.unit.sp
 import com.videoeditor.app.media.Thumbnails
 import com.videoeditor.app.media.Waveforms
 import com.videoeditor.core.Clip
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.material.icons.filled.MergeType
+import androidx.compose.material.icons.filled.CheckCircle
+import com.videoeditor.core.Compound
 import com.videoeditor.core.MediaKind
 import com.videoeditor.core.Timeline
 import com.videoeditor.core.TimelineOps
@@ -253,8 +258,18 @@ fun TimelineView(ctl: EditorController, position: Long, modifier: Modifier = Mod
                     FreeTrack(ctl, timeline.track(Track.OVERLAY), OverlayColor, pxPerMs, VISUAL_LANE, visible, snapMs)
                     // main video track
                     Row(Modifier.height(MAIN_HEIGHT)) {
+                        val pick = ctl.compoundPick
+                        val range = ctl.compoundRange
                         timeline.main.forEachIndexed { index, clip ->
-                            key(clip.id) { MainClipView(ctl, clip, pxPerMs, visible, snapMs, Modifier.testTag("mainClip_$index")) }
+                            key(clip.id) {
+                                val mark = when {
+                                    pick == null -> PickMark.NONE
+                                    clip.id in pick -> PickMark.TICKED
+                                    range != null && index in range -> PickMark.INCLUDED
+                                    else -> PickMark.OFF
+                                }
+                                MainClipView(ctl, clip, pxPerMs, visible, snapMs, mark, Modifier.testTag("mainClip_$index"))
+                            }
                         }
                     }
                 }
@@ -385,7 +400,10 @@ private fun WaveStrip(clip: Clip, pxPerMs: Float, visible: Visible, color: Color
 }
 
 @Composable
-private fun MainClipView(ctl: EditorController, clip: Clip, pxPerMs: Float, visible: Visible, snapMs: Long, modifier: Modifier) {
+private enum class PickMark { NONE, TICKED, INCLUDED, OFF }
+
+@Composable
+private fun MainClipView(ctl: EditorController, clip: Clip, pxPerMs: Float, visible: Visible, snapMs: Long, mark: PickMark, modifier: Modifier) {
     val density = LocalDensity.current
     val widthPx = clip.durationMs * pxPerMs
     var handleBaseStart by remember { mutableStateOf(0L) }
@@ -408,15 +426,37 @@ private fun MainClipView(ctl: EditorController, clip: Clip, pxPerMs: Float, visi
                 .background(Bg)
                 .clickable { ctl.select(clip.id) },
         ) {
-            // thumbnails on top, the clip's own sound as a waveform underneath
-            Box(Modifier.fillMaxWidth().height(THUMB_HEIGHT).background(Color(0xFF22252C))) {
-                ThumbStrip(clip, pxPerMs, THUMB_HEIGHT, visible)
+            if (clip.isCompound) {
+                CompoundStrips(clip, pxPerMs, visible)
+            } else {
+                // thumbnails on top, the clip's own sound as a waveform underneath
+                Box(Modifier.fillMaxWidth().height(THUMB_HEIGHT).background(Color(0xFF22252C))) {
+                    ThumbStrip(clip, pxPerMs, THUMB_HEIGHT, visible)
+                }
+                if (clip.hasAudio) {
+                    WaveStrip(
+                        clip, pxPerMs, visible, WaveColor,
+                        Modifier.align(Alignment.BottomStart).fillMaxWidth().height(WAVE_HEIGHT).background(WaveBackground),
+                    )
+                }
             }
-            if (clip.hasAudio) {
-                WaveStrip(
-                    clip, pxPerMs, visible, WaveColor,
-                    Modifier.align(Alignment.BottomStart).fillMaxWidth().height(WAVE_HEIGHT).background(WaveBackground),
+            when (mark) {
+                PickMark.TICKED, PickMark.INCLUDED -> Box(
+                    Modifier.matchParentSize()
+                        .background(Accent.copy(alpha = if (mark == PickMark.TICKED) 0.45f else 0.25f))
+                        .border(2.dp, Accent, RoundedCornerShape(4.dp)),
                 )
+                PickMark.OFF -> Box(Modifier.matchParentSize().background(Color(0x66000000)))
+                PickMark.NONE -> {}
+            }
+            if (mark == PickMark.TICKED && widthPx > with(density) { 26.dp.toPx() }) {
+                Icon(
+                    Icons.Filled.CheckCircle, contentDescription = "Ticked", tint = Color.White,
+                    modifier = Modifier.align(Alignment.Center).size(22.dp),
+                )
+            }
+            if (clip.isCompound && !clip.selected && widthPx > with(density) { 30.dp.toPx() }) {
+                CompoundBadge(clip, widthPx > with(density) { 110.dp.toPx() })
             }
             if (clip.selected && widthPx > with(density) { 46.dp.toPx() }) {
                 Text(
@@ -463,6 +503,58 @@ private fun MainClipView(ctl: EditorController, clip: Clip, pxPerMs: Float, visi
                     ctl.trimMain(current.id, sourceEndMs = handleBaseEnd + (movedPx / scale).toLong(), snapMs = snap)
                 }
             }
+        }
+    }
+}
+
+/**
+ * A compound clip draws the thumbnails and sound of the pieces inside it, one after another,
+ * with a thin line where one piece ends and the next begins.
+ */
+@Composable
+private fun CompoundStrips(clip: Clip, pxPerMs: Float, visible: Visible) {
+    val density = LocalDensity.current
+    val pieces = remember(clip) { Compound.pieces(clip, 1f) }
+    Box(Modifier.fillMaxSize().background(Color(0xFF22252C))) {
+        for (piece in pieces) {
+            // pieces scrolled out of view are not drawn at all
+            if (piece.timelineEndMs * pxPerMs < visible.left || piece.timelineStartMs * pxPerMs > visible.right) continue
+            key(piece.id) {
+                val offsetPx = (piece.timelineStartMs - clip.timelineStartMs) * pxPerMs
+                Box(
+                    Modifier
+                        .offset { IntOffset(offsetPx.toInt(), 0) }
+                        .width(with(density) { (piece.durationMs * pxPerMs).toDp() })
+                        .fillMaxHeight(),
+                ) {
+                    Box(Modifier.fillMaxWidth().height(THUMB_HEIGHT).clipToBounds()) {
+                        ThumbStrip(piece, pxPerMs, THUMB_HEIGHT, visible)
+                    }
+                    if (piece.hasAudio) {
+                        WaveStrip(
+                            piece, pxPerMs, visible, WaveColor,
+                            Modifier.align(Alignment.BottomStart).fillMaxWidth().height(WAVE_HEIGHT).background(WaveBackground),
+                        )
+                    }
+                    Box(Modifier.align(Alignment.CenterStart).width(1.dp).fillMaxHeight().background(Color(0x99000000)))
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun CompoundBadge(clip: Clip, withText: Boolean) {
+    Row(
+        Modifier
+            .padding(start = 4.dp, top = 4.dp)
+            .background(Color(0xCC6D4AFF), RoundedCornerShape(4.dp))
+            .padding(horizontal = 4.dp, vertical = 1.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(Icons.Filled.MergeType, contentDescription = "Compound clip", tint = Color.White, modifier = Modifier.size(12.dp))
+        if (withText) {
+            Text(" ${Compound.leafCount(clip)} clips", fontSize = 10.sp, color = Color.White, maxLines = 1)
         }
     }
 }

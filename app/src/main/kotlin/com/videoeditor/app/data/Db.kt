@@ -61,6 +61,10 @@ data class ClipEntity(
     @ColumnInfo(defaultValue = "0") val rotation: Float = 0f,
     @ColumnInfo(defaultValue = "1") val stretchX: Float = 1f,
     @ColumnInfo(defaultValue = "1") val stretchY: Float = 1f,
+    /** 0.14: the clips inside a compound clip, as JSON (null for ordinary clips). */
+    val childrenJson: String? = null,
+    /** 0.14: library items used inside a compound, as ",3,7," so they count as "in use". */
+    val childLibraryIds: String? = null,
 )
 
 /**
@@ -90,6 +94,16 @@ abstract class ProjectDao {
 
     @Query("SELECT * FROM projects WHERE id = :id")
     abstract suspend fun get(id: Long): ProjectEntity?
+
+    @Query("DELETE FROM projects WHERE id = :id")
+    abstract suspend fun deleteProjectRow(id: Long)
+
+    /** Deletes a project and its clips (clips first, so it does not depend on the FK cascade). */
+    @Transaction
+    open suspend fun delete(id: Long) {
+        deleteClips(id)
+        deleteProjectRow(id)
+    }
 
     @Query("SELECT COUNT(*) FROM projects")
     abstract suspend fun count(): Int
@@ -143,16 +157,16 @@ abstract class LibraryDao {
     @Query("SELECT * FROM library_items WHERE removed = 1")
     abstract suspend fun removedItems(): List<LibraryItemEntity>
 
-    @Query("SELECT COUNT(*) FROM clips WHERE libraryItemId = :itemId")
+    @Query("SELECT COUNT(*) FROM clips WHERE libraryItemId = :itemId OR childLibraryIds LIKE '%,' || :itemId || ',%'")
     abstract suspend fun usageCount(itemId: Long): Int
 
-    @Query("SELECT DISTINCT p.name FROM projects p INNER JOIN clips c ON c.projectId = p.id WHERE c.libraryItemId = :itemId")
+    @Query("SELECT DISTINCT p.name FROM projects p INNER JOIN clips c ON c.projectId = p.id WHERE c.libraryItemId = :itemId OR c.childLibraryIds LIKE '%,' || :itemId || ',%'")
     abstract suspend fun projectsUsing(itemId: Long): List<String>
 }
 
 @Database(
     entities = [ProjectEntity::class, ClipEntity::class, LibraryItemEntity::class],
-    version = 3,
+    version = 4,
     exportSchema = false,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -162,8 +176,16 @@ abstract class AppDatabase : RoomDatabase() {
     companion object {
         fun create(context: Context): AppDatabase =
             Room.databaseBuilder(context, AppDatabase::class.java, "video_editor.db")
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
                 .build()
+
+        /** 0.14: compound clips keep their inner clips; existing clips are ordinary (NULL). */
+        val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE clips ADD COLUMN childrenJson TEXT")
+                db.execSQL("ALTER TABLE clips ADD COLUMN childLibraryIds TEXT")
+            }
+        }
 
         /** 0.8: clips can be made wider / taller. */
         val MIGRATION_2_3 = object : Migration(2, 3) {

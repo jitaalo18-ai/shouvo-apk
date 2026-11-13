@@ -5,6 +5,7 @@ import android.net.Uri
 import com.videoeditor.app.media.MediaInfo
 import com.videoeditor.app.media.MediaProbe
 import com.videoeditor.core.Clip
+import com.videoeditor.core.Compound
 import com.videoeditor.core.MediaKind
 import com.videoeditor.core.Timeline
 import com.videoeditor.core.TimelineOps
@@ -23,6 +24,7 @@ const val DEFAULT_IMAGE_MS = 3000L
 fun newClipId(): String = UUID.randomUUID().toString()
 
 fun ClipEntity.toClip() = Clip(
+    children = ClipJson.decode(childrenJson),
     id = id,
     track = Track.valueOf(track),
     kind = MediaKind.valueOf(kind),
@@ -69,6 +71,8 @@ fun Clip.toEntity(projectId: Long) = ClipEntity(
     rotation = rotation,
     stretchX = stretchX,
     stretchY = stretchY,
+    childrenJson = if (children.isEmpty()) null else ClipJson.encode(children),
+    childLibraryIds = Compound.libraryIds(this).takeIf { it.isNotEmpty() }?.joinToString(",", ",", ","),
 )
 
 /** Builds a clip that plays the whole of [info]. */
@@ -99,7 +103,14 @@ class ProjectRepository(private val db: AppDatabase) {
 
     suspend fun get(id: Long): ProjectEntity? = dao.get(id)
 
-    suspend fun firstMainClip(id: Long): Clip? = dao.firstMainClip(id)?.toClip()
+    /** The first playable clip (inside a compound if the project starts with one) - for the cover. */
+    suspend fun firstMainClip(id: Long): Clip? = dao.firstMainClip(id)?.toClip()?.let { if (it.isCompound) Compound.pieces(it, 1f).firstOrNull() ?: Compound.firstLeaf(it) else it }
+
+    /**
+     * Deletes a project and its editing decisions. The original videos / photos are not
+     * touched; library files that were only kept for this project are cleaned up by the caller.
+     */
+    suspend fun delete(id: Long) = dao.delete(id)
 
     /** Creates a project whose main track holds [media] in the order it was picked. */
     suspend fun create(media: List<MediaInfo>): Long {

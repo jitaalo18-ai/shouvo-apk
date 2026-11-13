@@ -21,6 +21,12 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material3.AlertDialog
+import androidx.compose.ui.platform.testTag
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.Button
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.OutlinedButton
@@ -130,6 +136,8 @@ fun ProjectsScreen(app: App, onOpen: (Long) -> Unit) {
         }
     }
 
+    var confirmDelete by remember { mutableStateOf<ProjectEntity?>(null) }
+
     Column(Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
         Spacer(Modifier.height(16.dp))
         Text("Projects", fontSize = 28.sp, fontWeight = FontWeight.Bold)
@@ -173,7 +181,7 @@ fun ProjectsScreen(app: App, onOpen: (Long) -> Unit) {
         } else {
             LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp), contentPadding = PaddingValues(bottom = 24.dp)) {
                 items(projects, key = { it.id }) { project ->
-                    ProjectRow(app, project) { onOpen(project.id) }
+                    ProjectRow(app, project, onDelete = { confirmDelete = project }) { onOpen(project.id) }
                 }
             }
         }
@@ -221,6 +229,35 @@ fun ProjectsScreen(app: App, onOpen: (Long) -> Unit) {
         }
     }
 
+    confirmDelete?.let { project ->
+        AlertDialog(
+            onDismissRequest = { confirmDelete = null },
+            title = { Text("Delete project?") },
+            text = {
+                Text(
+                    "\"${project.name}\" and all its edits will be deleted. This cannot be undone.\n\n" +
+                        "Your videos and photos in the Gallery are not deleted.",
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        confirmDelete = null
+                        scope.launch {
+                            app.projects.delete(project.id)
+                            // library files that were only kept for this project can go now
+                            app.library.cleanUpRemoved()
+                            context.getSharedPreferences("project_settings", android.content.Context.MODE_PRIVATE)
+                                .edit().remove("format_${project.id}").apply()
+                        }
+                    },
+                    modifier = Modifier.testTag("confirmDelete"),
+                ) { Text("Delete", color = Color(0xFFFF6B6B)) }
+            },
+            dismissButton = { TextButton(onClick = { confirmDelete = null }) { Text("Cancel") } },
+        )
+    }
+
     extractResult?.let { text ->
         AlertDialog(
             onDismissRequest = { extractResult = null },
@@ -232,7 +269,7 @@ fun ProjectsScreen(app: App, onOpen: (Long) -> Unit) {
 }
 
 @Composable
-private fun ProjectRow(app: App, project: ProjectEntity, onClick: () -> Unit) {
+private fun ProjectRow(app: App, project: ProjectEntity, onDelete: () -> Unit, onClick: () -> Unit) {
     val first by produceState<Clip?>(initialValue = null, project.id, project.updatedAt) {
         value = app.projects.firstMainClip(project.id)
     }
@@ -260,6 +297,23 @@ private fun ProjectRow(app: App, project: ProjectEntity, onClick: () -> Unit) {
                 SimpleDateFormat("d MMM yyyy, HH:mm", Locale.getDefault()).format(Date(project.updatedAt))
             }
             Text("Edited $edited", color = Color.Gray, fontSize = 12.sp)
+        }
+        var menu by remember { mutableStateOf(false) }
+        Box {
+            IconButton(onClick = { menu = true }, modifier = Modifier.testTag("projectMenu_${project.id}")) {
+                Icon(Icons.Filled.MoreVert, contentDescription = "Project options")
+            }
+            DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                DropdownMenuItem(
+                    text = { Text("Delete project") },
+                    leadingIcon = { Icon(Icons.Filled.Delete, contentDescription = null) },
+                    onClick = {
+                        menu = false
+                        onDelete()
+                    },
+                    modifier = Modifier.testTag("projectDelete"),
+                )
+            }
         }
     }
 }
