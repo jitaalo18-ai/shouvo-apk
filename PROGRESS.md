@@ -3,10 +3,11 @@
 Self-contained handoff. Another developer / AI account can continue from this file plus the source ZIP.
 Master spec: "ANDROID VIDEO EDITOR - DEVELOPMENT MASTER PROMPT V1" (Steps 1-12).
 
-PROJECT VERSION: 0.9 (versionCode 9), app name "Nock Nock", APK label "Nock Nock V0.9" - checkpoint 9, 2026-11-13
+PROJECT VERSION: 0.10 (versionCode 10), app name "Nock Nock", APK label "Nock Nock V0.10" - checkpoint 10, 2026-11-13
 VERSION RULE (set by the owner): versions go 0.2, 0.3, 0.4, 0.5, 0.6 ... (never 3, 4, 5).
 For each new version change `versionName`/`versionCode` in app/build.gradle.kts and the label in
-release_label.txt (V0.10, V0.11 ...). History: 1.0.0 (first build) -> 0.2 "V2" -> 0.3 -> 0.4 -> 0.5 -> 0.6 -> 0.7 -> 0.8 -> 0.9.
+release_label.txt (V0.11, V0.12 ...). History: 1.0.0 (first build) -> 0.2 "V2" -> 0.3 -> 0.4 -> 0.5 -> 0.6 -> 0.7 -> 0.8 -> 0.9
+-> 0.10 (zero point ten, the version after 0.9).
 
 STANDING RULES FROM THE OWNER (apply to every version without being asked again):
 1. Every APK delivery comes together with the project source code ZIP of the same version.
@@ -101,6 +102,12 @@ IMPLEMENTED FEATURES (source written; "JVM-tested" = unit tests really executed)
   (TimelineOps.moveMain). Sound/music/overlay: hold and drag at any time, or drag while selected.
   All clips of a free track now share one box, so a drag is no longer cut off when the clip changes
   lane. The owner had reported that sounds and Video FX could not be moved or trimmed.
+- NEW in 0.10 - Timeline rebuilt after the structure of the reference app (own colours/icons): time
+  ruler on top, tracks packed tightly, overlay clips shown as thumbnails, audio waveforms (under each
+  main clip with sound and inside sound/music clips; media/Waveforms.kt decodes each file once in the
+  background and caches the outline in cacheDir/waveforms), "+" button at the right that appends more
+  videos/images to the main track, rounded preview frame. The bottom tool bar is unchanged on the
+  owner's request. Not built: captions track (there is no captions feature yet).
 - Rendering: Export button -> Media3 Transformer composition (main sequence, one audio sequence per
   sound/music/overlay-audio clip, overlays as timed BitmapOverlay) -> Movies/VideoEditor.
 
@@ -111,6 +118,9 @@ DEVIATIONS FROM THE SPEC TO KNOW ABOUT:
 - Project and overlay media are referenced through persisted read permission, not copied (the spec
   requires copying only for the libraries). Deleting such an original from the phone breaks that clip.
 - Not added because nobody asked for it: delete project. (Delete clip and undo/redo arrived in 0.3.)
+
+FILES MODIFIED IN 0.10: media/Waveforms.kt (new), ui/TimelineView.kt (rewritten), ui/EditorScreen.kt,
+ui/EditorController.kt (appendMedia), build files.
 
 FILES MODIFIED IN 0.9: core/TimelineOps.kt (trimMain, moveMain), core tests (41), ui/TimelineView.kt
 (FreeTrack, ChipView, TrimHandle, main handles), ui/EditorScreen.kt, ui/EditorController.kt,
@@ -182,6 +192,7 @@ KNOWN BUGS / RISKS:
 - Voice removal cannot work on mono sound, and it also lowers instruments mixed exactly in the centre.
 - Extracted music is stored as WAV (about 10 MB per minute).
 - Video overlays render slowly on export (one frame grab per output frame).
+- Waveforms of long videos take a while to appear the first time (the whole audio is decoded once).
 - Main-track clips are reordered with buttons, not by dragging (drag-to-reorder is not built).
 - Preview transitions between many short AutoCut pieces may not be perfectly seamless.
 - AutoCut treats loud non-speech sounds (music, clapping) as speech, so it keeps them.
@@ -200,4 +211,4 @@ BUILD STATUS: BUILT. GitHub Actions (repo jitaalo18-ai/shouvo-apk, run 432695964
 The debug APK has NOT been installed or run on any device yet.
 
 SOURCE ZIP / APK PATH IF AVAILABLE: source at https://github.com/jitaalo18-ai/shouvo-apk (main).
-APK: Nock_Nock_V0.9.apk and Nock_Nock_V0.9_source.zip on the v0.9 release of that repository (rebuilt on every push to main).
+APK: Nock_Nock_V0.10.apk and Nock_Nock_V0.10_source.zip on the v0.10 release of that repository (rebuilt on every push to main).

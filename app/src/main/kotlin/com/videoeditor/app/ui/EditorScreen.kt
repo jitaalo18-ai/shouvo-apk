@@ -152,6 +152,9 @@ fun EditorScreen(app: App, projectId: Long, onBack: () -> Unit) {
     val importOverlay = rememberMediaImporter(videoOnly = false, multiple = false) { uris ->
         uris.firstOrNull()?.let { ctl.addOverlay(it) }
     }
+    val importMain = rememberMediaImporter(videoOnly = false, multiple = true) { uris ->
+        ctl.appendMedia(uris)
+    }
     val importVideoFx = rememberMediaImporter(videoOnly = true, multiple = true) { uris ->
         ctl.importToLibrary(LibraryKind.VIDEO_FX, uris)
     }
@@ -264,7 +267,7 @@ fun EditorScreen(app: App, projectId: Long, onBack: () -> Unit) {
             }
 
             // timeline
-            TimelineView(ctl, position, Modifier.fillMaxWidth().height(214.dp))
+            TimelineView(ctl, position, Modifier.fillMaxWidth().height(232.dp), onAddMedia = { importMain() })
 
             // toolbars
             val selected = ctl.timeline.selected
@@ -485,7 +488,7 @@ private fun PreviewCanvas(ctl: EditorController, position: Long) {
 
         // Not clipped itself, so the selection border may reach outside the frame.
         Box(Modifier.size(canvasW, canvasH)) {
-            Box(Modifier.matchParentSize().clipToBounds().background(Color.Black)) {
+            Box(Modifier.matchParentSize().clip(RoundedCornerShape(10.dp)).background(Color.Black)) {
                 if (current != null) {
                     AndroidView(
                         factory = { context ->

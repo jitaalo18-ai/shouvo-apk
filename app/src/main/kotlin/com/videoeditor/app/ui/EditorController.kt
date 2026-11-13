@@ -274,6 +274,29 @@ class EditorController(private val app: App, val projectId: Long, private val sc
     fun transformMain(id: String, x: Float, y: Float, zoom: Float, rotation: Float) =
         commitEdit(TimelineOps.transformMain(timeline, id, x, y, zoom, rotation), saveNow = false)
 
+    /** "+" on the timeline: adds more videos / images to the end of the main track. */
+    fun appendMedia(uris: List<Uri>) {
+        if (uris.isEmpty() || busy != null) return
+        busy = Busy("Adding to the timeline…")
+        scope.launch {
+            try {
+                val media = withContext(Dispatchers.IO) {
+                    uris.mapNotNull { uri ->
+                        persistRead(app, uri)
+                        MediaProbe.probe(app, uri)
+                    }.filter { it.kind != MediaKind.AUDIO }
+                }
+                if (media.isEmpty()) {
+                    message = "None of the selected files could be opened as a video or image."
+                } else {
+                    commitEdit(TimelineOps.appendMain(timeline, media.map { clipFrom(it, Track.MAIN) }))
+                }
+            } finally {
+                busy = null
+            }
+        }
+    }
+
     /** Trim handles of a main-track clip. */
     fun trimMain(id: String, sourceStartMs: Long? = null, sourceEndMs: Long? = null) =
         commitEdit(TimelineOps.trimMain(timeline, id, sourceStartMs, sourceEndMs), saveNow = false)

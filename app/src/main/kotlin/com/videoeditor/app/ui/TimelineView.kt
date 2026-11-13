@@ -1,6 +1,6 @@
 package com.videoeditor.app.ui
 
-import androidx.compose.foundation.ScrollState
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -24,6 +24,9 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material3.Icon
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -32,6 +35,7 @@ import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
@@ -39,9 +43,12 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.style.TextOverflow
@@ -49,6 +56,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.videoeditor.app.media.Waveforms
 import com.videoeditor.core.Clip
 import com.videoeditor.core.MediaKind
 import com.videoeditor.core.TimelineOps
@@ -57,17 +65,27 @@ import kotlin.math.ceil
 import kotlin.math.floor
 import kotlin.math.roundToInt
 
-private val MAIN_HEIGHT = 64.dp
-private val LANE_HEIGHT = 34.dp
-private val LANE_GAP = 4.dp
+private val RULER_HEIGHT = 18.dp
+private val THUMB_HEIGHT = 56.dp
+private val WAVE_HEIGHT = 16.dp
+private val MAIN_HEIGHT = THUMB_HEIGHT + WAVE_HEIGHT
+private val VISUAL_LANE = 44.dp      // overlay clips (thumbnails)
+private val AUDIO_LANE = 34.dp       // sound effects and music (waveform)
+private val LANE_GAP = 2.dp
 private val HANDLE_WIDTH = 18.dp
+private val WaveColor = Color(0xFF9B6BE0)
+
+/** The part of the timeline content (in pixels from its start) that is on or near the screen. */
+private class Visible(val left: Float, val right: Float)
 
 /**
  * Scrollable timeline with a fixed playhead in the middle (the content moves under it).
  * Dragging the timeline scrubs the video; during playback the timeline follows the player.
+ * Layout from top to bottom: time ruler, overlay track(s), sound effects, music, main video
+ * track with its audio waveform. [onAddMedia] is the "+" button at the right.
  */
 @Composable
-fun TimelineView(ctl: EditorController, position: Long, modifier: Modifier = Modifier) {
+fun TimelineView(ctl: EditorController, position: Long, modifier: Modifier = Modifier, onAddMedia: () -> Unit) {
     val density = LocalDensity.current
     val timeline = ctl.timeline
     val contentEndMs = maxOf(timeline.durationMs, timeline.clips.maxOfOrNull { it.timelineEndMs } ?: 0L, 1L)
@@ -102,6 +120,11 @@ fun TimelineView(ctl: EditorController, position: Long, modifier: Modifier = Mod
         val viewportPx = with(density) { maxWidth.toPx() }
         val contentWidth = with(density) { (contentEndMs * pxPerMs).toDp() }
 
+        // Only what is near the screen gets thumbnails / waveform bars / ruler labels.
+        val step = 240
+        val bucket by remember { derivedStateOf { scroll.value / step } }
+        val visible = Visible(bucket * step - viewportPx, bucket * step + step + viewportPx)
+
         Row(
             Modifier
                 .fillMaxHeight()
@@ -111,17 +134,18 @@ fun TimelineView(ctl: EditorController, position: Long, modifier: Modifier = Mod
         ) {
             Spacer(Modifier.width(half))
             Column(
-                Modifier.width(contentWidth).padding(vertical = 8.dp),
-                verticalArrangement = Arrangement.spacedBy(4.dp),
+                Modifier.width(contentWidth).padding(bottom = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(LANE_GAP),
             ) {
+                Ruler(contentEndMs, pxPerMs, visible)
                 // overlays, sound effects and music sit above the main video track
-                FreeTrack(ctl, timeline.track(Track.OVERLAY), OverlayColor, pxPerMs)
-                FreeTrack(ctl, timeline.track(Track.SFX), SfxColor, pxPerMs)
-                FreeTrack(ctl, timeline.track(Track.MUSIC), MusicColor, pxPerMs)
+                FreeTrack(ctl, timeline.track(Track.OVERLAY), OverlayColor, pxPerMs, VISUAL_LANE, visible)
+                FreeTrack(ctl, timeline.track(Track.SFX), SfxColor, pxPerMs, AUDIO_LANE, visible)
+                FreeTrack(ctl, timeline.track(Track.MUSIC), MusicColor, pxPerMs, AUDIO_LANE, visible)
                 // main video track
                 Row(Modifier.height(MAIN_HEIGHT)) {
                     for (clip in timeline.main) {
-                        key(clip.id) { MainClipView(ctl, clip, pxPerMs, scroll, viewportPx) }
+                        key(clip.id) { MainClipView(ctl, clip, pxPerMs, visible) }
                     }
                 }
             }
@@ -130,46 +154,132 @@ fun TimelineView(ctl: EditorController, position: Long, modifier: Modifier = Mod
 
         // playhead
         Box(Modifier.align(Alignment.Center).width(2.dp).fillMaxHeight().background(Color.White))
+
+        // add more videos / images to the end of the main track
+        Box(
+            Modifier
+                .align(Alignment.CenterEnd)
+                .padding(end = 10.dp)
+                .size(44.dp)
+                .clip(RoundedCornerShape(12.dp))
+                .background(Color.White)
+                .clickable(onClick = onAddMedia),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(Icons.Filled.Add, contentDescription = "Add videos or images", tint = Color.Black)
+        }
+    }
+}
+
+/** Time scale above the tracks (labels every 1 s ... 10 min depending on the zoom). */
+@Composable
+private fun Ruler(contentEndMs: Long, pxPerMs: Float, visible: Visible) {
+    val density = LocalDensity.current
+    val minGapPx = with(density) { 72.dp.toPx() }
+    val stepMs = longArrayOf(1, 2, 5, 10, 15, 30, 60, 120, 300, 600)
+        .map { it * 1000L }
+        .firstOrNull { it * pxPerMs >= minGapPx } ?: 600_000L
+    val first = (visible.left / pxPerMs / stepMs).toLong().coerceAtLeast(0)
+    val last = minOf((visible.right / pxPerMs / stepMs).toLong(), contentEndMs / stepMs)
+    Box(Modifier.fillMaxWidth().height(RULER_HEIGHT)) {
+        for (k in first..last) {
+            key(k) {
+                val seconds = k * stepMs / 1000
+                val label = if (seconds < 60) "${seconds}s" else String.format(java.util.Locale.US, "%d:%02d", seconds / 60, seconds % 60)
+                Text(
+                    label,
+                    fontSize = 10.sp,
+                    color = Color.Gray,
+                    maxLines = 1,
+                    softWrap = false,
+                    modifier = Modifier.offset { IntOffset((k * stepMs * pxPerMs).roundToInt() + 4, 0) },
+                )
+                Box(
+                    Modifier
+                        .offset { IntOffset((k * stepMs * pxPerMs).roundToInt(), 0) }
+                        .width(1.dp)
+                        .height(RULER_HEIGHT)
+                        .background(Color(0xFF3A3D45)),
+                )
+            }
+        }
+    }
+}
+
+/** Video / image thumbnails laid side by side over the whole width of a clip (visible part only). */
+@Composable
+private fun ThumbStrip(clip: Clip, pxPerMs: Float, height: Dp, visible: Visible) {
+    val density = LocalDensity.current
+    val tilePx = with(density) { height.toPx() }
+    val widthPx = clip.durationMs * pxPerMs
+    val tiles = ceil(widthPx / tilePx).toInt().coerceAtLeast(1)
+    val clipStartPx = clip.timelineStartMs * pxPerMs
+    val first = floor((visible.left - clipStartPx) / tilePx).toInt().coerceAtLeast(0)
+    val last = floor((visible.right - clipStartPx) / tilePx).toInt().coerceAtMost(tiles - 1)
+    for (i in first..last) {
+        key(i) {
+            val timeMs = if (clip.kind == MediaKind.IMAGE) 0L
+            else clip.sourceStartMs + ((i + 0.5f) * tilePx / pxPerMs).toLong().coerceAtMost(clip.durationMs)
+            Thumb(
+                clip.sourceUri, clip.kind, timeMs,
+                Modifier.offset { IntOffset((i * tilePx).roundToInt(), 0) }.size(height),
+            )
+        }
+    }
+}
+
+/** Audio waveform of a clip (bars), drawn for the visible part only. */
+@Composable
+private fun WaveStrip(clip: Clip, pxPerMs: Float, visible: Visible, color: Color, modifier: Modifier) {
+    val context = LocalContext.current.applicationContext
+    val peaks by produceState<ByteArray?>(initialValue = null, clip.sourceUri) {
+        value = Waveforms.load(context, clip.sourceUri)
+    }
+    val clipStartPx = clip.timelineStartMs * pxPerMs
+    val sourceStartMs = clip.sourceStartMs
+    Canvas(modifier) {
+        val p = peaks ?: return@Canvas
+        val stepPx = 3.dp.toPx()
+        val barWidth = 2.dp.toPx()
+        var x = (floor((visible.left - clipStartPx) / stepPx) * stepPx).coerceAtLeast(0f)
+        val end = minOf(size.width, visible.right - clipStartPx)
+        while (x < end) {
+            val index = ((sourceStartMs + (x / pxPerMs).toLong()) / Waveforms.BUCKET_MS).toInt()
+            if (index >= 0 && index < p.size) {
+                val level = (p[index].toInt() and 0xFF) / 255f
+                val h = (level * size.height).coerceAtLeast(1f)
+                drawRect(color, topLeft = Offset(x, size.height - h), size = Size(barWidth, h))
+            }
+            x += stepPx
+        }
     }
 }
 
 @Composable
-private fun MainClipView(ctl: EditorController, clip: Clip, pxPerMs: Float, scroll: ScrollState, viewportPx: Float) {
+private fun MainClipView(ctl: EditorController, clip: Clip, pxPerMs: Float, visible: Visible) {
     val density = LocalDensity.current
     val widthPx = clip.durationMs * pxPerMs
-    val tilePx = with(density) { MAIN_HEIGHT.toPx() }
-    val tiles = ceil(widthPx / tilePx).toInt().coerceAtLeast(1)
-    val clipStartPx = clip.timelineStartMs * pxPerMs
-
     var handleBaseStart by remember { mutableStateOf(0L) }
     var handleBaseEnd by remember { mutableStateOf(0L) }
-
-    // Only the thumbnails near the visible part of the timeline are composed.
-    val step = 240
-    val bucket by remember { derivedStateOf { scroll.value / step } }
-    val visibleLeft = bucket * step - viewportPx
-    val visibleRight = bucket * step + step + viewportPx
-    val first = floor((visibleLeft - clipStartPx) / tilePx).toInt().coerceAtLeast(0)
-    val last = floor((visibleRight - clipStartPx) / tilePx).toInt().coerceAtMost(tiles - 1)
 
     Box(
         Modifier
             .width(with(density) { widthPx.toDp() })
             .fillMaxHeight()
             .padding(horizontal = 1.dp)
-            .clip(RoundedCornerShape(6.dp))
-            .background(Color(0xFF22252C))
+            .clip(RoundedCornerShape(8.dp))
+            .background(Color(0xFF2A1F3D))
             .clickable { ctl.select(clip.id) },
     ) {
-        for (i in first..last) {
-            key(i) {
-                val timeMs = if (clip.kind == MediaKind.IMAGE) 0L
-                else clip.sourceStartMs + ((i + 0.5f) * tilePx / pxPerMs).toLong().coerceAtMost(clip.durationMs)
-                Thumb(
-                    clip.sourceUri, clip.kind, timeMs,
-                    Modifier.offset { IntOffset((i * tilePx).roundToInt(), 0) }.size(MAIN_HEIGHT),
-                )
-            }
+        // thumbnails on top, the clip's own sound as a waveform underneath
+        Box(Modifier.fillMaxWidth().height(THUMB_HEIGHT).background(Color(0xFF22252C))) {
+            ThumbStrip(clip, pxPerMs, THUMB_HEIGHT, visible)
+        }
+        if (clip.hasAudio) {
+            WaveStrip(
+                clip, pxPerMs, visible, WaveColor,
+                Modifier.align(Alignment.BottomStart).fillMaxWidth().height(WAVE_HEIGHT),
+            )
         }
         if (clip.selected) {
             // Trim handles: drag the left / right handle to hide or bring back the start / end.
@@ -193,7 +303,7 @@ private fun MainClipView(ctl: EditorController, clip: Clip, pxPerMs: Float, scro
                     ctl.trimMain(current.id, sourceEndMs = handleBaseEnd + (movedPx / scale).toLong())
                 }
             }
-            Box(Modifier.matchParentSize().border(3.dp, Accent, RoundedCornerShape(6.dp)))
+            Box(Modifier.matchParentSize().border(3.dp, Accent, RoundedCornerShape(8.dp)))
             Text(
                 String.format(java.util.Locale.US, "%.1fs", clip.durationMs / 1000f),
                 fontSize = 11.sp,
@@ -213,39 +323,47 @@ private fun MainClipView(ctl: EditorController, clip: Clip, pxPerMs: Float, scro
  * dragged past another clip and changes lane.
  */
 @Composable
-private fun FreeTrack(ctl: EditorController, clips: List<Clip>, color: Color, pxPerMs: Float) {
+private fun FreeTrack(ctl: EditorController, clips: List<Clip>, color: Color, pxPerMs: Float, laneHeight: Dp, visible: Visible) {
     if (clips.isEmpty()) return
     val lanes = TimelineOps.lanes(clips)
     val laneCount = (lanes.values.maxOrNull() ?: 0) + 1
-    Box(Modifier.fillMaxWidth().height(LANE_HEIGHT * laneCount + LANE_GAP * (laneCount - 1))) {
+    Box(Modifier.fillMaxWidth().height(laneHeight * laneCount + LANE_GAP * (laneCount - 1))) {
         for (clip in clips) {
-            key(clip.id) { ChipView(ctl, clip, color, pxPerMs, lanes[clip.id] ?: 0) }
+            key(clip.id) { ChipView(ctl, clip, color, pxPerMs, lanes[clip.id] ?: 0, laneHeight, visible) }
         }
     }
 }
 
 /**
- * One clip on a free track.
+ * One clip on a free track. Overlay clips show thumbnails, audio clips show their waveform.
  *  - Tap: select.
  *  - Hold and drag (any time), or simply drag while selected: move it earlier / later.
  *  - While selected: drag the handles at both ends to trim where it starts / ends.
  */
 @Composable
-private fun ChipView(ctl: EditorController, clip: Clip, color: Color, pxPerMs: Float, lane: Int) {
+private fun ChipView(
+    ctl: EditorController,
+    clip: Clip,
+    color: Color,
+    pxPerMs: Float,
+    lane: Int,
+    laneHeight: Dp,
+    visible: Visible,
+) {
     val density = LocalDensity.current
     val haptics = LocalHapticFeedback.current
     val current by rememberUpdatedState(clip)
     val scale by rememberUpdatedState(pxPerMs)
     val laneState by rememberUpdatedState(lane)
-    val shape = RoundedCornerShape(6.dp)
-    val laneStepPx = with(density) { (LANE_HEIGHT + LANE_GAP).toPx() }
+    val shape = RoundedCornerShape(8.dp)
+    val laneStepPx = with(density) { (laneHeight + LANE_GAP).toPx() }
     var baseStart by remember { mutableStateOf(0L) }
     var baseEnd by remember { mutableStateOf(0L) }
 
     var body = Modifier
         .offset { IntOffset((current.timelineStartMs * scale).roundToInt(), (laneState * laneStepPx).roundToInt()) }
         .width(with(density) { (clip.durationMs * pxPerMs).toDp() })
-        .height(LANE_HEIGHT)
+        .height(laneHeight)
         .clip(shape)
         .background(color)
         .pointerInput(clip.id) { detectTapGestures { ctl.select(current.id) } }
@@ -283,13 +401,18 @@ private fun ChipView(ctl: EditorController, clip: Clip, color: Color, pxPerMs: F
     }
 
     Box(body) {
-        Text(
-            clip.name,
-            fontSize = 10.sp,
-            maxLines = 1,
-            overflow = TextOverflow.Clip,
-            modifier = Modifier.align(Alignment.CenterStart).padding(horizontal = 22.dp),
-        )
+        if (clip.kind == MediaKind.AUDIO) {
+            WaveStrip(clip, pxPerMs, visible, Color(0x66FFFFFF), Modifier.matchParentSize().padding(vertical = 3.dp))
+            Text(
+                clip.name,
+                fontSize = 10.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Clip,
+                modifier = Modifier.align(Alignment.CenterStart).padding(horizontal = 22.dp),
+            )
+        } else {
+            ThumbStrip(clip, pxPerMs, laneHeight, visible)
+        }
         if (clip.selected) {
             TrimHandle(Modifier.align(Alignment.CenterStart)) { start, movedPx ->
                 if (start) baseStart = current.timelineStartMs

@@ -1,4 +1,4 @@
-# Test report - v0.9 "Nock Nock V0.9" (2026-11-13)
+# Test report - v0.10 "Nock Nock V0.10" (2026-11-13)
 
 ## Executed
 
@@ -21,6 +21,11 @@ Audio in these tests is synthetic (harmonic "voice" plus noise). Real speech rec
 **Build (GitHub Actions, run 43269596434)**
 - `./gradlew :core:test` - passed.
 - `./gradlew :app:assembleDebug` - passed; debug APK produced.
+
+**Owner's phone (version 0.9, from a screenshot)**
+- 9:16 frame visible, selected main clip shows its border in preview and timeline, W x H button and
+  format drop-down present, 17-minute project loads. So the app started after both database updates.
+  The 0.10 timeline (ruler, waveforms, overlay thumbnails, "+" button) is untested on a device.
 
 **Owner's phone (version 0.8, from a screenshot and report)**
 - Sound FX library with 7+ saved sounds and search opens. Reported: sounds and Video FX placed on the
