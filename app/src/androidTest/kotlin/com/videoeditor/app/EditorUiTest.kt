@@ -256,6 +256,7 @@ class EditorUiTest {
 
         // trim the end of the compound with its handle
         val compoundLen = editor.timeline.durationMs
+        seek(compoundLen) // bring the end of the compound to the playhead, like a user scrolling there
         rule.onNodeWithTag("compoundTrimEnd", useUnmergedTree = true).performTouchInput {
             swipe(center, Offset(centerX - 150f, centerY), durationMillis = 700)
         }
