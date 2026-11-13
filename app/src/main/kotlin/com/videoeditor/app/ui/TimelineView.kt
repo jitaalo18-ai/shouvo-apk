@@ -409,7 +409,7 @@ private fun MainClipView(ctl: EditorController, clip: Clip, pxPerMs: Float, visi
             val current by rememberUpdatedState(clip)
             val scale by rememberUpdatedState(pxPerMs)
             val snap by rememberUpdatedState(snapMs)
-            TrimHandle(Modifier.align(Alignment.CenterStart), onEnd = { ctl.endGesture() }) { start, movedPx ->
+            TrimHandle(Modifier.align(Alignment.CenterStart).testTag("trimStart"), onEnd = { ctl.endGesture() }) { start, movedPx ->
                 if (start) {
                     handleBaseStart = current.sourceStartMs
                     handleBaseEnd = current.sourceEndMs
@@ -419,7 +419,7 @@ private fun MainClipView(ctl: EditorController, clip: Clip, pxPerMs: Float, visi
                     else ctl.trimMain(current.id, sourceStartMs = handleBaseStart + deltaMs)
                 }
             }
-            TrimHandle(Modifier.align(Alignment.CenterEnd), onEnd = { ctl.endGesture() }) { start, movedPx ->
+            TrimHandle(Modifier.align(Alignment.CenterEnd).testTag("trimEnd"), onEnd = { ctl.endGesture() }) { start, movedPx ->
                 if (start) {
                     handleBaseStart = current.sourceStartMs
                     handleBaseEnd = current.sourceEndMs
@@ -544,11 +544,11 @@ private fun ChipView(
             ThumbStrip(clip, pxPerMs, laneHeight, visible)
         }
         if (clip.selected) {
-            TrimHandle(Modifier.align(Alignment.CenterStart), onEnd = { ctl.endGesture() }) { start, movedPx ->
+            TrimHandle(Modifier.align(Alignment.CenterStart).testTag("chipTrimStart"), onEnd = { ctl.endGesture() }) { start, movedPx ->
                 if (start) baseStart = current.timelineStartMs
                 else ctl.trimStart(current.id, baseStart + (movedPx / scale).toLong(), snap)
             }
-            TrimHandle(Modifier.align(Alignment.CenterEnd), onEnd = { ctl.endGesture() }) { start, movedPx ->
+            TrimHandle(Modifier.align(Alignment.CenterEnd).testTag("chipTrimEnd"), onEnd = { ctl.endGesture() }) { start, movedPx ->
                 if (start) baseEnd = current.timelineEndMs
                 else ctl.trimEnd(current.id, baseEnd + (movedPx / scale).toLong(), snap)
             }

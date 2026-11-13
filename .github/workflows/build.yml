@@ -57,6 +57,17 @@ jobs:
         with:
           name: emulator-results
           path: emulator-results
+      - name: Publish screenshots and results to the ci-results branch
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p emulator-results && cd emulator-results
+          rm -f logcat.txt.gz && gzip -f logcat.txt 2>/dev/null || true
+          echo "run ${GITHUB_RUN_ID} on ${GITHUB_REF_NAME} at ${GITHUB_SHA}" > RUN.txt
+          git init -q && git checkout -q -b ci-results && git add -A
+          git -c user.name=ci -c user.email=ci@localhost commit -qm "results of run ${GITHUB_RUN_ID} (${GITHUB_REF_NAME})"
+          git push -fq "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" ci-results
 
   release:
     needs: [build, emulator]

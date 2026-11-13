@@ -124,8 +124,11 @@ class EditorUiTest {
         pause(600)
         assertTrue(editor.timeline.main[0].selected)
         val before = editor.timeline.main[0].durationMs
-        rule.onNodeWithTag("mainClip_0").performTouchInput {
-            swipe(Offset(right - 8f, centerY), Offset(right - 60f, centerY), durationMillis = 600)
+        Shots.take("08a_before_trim")
+        val handle = rule.onNodeWithTag("trimEnd", useUnmergedTree = true)
+        Report.note("ui: trimEnd handle bounds ${handle.fetchSemanticsNode().boundsInRoot}, clip ${rule.onNodeWithTag("mainClip_0").fetchSemanticsNode().boundsInRoot}")
+        handle.performTouchInput {
+            swipe(center, Offset(centerX - 90f, centerY), durationMillis = 700)
         }
         pause(1_200)
         Shots.take("08_trimmed")
