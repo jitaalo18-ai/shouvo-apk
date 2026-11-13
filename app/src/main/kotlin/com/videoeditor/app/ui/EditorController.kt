@@ -361,7 +361,7 @@ class EditorController(private val app: App, val projectId: Long, uiScope: Corou
         if (end != null && snapMs > 0 && before.kind != MediaKind.IMAGE) {
             // the right edge of a main clip moves on the timeline: let it lock onto the playhead etc.
             val rawEdge = before.timelineStartMs + (end - before.sourceStartMs)
-            val snapped = Snap.edge(rawEdge, targets(id), snapMs)
+            val snapped = Snap.edge(rawEdge, Snap.mainEdgeTargets(timeline, id, position), snapMs)
             if (snapped.guideMs != null) {
                 end = before.sourceStartMs + (snapped.value - before.timelineStartMs)
                 snapGuideMs = snapped.guideMs
@@ -399,6 +399,7 @@ class EditorController(private val app: App, val projectId: Long, uiScope: Corou
 
     /** A drag on the timeline ended: apply it to the preview at once and save. */
     fun endGesture() {
+        android.util.Log.d("NockNock", "endGesture edge=$trimEdgeTimelineMs live=$liveTrimClipId")
         snapGuideMs = null
         val edge = trimEdgeTimelineMs
         trimEdgeTimelineMs = null

@@ -144,8 +144,15 @@ class EditorUiTest {
         pause(1_200)
         Shots.take("08_trimmed")
         val after = editor.timeline.main[0].durationMs
-        Report.note("ui: trim changed first clip from $before ms to $after ms")
+        Report.note("ui: trim changed first clip from $before ms to $after ms; guide=${editor.snapGuideMs}, live=${editor.liveTrimClipId}, playhead=${editor.player.positionMs.value}")
         assertTrue("trim made the clip shorter ($before -> $after)", after < before)
+        // the finger moved 90 px to the left: the edge follows it (no sticky snapping to itself)
+        val expected = before - (90f / (widthAfter / before)).toLong()
+        assertTrue("edge followed the finger: expected about $expected ms, got $after ms", abs(after - expected) < 250)
+        assertEquals("guide line cleared when the finger lifts", null, editor.snapGuideMs)
+        assertEquals("live trim frame cleared", null, editor.liveTrimClipId)
+        assertTrue("playhead moved to the new edge", abs(editor.player.positionMs.value - after) < 200)
+        assertTrue("status message disappears on its own", rule.onAllNodesWithTag("statusMessage").fetchSemanticsNodes().isEmpty())
 
         // play a moment
         rule.onNodeWithContentDescription("Play").performClick()
@@ -160,7 +167,7 @@ class EditorUiTest {
         rule.onNodeWithTag("addAudio").performClick()
         pause(1_000)
         Shots.take("10_music_library")
-        assertTrue(rule.onAllNodes(hasText("Background Music")).fetchSemanticsNodes().isNotEmpty())
+        assertTrue("music library is open", rule.onAllNodes(hasText("Add Music")).fetchSemanticsNodes().isNotEmpty())
         rule.onNodeWithContentDescription("Close").performClick()
         pause(500)
 

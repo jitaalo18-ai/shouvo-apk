@@ -564,6 +564,18 @@ class FramingTests {
 }
 
 class SnapTests {
+    @Test
+    fun mainEdgeIgnoresTheClipsThatRippleWithIt() {
+        val a = Clip(id = "a", track = Track.MAIN, kind = MediaKind.VIDEO, sourceUri = "u", sourceDurationMs = 10000, sourceStartMs = 0, sourceEndMs = 3000, timelineStartMs = 0, hasAudio = true)
+        val b = a.copy(id = "b", sourceStartMs = 3000, sourceEndMs = 5000)
+        val t = TimelineOps.normalize(Timeline(listOf(a, b)))
+        val targets = Snap.mainEdgeTargets(t, "a", playheadMs = 0)
+        assertFalse("the next clip's start is not a target", 3000L in targets)
+        assertFalse(5000L in targets)
+        // pulling the edge 200 ms to the left is not pulled back to where it was
+        assertEquals(2800L, Snap.edge(2800, targets, 300).value)
+    }
+
     private val t = TimelineOps.appendMain(Timeline(), listOf(video("a", 4_000), video("b", 6_000)))
         .let { TimelineOps.addClip(it, video("s", 1_000).copy(track = Track.SFX, kind = MediaKind.AUDIO, timelineStartMs = 7_000)) }
 

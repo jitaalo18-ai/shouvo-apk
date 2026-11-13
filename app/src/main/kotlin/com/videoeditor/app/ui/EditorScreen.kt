@@ -174,7 +174,11 @@ fun EditorScreen(app: App, projectId: Long, onBack: () -> Unit) {
     LaunchedEffect(message) {
         if (message != null) {
             shownMessage = message
-            ctl.message = null
+            ctl.message = null // restarts this effect, so the timer lives in its own effect below
+        }
+    }
+    LaunchedEffect(shownMessage) {
+        if (shownMessage != null) {
             kotlinx.coroutines.delay(2500)
             shownMessage = null
         }

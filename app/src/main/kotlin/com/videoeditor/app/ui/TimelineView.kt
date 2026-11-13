@@ -6,6 +6,11 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.awaitHorizontalTouchSlopOrCancellation
+import androidx.compose.foundation.gestures.horizontalDrag
+import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.calculateZoom
 import androidx.compose.foundation.gestures.stopScroll
@@ -575,18 +580,31 @@ private fun TrimHandle(
             .fillMaxHeight()
             .background(Color.White)
             .pointerInput(Unit) {
-                var moved = 0f
-                detectHorizontalDragGestures(
-                    onDragStart = {
-                        moved = 0f
-                        callback(true, 0f)
-                    },
-                    onDragEnd = { end() },
-                    onDragCancel = { end() },
-                ) { change, dx ->
-                    change.consume()
-                    moved += dx
-                    callback(false, moved)
+                // Written out (not detectHorizontalDragGestures) so the end of the drag is always
+                // reported - also when the gesture is cancelled or this node goes away mid-drag.
+                awaitEachGesture {
+                    val down = awaitFirstDown(requireUnconsumed = false)
+                    down.consume()
+                    var started = false
+                    try {
+                        var moved = 0f
+                        val drag = awaitHorizontalTouchSlopOrCancellation(down.id) { change, over ->
+                            change.consume()
+                            moved = over
+                        }
+                        if (drag != null) {
+                            started = true
+                            callback(true, 0f)
+                            callback(false, moved)
+                            horizontalDrag(drag.id) { change ->
+                                moved += change.positionChange().x
+                                change.consume()
+                                callback(false, moved)
+                            }
+                        }
+                    } finally {
+                        if (started) end()
+                    }
                 }
             },
         contentAlignment = Alignment.Center,
