@@ -1,7 +1,7 @@
-# Nock Nock (Android video editor) - v0.15 source
+# Nock Nock (Android video editor) - v0.16 source
 
 Native Android video editor: Kotlin, Jetpack Compose, Media3 (ExoPlayer + Transformer), Room.
-Read PROGRESS.md first - it is the current checkpoint. V0.15: long-press multi-select on every track and compound clips that can hold video, overlays, sounds and music (add to a compound later, uncompound, multi delete). Device tests run in CI (see TEST_REPORT.md).
+Read PROGRESS.md first - it is the current checkpoint. V0.16: Auto Captions with on-device speech recognition (Bangla-trained Whisper Turbo, Whisper Small), text, caption styles; Video FX go on the overlay layer. Device tests run in CI (see TEST_REPORT.md).
 
 ## Get an APK
 
@@ -25,3 +25,10 @@ If the run fails, copy the red error lines and send them back for a fix.
 - `app/`  - Android app: `data` (Room, libraries), `media` (import, AutoCut decode, playback, export), `ui`.
 
 Requires Android 10 or newer on the phone.
+
+
+## Third-party code and models
+- whisper.cpp v1.8.7 and ggml (MIT) - app/src/main/cpp/whisper.cpp (LICENSE inside).
+- OpenAI Whisper (MIT) - the speech-recognition models.
+- mozilla-ai/whisper-large-v3-turbo-bn (Apache-2.0) - the Bangla caption model, converted to ggml.
+- Google FLEURS (CC-BY-4.0) - Bangla speech used only in the CI tests.

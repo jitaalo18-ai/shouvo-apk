@@ -1,3 +1,35 @@
+# V0.16 validation (2026-11-14)
+
+Executed (GitHub Actions on the merged code):
+- core JVM tests: 74 passed, incl. captions from speech (no overlaps, min / max time, noise
+  dropped), replacing auto captions keeps typed text, text clips trim / split, captions inside
+  compounds follow the framing, timing moved onto detected speech, sound cut into parts at pauses.
+- Android 12 emulator (x86_64), 17/17 instrumented tests passed, incl.:
+  - English speech (espeak-ng, starts after 1.5 s of silence), Small model: every word right
+    ("hello, everyone. today i will show you how to make a video. first open the editor, then add
+    your clips, and press export."), first caption at 1.36 s; 13 s of audio in 5-8 s.
+  - Real Bangla speech (Google FLEURS), Bangla model: 7 s sentence CER 9.1% ("দ্বীপপুঞ্জ এবং
+    লেগগুলোতে আবস্থিকভাবে..." vs "...লেকগুলোতে আবশ্যকভাবে..."), 35-48 s on the emulator CPU.
+  - 43 s of continuous Bangla (several sentences): CER 9.4%, 102% of the text (nothing cut off),
+    206 s on the emulator CPU.
+  - Export: the caption is burned in where and when it should be (difference 106 inside the
+    caption box, 0.1 elsewhere, 0.0 before its time).
+  - UI: Captions -> English -> Create -> 4 captions on the text track and in the preview; Edit
+    words; Style Box for all captions; Undo; Video FX from the library lands on the overlay
+    layer at the playhead with the main track unchanged.
+  - Database 3 -> 5 upgrade keeps old projects; captions (Bangla text) are saved and read back,
+    also inside compounds.
+- Model accuracy with the whisper.cpp command line on 10 FLEURS Bangla clips is in the
+  models-v1 release notes (ACCURACY.md).
+Bugs found by the tests and fixed: captions started before the words (now aligned to the voice);
+long Bangla speech was cut off after ~220 tokens per 30 s (now parts at pauses + full window);
+broken Bangla letters at piece borders (UTF-8 carried over); ffmpeg / float WAV issues in CI.
+
+Not executed / needs a real phone: speed on the S25 Ultra (emulator: about 5x the audio length for
+Bangla; a phone CPU should be several times faster), the 574 MB download over mobile data,
+Bangla with music in the background, very long videos (memory).
+
+---
 # V0.15 validation (2026-11-14)
 
 Executed (GitHub Actions on the merged code):

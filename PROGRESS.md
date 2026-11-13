@@ -1,3 +1,41 @@
+# V0.16 — Auto Captions (speech recognition on the phone), Text, Video FX on the overlay layer (2026-11-14)
+
+Current version: 0.16 (versionCode 16), label V0.16. Branch v0.16-captions merged to main.
+
+Auto Captions
+- Speech recognition: whisper.cpp v1.8.7 (MIT), vendored in app/src/main/cpp/whisper.cpp (CPU
+  backend only; one change, see NOCKNOCK_CHANGES.md: the full 448-token text window per 30 s
+  part, because Bangla needs many tokens). JNI: whisper_jni.cpp -> captions/WhisperNative.kt.
+  ABIs: arm64-v8a (armv8.2-a+fp16+dotprod) and x86_64 (emulator only). Always built -O3.
+- Models (downloaded once in the app, from release "models-v1" of this repo, resumable):
+  - বাংলা: mozilla-ai/whisper-large-v3-turbo-bn (Apache-2.0, Whisper Turbo fine-tuned on Bangla)
+    converted to ggml and quantised q5_0 (574 MB) by .github/workflows/models.yml.
+  - English / other languages: whisper Small q5_1 (190 MB).
+  The regular Whisper models are poor at Bangla (see the release's ACCURACY.md), hence the
+  Bangla-trained model.
+- Pipeline (captions/AutoCaptioner.kt): the main track's sound as it plays (compounds flattened)
+  -> 16 kHz mono (SpeechAudio) -> AutoCut voice detector -> parts of at most 15 s cut at pauses,
+  silence skipped (Captions.planChunks) -> whisper (beam 3, no context, word-split pieces) ->
+  times moved onto the detected speech (Captions.alignToSpeech) -> caption clips that never
+  overlap (Captions.build). Silero VAD was tried and dropped (2-18x slower, no gain).
+- Captions are TEXT clips on a new TEXT track (core Track.TEXT, MediaKind.TEXT, Clip.text/style).
+  Drawn by captions/CaptionRenderer (preview and export use the same bitmap -> WYSIWYG); styles
+  Classic, Box, Yellow, Neon, Clean; Bangla via the system font fallback.
+- UI: "Captions" button -> sheet (language, model download / delete, style, Create, Remove);
+  progress with Cancel. Caption chips on the timeline (yellow). Selected caption: Edit (words),
+  Style (style / size / height - all auto captions together), Split, Copy, Paste, Duplicate,
+  Compound, Delete, Remove all. Preview: tap selects, double tap edits, drag moves (auto captions
+  together), long-press multi-select. Captions work inside compounds.
+- "Text" button: a typed text at the playhead (same styles), kept when captions are re-made.
+- Export burns captions / texts in (TimedText BitmapOverlay).
+
+Other
+- Video FX from the library are added on the overlay layer at the playhead (fitted to the frame);
+  the main video is not changed any more.
+- Database version 5: clips.text, clips.style (migration 4->5; 3->5 tested on device).
+- INTERNET permission (only for the model download).
+
+---
 # V0.15 — multi-select on every track, compound clips with overlays / sounds / music (2026-11-14)
 
 Current version: 0.15 (versionCode 15), label V0.15. Branch v0.15-multitrack-compound merged to main.
