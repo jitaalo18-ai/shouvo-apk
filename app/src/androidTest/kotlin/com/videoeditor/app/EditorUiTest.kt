@@ -9,6 +9,7 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.pinch
 import androidx.compose.ui.test.swipe
@@ -52,6 +53,17 @@ class EditorUiTest {
         rule.mainClock.advanceTimeBy(ms)
         rule.waitForIdle()
         Thread.sleep(250) // let the frame reach the screen before a screenshot
+    }
+
+    /** Taps a toolbar button by its label (scrolling the toolbar to it first). */
+    private fun tool(label: String) {
+        rule.onNodeWithText(label).performScrollTo().performClick()
+        pause(700)
+    }
+
+    private fun seek(ms: Long) {
+        rule.runOnUiThread { editor.player.seekTo(ms) }
+        pause(800)
     }
 
     @Test fun editTimelineEndToEnd() {
@@ -199,6 +211,120 @@ class EditorUiTest {
         Report.note("ui: after reopen, handles $ls and $le")
         assertTrue("trim handles do not overlap", ls.right <= le.left)
         Shots.take("12_short_clip_handles")
+
+        // ---- Duplicate a main clip: the copy comes right after it and is selected ----
+        val before = editor.timeline.main.size
+        val firstId = editor.timeline.main[0].id
+        tool("Duplicate")
+        Shots.take("13_duplicated")
+        assertEquals("duplicate added a clip", before + 1, editor.timeline.main.size)
+        assertEquals(firstId, editor.timeline.main[0].id)
+        assertEquals(editor.timeline.main[0].sourceStartMs, editor.timeline.main[1].sourceStartMs)
+        assertEquals("the copy is selected", editor.timeline.main[1].id, editor.timeline.selected?.id)
+
+        // ---- Copy, then Paste at the end ----
+        tool("Copy")
+        assertTrue("clipboard filled", editor.canPaste)
+        rule.onNodeWithContentDescription("Back").performClick()
+        pause(500)
+        seek(editor.timeline.durationMs)
+        tool("Paste")
+        Shots.take("14_pasted")
+        assertEquals("paste added a clip", before + 2, editor.timeline.main.size)
+        assertEquals(editor.timeline.main[1].sourceStartMs, editor.timeline.main.last().sourceStartMs)
+        assertEquals(editor.timeline.main.last().id, editor.timeline.selected?.id)
+        val durationBeforeCompound = editor.timeline.durationMs
+
+        // ---- Compound clip: choose all, combine ----
+        rule.onNodeWithContentDescription("Back").performClick()
+        pause(500)
+        seek(0)
+        tool("Compound")
+        assertTrue("choosing clips", editor.picking != null)
+        rule.onNodeWithTag("pickAll").performClick()
+        pause(500)
+        Shots.take("15_compound_choose")
+        rule.onNodeWithTag("makeCompound").performClick()
+        pause(1_000)
+        Shots.take("16_compound_made")
+        val group = editor.timeline.main.first().groupId
+        assertTrue("all main clips are in one compound", group != null && editor.timeline.main.all { it.groupId == group })
+        assertEquals("playback length unchanged", durationBeforeCompound, editor.timeline.durationMs)
+        assertTrue("one block on the timeline", rule.onAllNodesWithTag("compound_0").fetchSemanticsNodes().size == 1)
+        assertTrue("no single clips shown", rule.onAllNodesWithTag("mainClip_0").fetchSemanticsNodes().isEmpty())
+        Report.note("ui: compound made from ${editor.timeline.main.size} clips, ${editor.timeline.durationMs} ms")
+
+        // trim the end of the compound with its handle
+        val compoundLen = editor.timeline.durationMs
+        rule.onNodeWithTag("compoundTrimEnd", useUnmergedTree = true).performTouchInput {
+            swipe(center, Offset(centerX - 150f, centerY), durationMillis = 700)
+        }
+        pause(1_200)
+        Shots.take("17_compound_trimmed")
+        Report.note("ui: compound trim $compoundLen -> ${editor.timeline.durationMs} ms")
+        assertTrue("compound end trimmed", editor.timeline.durationMs < compoundLen)
+        assertTrue("still one compound", editor.timeline.main.all { it.groupId == group })
+        rule.onNodeWithContentDescription("Undo").performClick()
+        pause(700)
+        assertEquals(compoundLen, editor.timeline.durationMs)
+
+        // split the compound at the playhead into two compounds
+        if (editor.timeline.selected == null) rule.onNodeWithTag("compound_0").performClick()
+        seek(compoundLen / 2)
+        tool("Split")
+        Shots.take("18_compound_split")
+        val groups = editor.timeline.main.map { it.groupId }.distinct()
+        assertEquals("two compounds after split: $groups", 2, groups.size)
+        assertTrue(groups.all { it != null })
+        assertEquals(compoundLen, editor.timeline.durationMs)
+        rule.onNodeWithContentDescription("Undo").performClick()
+        pause(700)
+        assertEquals(1, editor.timeline.main.map { it.groupId }.distinct().size)
+
+        // open the compound, its clips show one by one; Done closes it
+        if (editor.timeline.selected == null) rule.onNodeWithTag("compound_0").performClick()
+        pause(500)
+        tool("Edit")
+        Shots.take("19_compound_open")
+        assertEquals(group, editor.openGroupId)
+        assertTrue("clips shown one by one", rule.onAllNodesWithTag("mainClip_0").fetchSemanticsNodes().isNotEmpty())
+        rule.onNodeWithTag("closeCompound").performClick()
+        pause(700)
+        assertEquals(null, editor.openGroupId)
+
+        // the compound is saved: close and reopen the project
+        rule.onNodeWithContentDescription("Close project").performClick()
+        pause(1_500)
+        rule.onAllNodes(hasText("Edited", substring = true))[0].performClick()
+        waitFor("editor reloaded again") { EditorController.current?.loaded == true }
+        pause(2_000)
+        Shots.take("20_compound_reopened")
+        assertTrue("compound kept after reopening", editor.timeline.main.all { it.groupId == group })
+
+        // break it apart
+        rule.onNodeWithTag("compound_0").performClick()
+        pause(500)
+        tool("Break apart")
+        Shots.take("21_broken_apart")
+        assertTrue("plain clips again", editor.timeline.main.all { it.groupId == null })
+        assertEquals(compoundLen, editor.timeline.durationMs)
+
+        // ---- Delete a project from the projects screen ----
+        rule.onNodeWithContentDescription("Close project").performClick()
+        pause(1_500)
+        val projectsBefore = runBlocking { app.projects.count() }
+        rule.onAllNodesWithTag("projectMenu")[0].performClick()
+        pause(500)
+        Shots.take("22_project_menu")
+        rule.onNodeWithTag("deleteProject").performClick()
+        pause(500)
+        Shots.take("23_delete_confirm")
+        rule.onNodeWithTag("confirmDeleteProject").performClick()
+        pause(1_500)
+        Shots.take("24_project_deleted")
+        val projectsAfter = runBlocking { app.projects.count() }
+        Report.note("ui: projects $projectsBefore -> $projectsAfter")
+        assertEquals("project deleted", projectsBefore - 1, projectsAfter)
         assertTrue(abs(editor.timeline.main[0].durationMs - after) < 5)
     }
 }

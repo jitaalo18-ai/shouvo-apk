@@ -116,6 +116,8 @@ class ProjectRepository(private val db: AppDatabase) {
         return id
     }
 
+    suspend fun count(): Int = dao.count()
+
     /** Deletes the project and its editing decisions. Media in the Gallery is never touched. */
     suspend fun delete(id: Long) = dao.deleteProject(id)
 
