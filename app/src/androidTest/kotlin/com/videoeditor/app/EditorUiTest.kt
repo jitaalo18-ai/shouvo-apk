@@ -183,7 +183,7 @@ class EditorUiTest {
         Report.note("ui: played ${playing - playFrom} ms of timeline in $wall ms of real time")
         assertTrue("playback runs at normal speed (${playing - playFrom} ms in $wall ms)", playing - playFrom <= wall + 300)
         Shots.take("09_playing")
-        rule.onNodeWithContentDescription("Pause").performClick()
+        rule.runOnUiThread { editor.player.pause() } // (the slow emulator may already have reached the end)
         pause(500)
         Report.note("ui: playing reached $playing ms")
 

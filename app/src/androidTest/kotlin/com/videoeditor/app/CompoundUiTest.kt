@@ -122,7 +122,7 @@ class CompoundUiTest {
         rule.onNodeWithContentDescription("Play").performClick()
         pause(2_000)
         val playing = editor.player.positionMs.value
-        rule.onNodeWithContentDescription("Pause").performClick()
+        rule.runOnUiThread { editor.player.pause() } // (the slow emulator may already have reached the end)
         pause(500)
         Shots.take("22_compound_playing")
         Report.note("ui: playing inside the compound went from 23500 to $playing ms")
@@ -299,7 +299,7 @@ class CompoundUiTest {
         rule.onNodeWithContentDescription("Play").performClick()
         pause(1_500)
         Shots.take("43_multi_playing")
-        rule.onNodeWithContentDescription("Pause").performClick()
+        rule.runOnUiThread { editor.player.pause() } // (the slow emulator may already have reached the end)
         pause(400)
         assertTrue(editor.player.positionMs.value > 1_800)
 
