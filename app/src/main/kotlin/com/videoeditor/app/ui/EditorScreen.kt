@@ -43,6 +43,10 @@ import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.DeleteSweep
+import androidx.compose.material.icons.filled.Palette
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.ClosedCaption
 import androidx.compose.material.icons.filled.CallSplit
 import androidx.compose.material.icons.filled.MergeType
 import androidx.compose.material.icons.filled.ContentPaste
@@ -304,8 +308,9 @@ fun EditorScreen(app: App, projectId: Long, onBack: () -> Unit) {
                     ToolButton(Icons.Filled.MusicNote, "BG MUSIC") { ctl.library = LibraryKind.MUSIC }
                     ToolButton(Icons.Filled.Movie, "Video FX") { ctl.library = LibraryKind.VIDEO_FX }
                     ToolButton(Icons.Filled.Layers, "Overlay") { importOverlay() }
+                    ToolButton(Icons.Filled.ClosedCaption, "Captions") { ctl.captionSheet = true }
+                    ToolButton(Icons.Filled.TextFields, "Text") { ctl.addText() }
                     ToolButton(Icons.Filled.MergeType, "Compound") { ctl.startCompound() }
-                    ToolButton(Icons.Filled.TextFields, "Text") { ctl.comingSoon("Text") }
                     ToolButton(Icons.Filled.Mic, "Voice") { ctl.comingSoon("Voice") }
                 }
             } else {
@@ -360,6 +365,23 @@ fun EditorScreen(app: App, projectId: Long, onBack: () -> Unit) {
                             ToolButton(Icons.Filled.Tune, "Adjust") { ctl.comingSoon("Adjust") }
                             ToolButton(Icons.Filled.Flip, "Mirror") { ctl.comingSoon("Mirror") }
                             ToolButton(Icons.Filled.Person, "Cutout") { ctl.comingSoon("Cutout") }
+                        } else if (selected.track == Track.TEXT) {
+                            if (selected.kind == MediaKind.TEXT) {
+                                ToolButton(Icons.Filled.Edit, "Edit") { ctl.editingTextId = selected.id }
+                                ToolButton(Icons.Filled.Palette, "Style") { ctl.textStyleSheet = true }
+                            } else if (selected.isCompound) {
+                                ToolButton(Icons.Filled.CallSplit, "Uncompound") { ctl.uncompoundSelected() }
+                            }
+                            ToolButton(Icons.Filled.ContentCut, "Split") { ctl.split() }
+                            ToolButton(Icons.Filled.ContentCopy, "Copy") { ctl.copySelected() }
+                            if (clipboard != null) ToolButton(Icons.Filled.ContentPaste, "Paste") { ctl.paste() }
+                            ToolButton(Icons.Filled.FileCopy, "Duplicate") { ctl.duplicateSelected() }
+                            ToolButton(Icons.Filled.MergeType, "Compound") { ctl.startCompound() }
+                            ToolButton(Icons.Filled.Delete, "Delete") { ctl.deleteSelected() }
+                            if (selected.name == com.videoeditor.core.Captions.AUTO_NAME) {
+                                ToolButton(Icons.Filled.ClosedCaption, "Captions") { ctl.captionSheet = true }
+                                ToolButton(Icons.Filled.DeleteSweep, "Remove all") { ctl.removeAutoCaptions() }
+                            }
                         } else {
                             ToolButton(Icons.Filled.ContentCut, "Split") { ctl.split() }
                             if (selected.isCompound) ToolButton(Icons.Filled.CallSplit, "Uncompound") { ctl.uncompoundSelected() }
@@ -391,6 +413,10 @@ fun EditorScreen(app: App, projectId: Long, onBack: () -> Unit) {
         AutoCutSheet(ctl, review)
     }
 
+    if (ctl.captionSheet) CaptionSheet(ctl)
+    ctl.editingTextId?.let { TextEditDialog(ctl, it) }
+    if (ctl.textStyleSheet) TextStyleSheet(ctl)
+
     ctl.library?.let { kind ->
         LaunchedEffect(kind) { ctl.player.pause() }
         LibraryDialog(
@@ -415,6 +441,10 @@ fun EditorScreen(app: App, projectId: Long, onBack: () -> Unit) {
                         Text("${(p * 100).toInt()}%", fontSize = 12.sp, color = Color.Gray)
                     } else {
                         CircularProgressIndicator()
+                    }
+                    if (ctl.captionsRunning) {
+                        Spacer(Modifier.height(8.dp))
+                        TextButton(onClick = { ctl.stopCaptionWork() }, modifier = Modifier.testTag("captionsCancel")) { Text("Cancel") }
                     }
                 }
             }
@@ -717,6 +747,8 @@ private fun PreviewCanvas(ctl: EditorController, position: Long) {
                         }
                     }
                 }
+                // captions and texts on top of everything
+                TextLayer(ctl, position, canvasW, canvasH, canvasWPx, canvasHPx)
             }
 
             if (top != null && (top.selected || ctl.multiPick?.contains(top.id) == true)) Box(placeFor(top).border(2.dp, Accent))

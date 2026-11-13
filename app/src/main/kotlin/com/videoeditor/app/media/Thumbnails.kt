@@ -118,7 +118,7 @@ object Thumbnails {
         size: Int = 160,
         exact: Boolean = false,
     ): Bitmap? {
-        if (kind == MediaKind.AUDIO || kind == MediaKind.COMPOUND) return null
+        if (kind == MediaKind.AUDIO || kind == MediaKind.COMPOUND || kind == MediaKind.TEXT) return null
         val k = key(uri, kind, timeMs, size, exact)
         memory.get(k)?.let { return it }
         val deferred = synchronized(queue) {
@@ -152,7 +152,7 @@ object Thumbnails {
         val bmp = when (r.kind) {
             MediaKind.IMAGE -> decodeImage(r.context, Uri.parse(r.uri), r.size)
             MediaKind.VIDEO -> Retrievers.frame(r.context, r.uri, r.timeMs, r.size, r.exact)
-            MediaKind.AUDIO, MediaKind.COMPOUND -> null
+            MediaKind.AUDIO, MediaKind.COMPOUND, MediaKind.TEXT -> null
         } ?: return null
         decodedCount.value = decodedCount.value + 1
         diskWrite(r, bmp)

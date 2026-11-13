@@ -25,6 +25,8 @@ fun newClipId(): String = UUID.randomUUID().toString()
 
 fun ClipEntity.toClip() = Clip(
     children = ClipJson.decode(childrenJson),
+    text = text,
+    style = style,
     id = id,
     track = Track.valueOf(track),
     kind = MediaKind.valueOf(kind),
@@ -73,6 +75,8 @@ fun Clip.toEntity(projectId: Long) = ClipEntity(
     stretchY = stretchY,
     childrenJson = if (children.isEmpty()) null else ClipJson.encode(children),
     childLibraryIds = Compound.libraryIds(this).takeIf { it.isNotEmpty() }?.joinToString(",", ",", ","),
+    text = text,
+    style = style,
 )
 
 /** Builds a clip that plays the whole of [info]. */

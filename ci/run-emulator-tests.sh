@@ -11,6 +11,11 @@ adb shell settings put global animator_duration_scale 0
 adb install -r -g app/build/outputs/apk/debug/app-debug.apk
 adb install -r -g app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
 adb shell run-as $PKG rm -rf files/shots
+# Auto Captions test material (models, speech); the tests copy it into the app
+if [ -d ci-data ]; then
+  adb shell mkdir -p /data/local/tmp/nn
+  for f in ci-data/*; do adb push "$f" /data/local/tmp/nn/ > /dev/null && echo "pushed $f"; done
+fi
 adb logcat -c
 adb shell am instrument -w -r $PKG.test/androidx.test.runner.AndroidJUnitRunner > "$OUT/instrumentation.txt" 2>&1
 STATUS=$?

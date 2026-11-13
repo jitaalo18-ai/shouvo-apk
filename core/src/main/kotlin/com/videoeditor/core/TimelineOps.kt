@@ -150,7 +150,7 @@ object TimelineOps {
     fun trimStart(t: Timeline, id: String, newTimelineStartMs: Long): Timeline = update(t, id) { c ->
         if (c.track == Track.MAIN) return@update c
         val wanted = newTimelineStartMs.coerceAtLeast(0)
-        if (c.kind == MediaKind.IMAGE) {
+        if (c.hasVirtualSource) {
             val start = wanted.coerceIn(
                 (c.timelineEndMs - MAX_IMAGE_MS).coerceAtLeast(0),
                 c.timelineEndMs - MIN_TRIM_MS,
@@ -168,7 +168,7 @@ object TimelineOps {
     fun trimEnd(t: Timeline, id: String, newTimelineEndMs: Long): Timeline = update(t, id) { c ->
         if (c.track == Track.MAIN) return@update c
         val wantedDur = newTimelineEndMs - c.timelineStartMs
-        if (c.kind == MediaKind.IMAGE) {
+        if (c.hasVirtualSource) {
             c.copy(sourceStartMs = 0, sourceEndMs = wantedDur.coerceIn(MIN_TRIM_MS, MAX_IMAGE_MS))
         } else {
             val end = (c.sourceStartMs + wantedDur)
@@ -191,7 +191,7 @@ object TimelineOps {
     fun trimMain(t: Timeline, id: String, newSourceStartMs: Long? = null, newSourceEndMs: Long? = null): Timeline {
         val clip = t.byId(id) ?: return t
         if (clip.track != Track.MAIN) return t
-        val trimmed = if (clip.kind == MediaKind.IMAGE) {
+        val trimmed = if (clip.hasVirtualSource) {
             // an image has no source limits; only its duration changes
             val duration = ((newSourceEndMs ?: clip.sourceEndMs) - (newSourceStartMs ?: 0L))
                 .coerceIn(MIN_TRIM_MS, MAX_IMAGE_MS)

@@ -19,6 +19,10 @@ import com.videoeditor.app.media.PlaybackController
 import com.videoeditor.app.media.canvasSize
 import com.videoeditor.core.AutoCutStrength
 import com.videoeditor.core.Clip
+import com.videoeditor.app.captions.CaptionModels
+import com.videoeditor.app.captions.CaptionLanguage
+import com.videoeditor.app.captions.AutoCaptioner
+import com.videoeditor.core.Captions
 import com.videoeditor.core.Compound
 import com.videoeditor.core.MediaKind
 import com.videoeditor.core.Snap
@@ -312,8 +316,13 @@ class EditorController(private val app: App, val projectId: Long, uiScope: Corou
         }
         when (kind) {
             LibraryKind.VIDEO_FX -> {
-                val clip = clipFrom(info, Track.MAIN, libraryItemId = item.id)
-                commitEdit(TimelineOps.insertMainAt(timeline, position, clip, ::newClipId))
+                // Video FX go on the layer above the video (overlay track), at the playhead,
+                // fitted to the frame - the main video stays as it is.
+                val fit = if (info.aspect >= canvasAspect) 1f else info.aspect / canvasAspect
+                val clip = clipFrom(info, Track.OVERLAY, timelineStartMs = position, libraryItemId = item.id)
+                    .copy(posX = 0.5f, posY = 0.5f, scale = fit.coerceIn(TimelineOps.MIN_SCALE, 1f))
+                commitEdit(TimelineOps.select(TimelineOps.addClip(timeline, clip), clip.id))
+                message = "Video FX added on the layer above the video."
             }
             LibraryKind.SOUND_FX, LibraryKind.MUSIC -> {
                 val track = if (kind == LibraryKind.SOUND_FX) Track.SFX else Track.MUSIC
@@ -510,6 +519,154 @@ class EditorController(private val app: App, val projectId: Long, uiScope: Corou
     }
 
     private fun leaves(c: Clip): List<Clip> = if (c.isCompound) c.children.flatMap { leaves(it) } else listOf(c)
+
+    // ---- Auto captions and texts ---------------------------------------------------------
+
+    /** The Auto Captions sheet is open. */
+    var captionSheet by mutableStateOf(false)
+    var captionLanguage by mutableStateOf(CaptionLanguage.BANGLA)
+    var captionStyle by mutableStateOf("CLASSIC")
+
+    /** Model download in progress: bytes so far / total (null = not downloading). */
+    var modelDownload by mutableStateOf<Pair<Long, Long>?>(null)
+        private set
+    var modelReadyTick by mutableStateOf(0)
+        private set
+    private var captionJob: Job? = null
+
+    /** Captions are being made (the progress dialog shows Cancel). */
+    var captionsRunning by mutableStateOf(false)
+        private set
+
+    /** Which caption / text the edit dialog is open for. */
+    var editingTextId by mutableStateOf<String?>(null)
+    var textStyleSheet by mutableStateOf(false)
+
+    val hasAutoCaptions: Boolean
+        get() = timeline.clips.any { it.track == Track.TEXT && it.name == Captions.AUTO_NAME }
+
+    fun modelReady(model: CaptionModel): Boolean {
+        modelReadyTick // read so the UI updates after a download / delete
+        return CaptionModels.isReady(app, model)
+    }
+
+    fun downloadModel(model: CaptionModel) {
+        if (modelDownload != null) return
+        modelDownload = 0L to model.approxBytes
+        captionJob = scope.launch {
+            try {
+                CaptionModels.download(app, model) { done, total -> modelDownload = done to (if (total > 0) total else model.approxBytes) }
+                message = "Speech model downloaded. It stays on the phone for next time."
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                message = "Download stopped. It continues where it stopped next time."
+            } catch (e: Exception) {
+                message = "Download failed: ${e.message ?: e.javaClass.simpleName}. Check the internet and try again."
+            } finally {
+                modelDownload = null
+                modelReadyTick++
+            }
+        }
+    }
+
+    fun deleteModel(model: CaptionModel) {
+        CaptionModels.delete(app, model)
+        modelReadyTick++
+    }
+
+    fun stopCaptionWork() {
+        captionJob?.cancel()
+    }
+
+    /** Recognises the speech of the main track and puts captions on the text track. */
+    fun createCaptions() {
+        if (busy != null || timeline.main.isEmpty()) return
+        val language = captionLanguage
+        if (!modelReady(language.model)) {
+            message = "Download the speech model first."
+            return
+        }
+        player.pause()
+        captionSheet = false
+        busy = Busy("Reading the sound…", 0f)
+        captionsRunning = true
+        val project = timeline
+        captionJob = scope.launch {
+            try {
+                val pieces = AutoCaptioner.recognise(app, flat.main, language) { text, p -> busy = Busy(text, p) }
+                val captions = Captions.build(pieces, project.durationMs, ::newClipId, style = captionStyle)
+                if (captions.isEmpty()) {
+                    message = "No speech was found, so no captions were added."
+                } else {
+                    commitEdit(Captions.replaceAuto(timeline, captions))
+                    message = "${captions.size} captions added. Tap one to edit its words or style."
+                }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                message = "Captions stopped. Nothing was changed."
+            } catch (e: AutoCaptioner.Failed) {
+                message = e.message
+            } catch (e: Exception) {
+                message = "Captions failed: ${e.message ?: e.javaClass.simpleName}"
+            } finally {
+                busy = null
+                captionJob = null
+                captionsRunning = false
+            }
+        }
+    }
+
+    /** Removes every auto caption (typed texts stay). */
+    fun removeAutoCaptions() {
+        if (!hasAutoCaptions) return
+        commitEdit(Captions.replaceAuto(timeline, emptyList()))
+        message = "Captions removed."
+    }
+
+    /** "Text": a new text at the playhead, 3 s long, and the editor for its words. */
+    fun addText() {
+        val start = position.coerceIn(0, (timeline.durationMs - 500).coerceAtLeast(0))
+        val clip = Captions.textClip(newClipId(), start, 3_000, "Text", style = captionStyle, posY = 0.5f, size = 0.07f)
+        commitEdit(TimelineOps.select(TimelineOps.addClip(timeline, clip), clip.id))
+        editingTextId = clip.id
+    }
+
+    fun setText(id: String, text: String) {
+        val clean = text.trim()
+        if (clean.isEmpty()) {
+            commitEdit(TimelineOps.remove(timeline, id))
+        } else {
+            commitEdit(Captions.setText(timeline, id, clean))
+        }
+        editingTextId = null
+    }
+
+    /**
+     * Style / size / height of captions. Auto captions change together (they are one set, like in
+     * Edits); a typed text changes on its own.
+     */
+    fun restyleText(id: String, style: String? = null, posY: Float? = null, size: Float? = null, live: Boolean = false) {
+        val clip = timeline.byId(id) ?: return
+        val ids = if (clip.name == Captions.AUTO_NAME) {
+            timeline.clips.filter { it.track == Track.TEXT && it.name == Captions.AUTO_NAME }.map { it.id }.toSet()
+        } else setOf(id)
+        if (style != null) captionStyle = style
+        commitEdit(Captions.restyle(timeline, ids, style, posY, size), saveNow = !live)
+    }
+
+    /** Dragging a caption / text in the preview (auto captions move together). */
+    fun moveText(id: String, x: Float, y: Float) {
+        val clip = timeline.byId(id) ?: return
+        val dx = x - clip.posX
+        val dy = y - clip.posY
+        val group = clip.name == Captions.AUTO_NAME
+        commitEdit(
+            Timeline(timeline.clips.map {
+                if (it.id == id || (group && it.track == Track.TEXT && it.name == Captions.AUTO_NAME)) {
+                    it.copy(posX = (it.posX + dx).coerceIn(0.05f, 0.95f), posY = (it.posY + dy).coerceIn(0.05f, 0.95f))
+                } else it
+            }),
+            saveNow = false,
+        )
+    }
 
     // ---- Multi-select and compound clips --------------------------------------------------
 

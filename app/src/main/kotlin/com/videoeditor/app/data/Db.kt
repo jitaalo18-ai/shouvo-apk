@@ -65,6 +65,9 @@ data class ClipEntity(
     val childrenJson: String? = null,
     /** 0.14: library items used inside a compound, as ",3,7," so they count as "in use". */
     val childLibraryIds: String? = null,
+    /** 0.16: captions and texts (TEXT track): the words and the style name. */
+    @ColumnInfo(defaultValue = "") val text: String = "",
+    @ColumnInfo(defaultValue = "") val style: String = "",
 )
 
 /**
@@ -166,7 +169,7 @@ abstract class LibraryDao {
 
 @Database(
     entities = [ProjectEntity::class, ClipEntity::class, LibraryItemEntity::class],
-    version = 4,
+    version = 5,
     exportSchema = false,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -176,8 +179,16 @@ abstract class AppDatabase : RoomDatabase() {
     companion object {
         fun create(context: Context): AppDatabase =
             Room.databaseBuilder(context, AppDatabase::class.java, "video_editor.db")
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
                 .build()
+
+        /** 0.16: captions / texts. Existing clips have no text. */
+        val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE clips ADD COLUMN text TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE clips ADD COLUMN style TEXT NOT NULL DEFAULT ''")
+            }
+        }
 
         /** 0.14: compound clips keep their inner clips; existing clips are ordinary (NULL). */
         val MIGRATION_3_4 = object : Migration(3, 4) {

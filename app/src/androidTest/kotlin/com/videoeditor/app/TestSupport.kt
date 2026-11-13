@@ -54,3 +54,28 @@ object Report {
         f.appendText(line + "\n")
     }
 }
+
+/** Files the CI script pushed to /data/local/tmp/nn (read through the shell, which may read them). */
+object Pushed {
+    fun copyTo(name: String, target: java.io.File): Boolean {
+        if (target.isFile && target.length() > 0) return true
+        target.parentFile?.mkdirs()
+        val ui = androidx.test.platform.app.InstrumentationRegistry.getInstrumentation().uiAutomation
+        val tmp = java.io.File(target.parentFile, target.name + ".copy")
+        ui.executeShellCommand("cat /data/local/tmp/nn/$name").use { pfd ->
+            android.os.ParcelFileDescriptor.AutoCloseInputStream(pfd).use { input ->
+                tmp.outputStream().use { input.copyTo(it, 1 shl 20) }
+            }
+        }
+        if (tmp.length() == 0L) {
+            tmp.delete()
+            return false
+        }
+        return tmp.renameTo(target)
+    }
+
+    fun file(name: String): java.io.File? {
+        val f = java.io.File(Fixtures.target.filesDir, "ci/$name")
+        return if (copyTo(name, f)) f else null
+    }
+}

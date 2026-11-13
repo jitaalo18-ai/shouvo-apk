@@ -90,8 +90,11 @@ class Exporter(private val context: Context) {
         val main = timeline.main
         require(main.isNotEmpty()) { "Nothing to export" }
         val (canvasW, canvasH) = canvasSize(aspect)
-        val overlays = timeline.track(Track.OVERLAY).sortedBy { it.layer }
-            .map { TimedOverlay(context, it, canvasW, canvasH) }
+        // pictures / videos first, captions and texts on top of everything
+        val overlays: List<TextureOverlay> = timeline.track(Track.OVERLAY).sortedBy { it.layer }
+            .map { TimedOverlay(context, it, canvasW, canvasH) } +
+            timeline.track(Track.TEXT).filter { it.kind == MediaKind.TEXT && it.text.isNotBlank() }
+                .map { TimedText(it, canvasW, canvasH) }
         val composition = buildComposition(timeline, canvasW, canvasH, overlays)
         val outFile = File(context.cacheDir, "export_${System.currentTimeMillis()}.mp4")
         val transformer = Transformer.Builder(context).build()
@@ -312,4 +315,23 @@ private class TimedOverlay(
         retriever = null
         super.release()
     }
+}
+
+/** A caption / text burned into the video while it is on the timeline (same drawing as the preview). */
+private class TimedText(private val clip: Clip, private val canvasW: Int, private val canvasH: Int) : BitmapOverlay() {
+    private val visible: OverlaySettings = OverlaySettings.Builder()
+        .setBackgroundFrameAnchor(clip.posX * 2f - 1f, 1f - clip.posY * 2f)
+        .setRotationDegrees(-clip.rotation)
+        .build()
+    private val hidden: OverlaySettings = OverlaySettings.Builder().setAlphaScale(0f).build()
+    private val bitmap: Bitmap by lazy {
+        com.videoeditor.app.captions.CaptionRenderer.render(clip.text, clip.style, clip.scale, canvasW, canvasH)
+    }
+
+    private fun active(timeMs: Long) = timeMs >= clip.timelineStartMs && timeMs < clip.timelineEndMs
+
+    override fun getBitmap(presentationTimeUs: Long): Bitmap = bitmap
+
+    override fun getOverlaySettings(presentationTimeUs: Long): OverlaySettings =
+        if (active(presentationTimeUs / 1000)) visible else hidden
 }

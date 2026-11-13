@@ -1,10 +1,10 @@
 package com.videoeditor.core
 
-/** Timeline layers. MAIN is the gap-less primary video track; the others are free-positioned. */
-enum class Track { MAIN, OVERLAY, SFX, MUSIC }
+/** Timeline layers. MAIN is the gap-less primary video track; the others are free-positioned. TEXT holds captions and text. */
+enum class Track { MAIN, OVERLAY, SFX, MUSIC, TEXT }
 
-/** COMPOUND = a main-track clip that holds other clips (see [Compound]). */
-enum class MediaKind { VIDEO, IMAGE, AUDIO, COMPOUND }
+/** COMPOUND = a clip that holds other clips (see [Compound]); TEXT = a caption or text on the TEXT track. */
+enum class MediaKind { VIDEO, IMAGE, AUDIO, COMPOUND, TEXT }
 
 /** Half-open range in milliseconds: [startMs, endMs). */
 data class MsRange(val startMs: Long, val endMs: Long) {
@@ -49,8 +49,14 @@ data class Clip(
      * into that inner timeline, so split / trim / move work on it like on any other clip.
      */
     val children: List<Clip> = emptyList(),
+    /** TEXT clips: the words shown, and the look (a style name the app knows, e.g. "CLASSIC"). */
+    val text: String = "",
+    val style: String = "",
 ) {
     val isCompound: Boolean get() = kind == MediaKind.COMPOUND
+
+    /** Images and texts have no source file time: their "source range" is just 0..duration. */
+    val hasVirtualSource: Boolean get() = kind == MediaKind.IMAGE || kind == MediaKind.TEXT
 
     val durationMs: Long get() = sourceEndMs - sourceStartMs
     val timelineEndMs: Long get() = timelineStartMs + durationMs

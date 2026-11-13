@@ -110,12 +110,14 @@ fun timelineHeight(timeline: Timeline): Dp = (RULER_HEIGHT + 28.dp + MAIN_HEIGHT
     (if (timeline.track(Track.MUSIC).isEmpty()) ADD_AUDIO_HEIGHT + LANE_GAP else 0.dp) +
     laneHeight(timeline.track(Track.OVERLAY), VISUAL_LANE) +
     laneHeight(timeline.track(Track.SFX), AUDIO_LANE) +
-    laneHeight(timeline.track(Track.MUSIC), AUDIO_LANE)).coerceIn(164.dp, 248.dp)
+    laneHeight(timeline.track(Track.MUSIC), AUDIO_LANE) +
+    laneHeight(timeline.track(Track.TEXT), AUDIO_LANE)).coerceIn(164.dp, 248.dp)
 
 /** The part of the timeline content (in pixels from its start) that is on or near the screen. */
 private class Visible(val left: Float, val right: Float)
 
 private val CompoundColor = Color(0xFF6D4AFF)
+private val CaptionColor = Color(0xFFF2C94C)
 
 /**
  * Scrollable timeline with a fixed playhead in the middle (the content moves under it).
@@ -259,6 +261,7 @@ fun TimelineView(ctl: EditorController, position: Long, modifier: Modifier = Mod
                     }
                     FreeTrack(ctl, music, MusicColor, pxPerMs, AUDIO_LANE, visible, snapMs)
                     FreeTrack(ctl, timeline.track(Track.SFX), SfxColor, pxPerMs, AUDIO_LANE, visible, snapMs)
+                    FreeTrack(ctl, timeline.track(Track.TEXT), CaptionColor, pxPerMs, AUDIO_LANE, visible, snapMs)
                     FreeTrack(ctl, timeline.track(Track.OVERLAY), OverlayColor, pxPerMs, VISUAL_LANE, visible, snapMs)
                     // main video track
                     Row(Modifier.height(MAIN_HEIGHT)) {
@@ -684,6 +687,15 @@ private fun ChipView(
                 Icon(Icons.Filled.MergeType, contentDescription = "Compound clip", tint = Color.White, modifier = Modifier.size(12.dp))
                 Text(" Compound · ${Compound.leafCount(clip)}", fontSize = 10.sp, maxLines = 1, color = Color.White)
             }
+        } else if (clip.kind == MediaKind.TEXT) {
+            Text(
+                clip.text,
+                fontSize = 10.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Clip,
+                color = Color.Black,
+                modifier = Modifier.align(Alignment.CenterStart).padding(horizontal = 20.dp),
+            )
         } else if (clip.kind == MediaKind.AUDIO) {
             WaveStrip(clip, pxPerMs, visible, Color(0x66FFFFFF), Modifier.matchParentSize().padding(vertical = 3.dp))
             Text(

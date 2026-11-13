@@ -28,7 +28,7 @@ object Compound {
 
     /** [c] cut down to the part from [from] to [to] (times relative to the clip's own start). */
     private fun crop(c: Clip, from: Long, to: Long): Clip =
-        if (c.kind == MediaKind.IMAGE) c.copy(sourceStartMs = 0, sourceEndMs = to - from)
+        if (c.hasVirtualSource) c.copy(sourceStartMs = 0, sourceEndMs = to - from)
         else c.copy(sourceStartMs = c.sourceStartMs + from, sourceEndMs = c.sourceStartMs + to)
 
     /** Overlay layers numbered 0, 1, 2 ... in the given order (bottom first). */
@@ -135,6 +135,7 @@ object Compound {
         }
         val track = when {
             free.any { it.track == Track.OVERLAY } -> Track.OVERLAY
+            free.any { it.track == Track.TEXT } -> Track.TEXT
             free.all { it.track == Track.MUSIC } -> Track.MUSIC
             else -> Track.SFX
         }
@@ -260,7 +261,7 @@ object Compound {
             val onMain = c.track == Track.MAIN
             val placed = when {
                 child.track == Track.MAIN -> place(c, cropped, canvasAspect)
-                child.track == Track.OVERLAY && onMain -> placeOverlay(c, cropped, canvasAspect)
+                (child.track == Track.OVERLAY || child.track == Track.TEXT) && onMain -> placeOverlay(c, cropped, canvasAspect)
                 else -> cropped
             }
             val layer = when {

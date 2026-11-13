@@ -931,3 +931,82 @@ class MultiTrackCompoundTests {
         assertEquals(6_000L, flat.single().timelineStartMs)
     }
 }
+
+class CaptionTests {
+    private var n = 0
+    private val ids: () -> String = { "c${n++}" }
+
+    @Test
+    fun speechBecomesCaptionsThatNeverOverlap() {
+        val pieces = listOf(
+            SpeechPiece(500, 1_800, " আমি আজকে "),
+            SpeechPiece(1_700, 2_000, "একটা"),          // starts before the previous one ends
+            SpeechPiece(2_000, 2_100, "ভিডিও"),          // too short: shown at least 400 ms
+            SpeechPiece(4_000, 4_600, "[Music]"),        // noise
+            SpeechPiece(5_000, 20_000, "অনেক লম্বা"),    // too long: at most 7 s
+            SpeechPiece(30_000, 31_000, "after the end"),
+        )
+        val clips = Captions.build(pieces, projectMs = 25_000, newId = ids)
+        assertEquals(listOf("আমি আজকে", "একটা", "ভিডিও", "অনেক লম্বা"), clips.map { it.text })
+        assertTrue(clips.all { it.track == Track.TEXT && it.kind == MediaKind.TEXT && it.name == Captions.AUTO_NAME })
+        for (i in 1 until clips.size) assertTrue("no overlap", clips[i].timelineStartMs >= clips[i - 1].timelineEndMs)
+        assertEquals(1_700L, clips[0].timelineEndMs)
+        assertEquals(1_700L, clips[1].timelineStartMs)
+        assertEquals(400L, clips[2].durationMs)
+        assertEquals(7_000L, clips[3].durationMs)
+        assertEquals(1, TimelineOps.lanes(clips).values.toSet().size)
+    }
+
+    @Test
+    fun noiseIsRecognised() {
+        assertTrue(Captions.isNoise(" (music) "))
+        assertTrue(Captions.isNoise("♪♪"))
+        assertTrue(Captions.isNoise("।"))
+        assertFalse(Captions.isNoise("ধন্যবাদ"))
+        assertFalse(Captions.isNoise("Hello (again) world"))
+    }
+
+    @Test
+    fun newAutoCaptionsReplaceTheOldOnesButKeepTypedText() {
+        val main = Clip(id = "m", track = Track.MAIN, kind = MediaKind.VIDEO, sourceUri = "v", sourceDurationMs = 10_000,
+            sourceStartMs = 0, sourceEndMs = 10_000, timelineStartMs = 0, hasAudio = true)
+        val typed = Captions.textClip("typed", 0, 2_000, "Title")
+        val old = Captions.build(listOf(SpeechPiece(0, 1_000, "old")), 10_000, ids)
+        val t = Timeline(listOf(main, typed) + old)
+        val fresh = Captions.build(listOf(SpeechPiece(2_000, 3_000, "new")), 10_000, ids)
+        val r = Captions.replaceAuto(t, fresh)
+        assertEquals(listOf("Title", "new"), r.track(Track.TEXT).map { it.text })
+    }
+
+    @Test
+    fun textClipsTrimAndSplitLikeImages() {
+        val t = Timeline(listOf(Captions.textClip("t", 1_000, 3_000, "hello")))
+        val trimmed = TimelineOps.trimStart(t, "t", 2_000)
+        assertEquals(2_000L, trimmed.byId("t")!!.timelineStartMs)
+        assertEquals(2_000L, trimmed.byId("t")!!.durationMs)
+        val longer = TimelineOps.trimEnd(t, "t", 9_000)
+        assertEquals(8_000L, longer.byId("t")!!.durationMs)
+        val split = TimelineOps.split(t, "t", 2_500, ids)
+        assertEquals(listOf(1_500L, 1_500L), split.timeline.track(Track.TEXT).map { it.durationMs })
+        assertTrue(split.timeline.track(Track.TEXT).all { it.text == "hello" })
+    }
+
+    @Test
+    fun captionsGoIntoCompoundsAndFollowTheirFraming() {
+        val main = Clip(id = "m", track = Track.MAIN, kind = MediaKind.VIDEO, sourceUri = "v", sourceDurationMs = 10_000,
+            sourceStartMs = 0, sourceEndMs = 10_000, timelineStartMs = 0, hasAudio = true)
+        val cap = Captions.textClip("cap", 2_000, 1_000, "hi").copy(posX = 0.5f, posY = 0.8f)
+        val made = Compound.create(TimelineOps.normalize(Timeline(listOf(main, cap))), listOf("m", "cap"), ids, 1f).timeline
+        assertTrue(made.track(Track.TEXT).isEmpty())
+        val c = made.main.single()
+        val zoomed = TimelineOps.transformMain(made, c.id, 0.5f, 0.5f, 2f, 0f)
+        val piece = Compound.flatten(zoomed, 1f).track(Track.TEXT).single()
+        assertEquals("hi", piece.text)
+        assertEquals(2_000L, piece.timelineStartMs)
+        assertEquals(0.5f + 0.3f * 2f, piece.posY, 1e-4f)
+        // text-only picks make a compound on the text track
+        val two = Timeline(listOf(main, cap, Captions.textClip("cap2", 4_000, 1_000, "there")))
+        val textOnly = Compound.create(two, listOf("cap", "cap2"), ids, 1f).timeline
+        assertTrue(textOnly.track(Track.TEXT).single().isCompound)
+    }
+}

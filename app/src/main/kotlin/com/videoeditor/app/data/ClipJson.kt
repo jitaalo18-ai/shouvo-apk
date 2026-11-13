@@ -49,6 +49,8 @@ object ClipJson {
         put("rotation", c.rotation.toDouble())
         put("stretchX", c.stretchX.toDouble())
         put("stretchY", c.stretchY.toDouble())
+        if (c.text.isNotEmpty()) put("text", c.text)
+        if (c.style.isNotEmpty()) put("style", c.style)
         if (c.children.isNotEmpty()) {
             val arr = JSONArray()
             for (child in c.children) arr.put(toJson(child))
@@ -80,6 +82,8 @@ object ClipJson {
             stretchX = o.optDouble("stretchX", 1.0).toFloat(),
             stretchY = o.optDouble("stretchY", 1.0).toFloat(),
             children = children ?: emptyList(),
+            text = o.optString("text", ""),
+            style = o.optString("style", ""),
         )
     }
 }

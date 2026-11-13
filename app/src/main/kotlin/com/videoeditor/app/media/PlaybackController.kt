@@ -159,7 +159,8 @@ class PlaybackController(private val context: Context, private val scope: Corout
     }
 
     private fun syncAuxPlayers(timeline: Timeline) {
-        val wanted = timeline.clips.filter { it.track != Track.MAIN && it.kind != MediaKind.IMAGE }
+        // overlay videos, sound effects and music (images and texts make no sound)
+        val wanted = timeline.clips.filter { it.track != Track.MAIN && (it.kind == MediaKind.VIDEO || it.kind == MediaKind.AUDIO) }
         val ids = wanted.map { it.id }.toSet()
         for (id in aux.keys.filter { it !in ids }) {
             aux.remove(id)?.release()

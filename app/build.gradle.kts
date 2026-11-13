@@ -15,10 +15,22 @@ android {
         applicationId = "com.videoeditor.app"
         minSdk = 29
         targetSdk = 35
-        versionCode = 15
-        versionName = "0.15"
+        versionCode = 16
+        versionName = "0.16"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        // speech recognition (Auto Captions) is native code: phones (arm64) and the CI emulator (x86_64)
+        ndk {
+            abiFilters += listOf("arm64-v8a", "x86_64")
+        }
     }
+
+    externalNativeBuild {
+        cmake {
+            path = file("src/main/cpp/CMakeLists.txt")
+            version = "3.22.1"
+        }
+    }
+    ndkVersion = "27.2.12479018"
 
     // Fixed debug key kept in the repository so every build has the same signature and a new
     // version installs over the old one without uninstalling (which would erase saved libraries).
