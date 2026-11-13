@@ -213,11 +213,11 @@ class EditorUiTest {
         Shots.take("12_short_clip_handles")
 
         // ---- Duplicate a main clip: the copy comes right after it and is selected ----
-        val before = editor.timeline.main.size
+        val countBefore = editor.timeline.main.size
         val firstId = editor.timeline.main[0].id
         tool("Duplicate")
         Shots.take("13_duplicated")
-        assertEquals("duplicate added a clip", before + 1, editor.timeline.main.size)
+        assertEquals("duplicate added a clip", countBefore + 1, editor.timeline.main.size)
         assertEquals(firstId, editor.timeline.main[0].id)
         assertEquals(editor.timeline.main[0].sourceStartMs, editor.timeline.main[1].sourceStartMs)
         assertEquals("the copy is selected", editor.timeline.main[1].id, editor.timeline.selected?.id)
@@ -230,7 +230,7 @@ class EditorUiTest {
         seek(editor.timeline.durationMs)
         tool("Paste")
         Shots.take("14_pasted")
-        assertEquals("paste added a clip", before + 2, editor.timeline.main.size)
+        assertEquals("paste added a clip", countBefore + 2, editor.timeline.main.size)
         assertEquals(editor.timeline.main[1].sourceStartMs, editor.timeline.main.last().sourceStartMs)
         assertEquals(editor.timeline.main.last().id, editor.timeline.selected?.id)
         val durationBeforeCompound = editor.timeline.durationMs
