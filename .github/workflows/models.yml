@@ -1,0 +1,61 @@
+name: caption-models
+# Builds the speech-recognition models the app downloads for Auto Captions, measures their
+# accuracy on real Bangla speech and publishes them on the "models-v1" release.
+on:
+  workflow_dispatch:
+  push:
+    branches: [ models-build ]
+permissions:
+  contents: write
+jobs:
+  models:
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@v4
+      - name: Free disk space
+        run: sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL; df -h /
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.11' }
+      - name: Tools
+        run: |
+          pip install --quiet torch --index-url https://download.pytorch.org/whl/cpu
+          pip install --quiet "transformers>=4.45" safetensors numpy huggingface_hub
+          git clone -q --depth 1 --branch v1.8.7 https://github.com/ggml-org/whisper.cpp
+          git clone -q --depth 1 https://github.com/openai/whisper openai-whisper
+          cmake -S whisper.cpp -B wbuild -DCMAKE_BUILD_TYPE=Release -DWHISPER_BUILD_TESTS=OFF > /dev/null
+          cmake --build wbuild -j 4 --target whisper-cli whisper-quantize > /dev/null
+          ls wbuild/bin
+      - name: Bangla model (mozilla-ai/whisper-large-v3-turbo-bn) -> ggml q5_0
+        run: |
+          python -c "from huggingface_hub import snapshot_download; snapshot_download('mozilla-ai/whisper-large-v3-turbo-bn', local_dir='hf-bn', allow_patterns=['*.json','*.txt','*.safetensors'])"
+          mkdir -p out
+          python whisper.cpp/models/convert-h5-to-ggml.py hf-bn openai-whisper out
+          ./wbuild/bin/whisper-quantize out/ggml-model.bin out/ggml-turbo-bn-q5_0.bin q5_0
+          rm -rf hf-bn out/ggml-model.bin
+          ls -la out
+      - name: Reference models
+        run: |
+          cd out
+          curl -sSLf -o ggml-small-q5_1.bin https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small-q5_1.bin
+          curl -sSLf -o ggml-large-v3-turbo-q5_0.bin https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3-turbo-q5_0.bin
+          ls -la
+      - name: Accuracy on real Bangla speech (FLEURS)
+        run: |
+          mkdir -p fleurs/audio && cd fleurs
+          curl -sSLf -o test.tsv https://huggingface.co/datasets/google/fleurs/resolve/main/data/bn_in/test.tsv
+          curl -sSLf -o test.tar.gz https://huggingface.co/datasets/google/fleurs/resolve/main/data/bn_in/audio/test.tar.gz
+          tar -xzf test.tar.gz -C audio --strip-components=1 && rm test.tar.gz
+          ls audio | head -3; cd ..
+          EVAL_CLIPS=15 python ci/eval_captions.py fleurs wbuild/bin/whisper-cli out/ACCURACY.md \
+            "Bangla Turbo (app)=out/ggml-turbo-bn-q5_0.bin:bn" \
+            "Plain Turbo=out/ggml-large-v3-turbo-q5_0.bin:bn" \
+            "Small (app, fast)=out/ggml-small-q5_1.bin:bn"
+          cat out/ACCURACY.md
+      - name: Publish
+        env: { GH_TOKEN: '${{ github.token }}' }
+        run: |
+          sha256sum out/ggml-turbo-bn-q5_0.bin out/ggml-small-q5_1.bin > out/SHA256SUMS
+          gh release delete models-v1 --yes --cleanup-tag 2>/dev/null || true
+          gh release create models-v1 --title "Caption models v1" --notes-file out/ACCURACY.md \
+            out/ggml-turbo-bn-q5_0.bin out/ggml-small-q5_1.bin out/SHA256SUMS out/ACCURACY.md
