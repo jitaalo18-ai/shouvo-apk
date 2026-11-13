@@ -46,7 +46,7 @@ Java_com_videoeditor_app_captions_WhisperNative_load(JNIEnv *env, jobject, jstri
     const char *p = env->GetStringUTFChars(path, nullptr);
     whisper_context_params cp = whisper_context_default_params();
     cp.use_gpu = false;
-    cp.flash_attn = false;
+    cp.flash_attn = true;   // faster encoder on the CPU (same results)
     whisper_context *ctx = whisper_init_from_file_with_params(p, cp);
     env->ReleaseStringUTFChars(path, p);
     return reinterpret_cast<jlong>(ctx);
