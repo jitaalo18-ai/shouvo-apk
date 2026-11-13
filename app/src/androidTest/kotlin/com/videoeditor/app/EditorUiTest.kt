@@ -51,6 +51,7 @@ class EditorUiTest {
         // effects in the composition (e.g. the status message timer) run on the test clock
         rule.mainClock.advanceTimeBy(ms)
         rule.waitForIdle()
+        Thread.sleep(250) // let the frame reach the screen before a screenshot
     }
 
     @Test fun editTimelineEndToEnd() {
@@ -185,6 +186,14 @@ class EditorUiTest {
         pause(2_500)
         Shots.take("11_reopened")
         assertTrue("edits were saved", editor.timeline.main.size >= 6)
+        // a short clip at the default zoom still has two separate trim handles
+        if (editor.timeline.main[0].selected.not()) rule.onNodeWithTag("mainClip_0").performClick()
+        pause(500)
+        val ls = rule.onNodeWithTag("trimStart", useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
+        val le = rule.onNodeWithTag("trimEnd", useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
+        Report.note("ui: after reopen, handles $ls and $le")
+        assertTrue("trim handles do not overlap", ls.right <= le.left)
+        Shots.take("12_short_clip_handles")
         assertTrue(abs(editor.timeline.main[0].durationMs - after) < 5)
     }
 }

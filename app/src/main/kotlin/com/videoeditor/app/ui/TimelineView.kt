@@ -56,6 +56,7 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.zIndex
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -390,31 +391,57 @@ private fun MainClipView(ctl: EditorController, clip: Clip, pxPerMs: Float, visi
     var handleBaseStart by remember { mutableStateOf(0L) }
     var handleBaseEnd by remember { mutableStateOf(0L) }
 
+    // The outer box is exactly the clip's time span. The trim handles of the selected clip sit just
+    // outside it (as in Edits), so even a very short clip keeps two separate handles and its
+    // thumbnails stay visible; the selected clip is drawn above its neighbours.
     Box(
         modifier
             .width(with(density) { widthPx.toDp() })
             .fillMaxHeight()
-            .padding(horizontal = 1.dp)
-            .clip(RoundedCornerShape(4.dp))
-            .background(Bg)
-            .clickable { ctl.select(clip.id) },
+            .zIndex(if (clip.selected) 1f else 0f),
     ) {
-        // thumbnails on top, the clip's own sound as a waveform underneath
-        Box(Modifier.fillMaxWidth().height(THUMB_HEIGHT).background(Color(0xFF22252C))) {
-            ThumbStrip(clip, pxPerMs, THUMB_HEIGHT, visible)
-        }
-        if (clip.hasAudio) {
-            WaveStrip(
-                clip, pxPerMs, visible, WaveColor,
-                Modifier.align(Alignment.BottomStart).fillMaxWidth().height(WAVE_HEIGHT).background(WaveBackground),
-            )
+        Box(
+            Modifier
+                .matchParentSize()
+                .padding(horizontal = 1.dp)
+                .clip(RoundedCornerShape(4.dp))
+                .background(Bg)
+                .clickable { ctl.select(clip.id) },
+        ) {
+            // thumbnails on top, the clip's own sound as a waveform underneath
+            Box(Modifier.fillMaxWidth().height(THUMB_HEIGHT).background(Color(0xFF22252C))) {
+                ThumbStrip(clip, pxPerMs, THUMB_HEIGHT, visible)
+            }
+            if (clip.hasAudio) {
+                WaveStrip(
+                    clip, pxPerMs, visible, WaveColor,
+                    Modifier.align(Alignment.BottomStart).fillMaxWidth().height(WAVE_HEIGHT).background(WaveBackground),
+                )
+            }
+            if (clip.selected) {
+                Text(
+                    String.format(java.util.Locale.US, "%.1fs", clip.durationMs / 1000f),
+                    fontSize = 11.sp,
+                    color = Color.White,
+                    maxLines = 1,
+                    modifier = Modifier
+                        .padding(start = 4.dp, top = 5.dp)
+                        .background(Color(0x99000000), RoundedCornerShape(4.dp))
+                        .padding(horizontal = 4.dp, vertical = 1.dp),
+                )
+            }
         }
         if (clip.selected) {
             // Trim handles: drag the left / right handle to hide or bring back the start / end.
             val current by rememberUpdatedState(clip)
             val scale by rememberUpdatedState(pxPerMs)
             val snap by rememberUpdatedState(snapMs)
-            TrimHandle(Modifier.align(Alignment.CenterStart).testTag("trimStart"), onEnd = { ctl.endGesture() }) { start, movedPx ->
+            Box(Modifier.matchParentSize().border(2.dp, Color.White, RoundedCornerShape(2.dp)))
+            TrimHandle(
+                Modifier.align(Alignment.CenterStart).offset(x = -HANDLE_WIDTH)
+                    .clip(RoundedCornerShape(topStart = 6.dp, bottomStart = 6.dp)).testTag("trimStart"),
+                onEnd = { ctl.endGesture() },
+            ) { start, movedPx ->
                 if (start) {
                     handleBaseStart = current.sourceStartMs
                     handleBaseEnd = current.sourceEndMs
@@ -424,7 +451,11 @@ private fun MainClipView(ctl: EditorController, clip: Clip, pxPerMs: Float, visi
                     else ctl.trimMain(current.id, sourceStartMs = handleBaseStart + deltaMs)
                 }
             }
-            TrimHandle(Modifier.align(Alignment.CenterEnd).testTag("trimEnd"), onEnd = { ctl.endGesture() }) { start, movedPx ->
+            TrimHandle(
+                Modifier.align(Alignment.CenterEnd).offset(x = HANDLE_WIDTH)
+                    .clip(RoundedCornerShape(topEnd = 6.dp, bottomEnd = 6.dp)).testTag("trimEnd"),
+                onEnd = { ctl.endGesture() },
+            ) { start, movedPx ->
                 if (start) {
                     handleBaseStart = current.sourceStartMs
                     handleBaseEnd = current.sourceEndMs
@@ -432,16 +463,6 @@ private fun MainClipView(ctl: EditorController, clip: Clip, pxPerMs: Float, visi
                     ctl.trimMain(current.id, sourceEndMs = handleBaseEnd + (movedPx / scale).toLong(), snapMs = snap)
                 }
             }
-            Box(Modifier.matchParentSize().border(2.dp, Color.White, RoundedCornerShape(4.dp)))
-            Text(
-                String.format(java.util.Locale.US, "%.1fs", clip.durationMs / 1000f),
-                fontSize = 11.sp,
-                color = Color.White,
-                modifier = Modifier
-                    .padding(start = 24.dp, top = 5.dp)
-                    .background(Color(0x99000000), RoundedCornerShape(4.dp))
-                    .padding(horizontal = 4.dp, vertical = 1.dp),
-            )
         }
     }
 }
