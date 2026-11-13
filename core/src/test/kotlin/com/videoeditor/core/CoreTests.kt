@@ -260,6 +260,8 @@ private fun detect(pcm: ShortArray, rate: Int = 16000): VadResult {
     return d.finish()
 }
 
+private const val HISS_AMP = 0.03
+
 class AutoCutTests {
     private val truth = listOf(MsRange(1_000, 3_000), MsRange(5_500, 8_000), MsRange(8_300, 9_500), MsRange(13_000, 15_000))
 
@@ -336,6 +338,31 @@ class AutoCutTests {
         } else {
             assertEquals(VadStatus.UNRELIABLE, r.status)    // also safe: clip is left untouched
         }
+    }
+
+    @Test fun softWordEndingOutsideVoiceBandIsNotCut() {
+        // voice 1.0-3.0 s, then an "s" sound (mostly above 4 kHz) 3.0-3.25 s, then a long pause
+        val rate = 16000
+        val pcm = synth(rate, 8_000, listOf(MsRange(1_000, 3_000), MsRange(5_500, 7_000)), noiseAmp = 0.002)
+        // a soft "s": sound well above the voice band (6 kHz), quiet but clearly audible
+        for (i in rate * 3000 / 1000 until rate * 3250 / 1000) {
+            val hiss = HISS_AMP * sin(2 * PI * 6000.0 * i / rate)
+            pcm[i] = (pcm[i] + hiss * 32767).coerceIn(-32768.0, 32767.0).toInt().toShort()
+        }
+        val r = detect(pcm, rate)
+        assertEquals(VadStatus.OK, r.status)
+        for (strength in AutoCutStrength.values()) {
+            val plan = AutoCutPlanner.plan(r.speech, 0, 0, 8_000, strength.config)
+            val first = plan.keep.first { it.startMs < 3_000 }
+            assertTrue("$strength cut the 's' sound: $first", first.endMs >= 3_250)
+            assertTrue("$strength removed nothing: ${plan.keep}", plan.removedMs > 1_500)
+        }
+    }
+
+    @Test fun strengthsAreOrdered() {
+        val r = detect(synth(16000, 16_000, truth, noiseAmp = 0.01))
+        val removed = AutoCutStrength.values().map { AutoCutPlanner.plan(r.speech, 0, 0, 16_000, it.config).removedMs }
+        assertTrue("removed per level $removed", removed[0] <= removed[1] && removed[1] <= removed[2])
     }
 
     @Test fun emptyKeepIsRejected() {
@@ -533,5 +560,30 @@ class FramingTests {
         assertEquals(1.5f, t.byId("a")!!.stretchX); assertEquals(TimelineOps.MAX_STRETCH, t.byId("a")!!.stretchY)
         t = TimelineOps.split(t, "a", 4_000, { "a2" }).timeline
         assertEquals(1.5f, t.byId("a2")!!.stretchX)
+    }
+}
+
+class SnapTests {
+    private val t = TimelineOps.appendMain(Timeline(), listOf(video("a", 4_000), video("b", 6_000)))
+        .let { TimelineOps.addClip(it, video("s", 1_000).copy(track = Track.SFX, kind = MediaKind.AUDIO, timelineStartMs = 7_000)) }
+
+    @Test fun targetsIncludePlayheadEdgesAndStart() {
+        val targets = Snap.targets(t, excludeId = "s", playheadMs = 2_500)
+        assertEquals(listOf(0L, 2_500L, 4_000L, 10_000L), targets)
+        assertTrue(7_000L in Snap.targets(t, excludeId = null, playheadMs = 0))
+    }
+
+    @Test fun moveSnapsStartOrEndWhicheverIsCloser() {
+        val targets = Snap.targets(t, "s", 2_500)
+        assertEquals(Snapped(4_000, 4_000), Snap.move(4_120, 1_000, targets, 200))        // start onto clip edge
+        assertEquals(Snapped(1_500, 2_500), Snap.move(1_430, 1_000, targets, 200))        // end onto playhead
+        assertEquals(Snapped(5_000, null), Snap.move(5_000, 1_000, targets, 200))         // nothing near
+        assertEquals(Snapped(0, 0), Snap.move(-150, 1_000, targets, 200))                 // start of timeline
+    }
+
+    @Test fun edgeSnapsOnlyWithinThreshold() {
+        val targets = Snap.targets(t, "s", 2_500)
+        assertEquals(Snapped(2_500, 2_500), Snap.edge(2_600, targets, 150))
+        assertEquals(Snapped(2_700, null), Snap.edge(2_700, targets, 150))
     }
 }

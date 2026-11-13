@@ -55,11 +55,14 @@ import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.videoeditor.app.media.Thumbnails
 import com.videoeditor.app.media.Waveforms
 import com.videoeditor.core.Clip
 import com.videoeditor.core.MediaKind
@@ -79,6 +82,8 @@ private val AUDIO_LANE = 30.dp       // sound effects and music (waveform)
 private val LANE_GAP = 2.dp
 private val HANDLE_WIDTH = 18.dp
 private val WaveColor = Color(0xFFB42DA8)
+private val SnapColor = Color(0xFFFFD60A)
+private val ADD_AUDIO_HEIGHT = 20.dp
 private val WaveBackground = Color(0xFF510D50)
 
 private fun laneHeight(clips: List<Clip>, height: Dp): Dp {
@@ -89,6 +94,7 @@ private fun laneHeight(clips: List<Clip>, height: Dp): Dp {
 
 /** Keep the preview large for simple projects; scroll vertically when many tracks overlap. */
 fun timelineHeight(timeline: Timeline): Dp = (RULER_HEIGHT + 28.dp + MAIN_HEIGHT +
+    (if (timeline.track(Track.MUSIC).isEmpty()) ADD_AUDIO_HEIGHT + LANE_GAP else 0.dp) +
     laneHeight(timeline.track(Track.OVERLAY), VISUAL_LANE) +
     laneHeight(timeline.track(Track.SFX), AUDIO_LANE) +
     laneHeight(timeline.track(Track.MUSIC), AUDIO_LANE)).coerceIn(164.dp, 248.dp)
@@ -118,6 +124,14 @@ fun TimelineView(ctl: EditorController, position: Long, modifier: Modifier = Mod
     val currentMinZoom by rememberUpdatedState(minZoom)
     val currentMaxZoom by rememberUpdatedState(maxZoom)
 
+    // magnet: edges lock onto the playhead / other clips within 10 dp
+    val snapMs = with(density) { 10.dp.toPx() / pxPerMs }.toLong().coerceAtLeast(1)
+    val haptics = LocalHapticFeedback.current
+    val guide = ctl.snapGuideMs
+    LaunchedEffect(guide) {
+        if (guide != null) haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+    }
+
     val scroll = rememberScrollState()
     val verticalScroll = rememberScrollState()
     val dragged = scroll.interactionSource.collectIsDraggedAsState()
@@ -131,8 +145,11 @@ fun TimelineView(ctl: EditorController, position: Long, modifier: Modifier = Mod
     LaunchedEffect(scrubbing, pxPerMs, pinching) {
         if (scrubbing && !pinching) {
             snapshotFlow { Triple(scroll.value, scroll.isScrollInProgress, dragged.value) }.collect { (value, moving, drag) ->
-                if (!pinching) ctl.player.seekTo((value / pxPerMs).toLong())
-                if (!moving && !drag) scrubbing = false
+                if (!pinching) ctl.player.scrubTo((value / pxPerMs).toLong())
+                if (!moving && !drag) {
+                    ctl.player.endScrub()
+                    scrubbing = false
+                }
             }
         }
     }
@@ -147,7 +164,7 @@ fun TimelineView(ctl: EditorController, position: Long, modifier: Modifier = Mod
         }
     }
 
-    BoxWithConstraints(modifier.background(Bg).pointerInput(ctl.projectId) {
+    BoxWithConstraints(modifier.background(Bg).testTag("timeline").pointerInput(ctl.projectId) {
         // Initial pass intercepts two-finger movement before clip/trim/scroll handlers.
         // Leave all single-finger events untouched; after a pinch consume until BOTH lift.
         awaitPointerEventScope {
@@ -200,19 +217,46 @@ fun TimelineView(ctl: EditorController, position: Long, modifier: Modifier = Mod
                 .pointerInput(Unit) { detectTapGestures { ctl.select(null) } },
         ) {
             Spacer(Modifier.width(half))
-            Column(
-                Modifier.width(contentWidth).padding(top = 8.dp, bottom = 18.dp),
-                verticalArrangement = Arrangement.spacedBy(LANE_GAP),
-            ) {
-                Ruler(contentEndMs, pxPerMs, visible)
-                // Audio above the visual stack, then overlay filmstrips and the main clip.
-                FreeTrack(ctl, timeline.track(Track.MUSIC), MusicColor, pxPerMs, AUDIO_LANE, visible)
-                FreeTrack(ctl, timeline.track(Track.SFX), SfxColor, pxPerMs, AUDIO_LANE, visible)
-                FreeTrack(ctl, timeline.track(Track.OVERLAY), OverlayColor, pxPerMs, VISUAL_LANE, visible)
-                // main video track
-                Row(Modifier.height(MAIN_HEIGHT)) {
-                    for (clip in timeline.main) {
-                        key(clip.id) { MainClipView(ctl, clip, pxPerMs, visible) }
+            Box(Modifier.width(contentWidth)) {
+                Column(
+                    Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 18.dp),
+                    verticalArrangement = Arrangement.spacedBy(LANE_GAP),
+                ) {
+                    Ruler(contentEndMs, pxPerMs, visible)
+                    // Audio above the visual stack, then overlay filmstrips and the main clip.
+                    val music = timeline.track(Track.MUSIC)
+                    if (music.isEmpty()) {
+                        // "+ Add audio" stays next to the playhead, like in the reference app
+                        Box(Modifier.fillMaxWidth().height(ADD_AUDIO_HEIGHT)) {
+                            Row(
+                                Modifier
+                                    .offset { IntOffset(scroll.value + with(density) { 8.dp.roundToPx() }, 0) }
+                                    .clip(RoundedCornerShape(6.dp))
+                                    .clickable { ctl.library = com.videoeditor.app.data.LibraryKind.MUSIC }
+                                    .padding(horizontal = 6.dp, vertical = 2.dp)
+                                    .testTag("addAudio"),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Icon(Icons.Filled.Add, contentDescription = null, tint = Color.Gray, modifier = Modifier.size(14.dp))
+                                Text(" Add audio", fontSize = 11.sp, color = Color.Gray, fontWeight = FontWeight.Medium)
+                            }
+                        }
+                    }
+                    FreeTrack(ctl, music, MusicColor, pxPerMs, AUDIO_LANE, visible, snapMs)
+                    FreeTrack(ctl, timeline.track(Track.SFX), SfxColor, pxPerMs, AUDIO_LANE, visible, snapMs)
+                    FreeTrack(ctl, timeline.track(Track.OVERLAY), OverlayColor, pxPerMs, VISUAL_LANE, visible, snapMs)
+                    // main video track
+                    Row(Modifier.height(MAIN_HEIGHT)) {
+                        timeline.main.forEachIndexed { index, clip ->
+                            key(clip.id) { MainClipView(ctl, clip, pxPerMs, visible, snapMs, Modifier.testTag("mainClip_$index")) }
+                        }
+                    }
+                }
+                // guide line where a dragged edge locked on
+                if (guide != null) {
+                    Canvas(Modifier.matchParentSize()) {
+                        val x = guide * pxPerMs
+                        drawLine(SnapColor, Offset(x, 0f), Offset(x, size.height), 2.dp.toPx())
                     }
                 }
             }
@@ -225,6 +269,7 @@ fun TimelineView(ctl: EditorController, position: Long, modifier: Modifier = Mod
 
         // Pin the import button to the main filmstrip, including during vertical scrolling.
         val mainTop = 8.dp + RULER_HEIGHT + LANE_GAP +
+            (if (timeline.track(Track.MUSIC).isEmpty()) ADD_AUDIO_HEIGHT + LANE_GAP else 0.dp) +
             laneHeight(timeline.track(Track.MUSIC), AUDIO_LANE) +
             laneHeight(timeline.track(Track.SFX), AUDIO_LANE) +
             laneHeight(timeline.track(Track.OVERLAY), VISUAL_LANE)
@@ -291,10 +336,13 @@ private fun ThumbStrip(clip: Clip, pxPerMs: Float, height: Dp, visible: Visible)
     val clipStartPx = clip.timelineStartMs * pxPerMs
     val first = floor((visible.left - clipStartPx) / tilePx).toInt().coerceAtLeast(0)
     val last = floor((visible.right - clipStartPx) / tilePx).toInt().coerceAtMost(tiles - 1)
+    // round to a grid that only depends on the zoom level, so frames are shared between tiles,
+    // split pieces and zoom levels
+    val grid = Thumbnails.gridMs((tilePx / pxPerMs).toLong())
     for (i in first..last) {
         key(i) {
-            val timeMs = if (clip.kind == MediaKind.IMAGE) 0L
-            else clip.sourceStartMs + ((i + 0.5f) * tilePx / pxPerMs).toLong().coerceAtMost(clip.durationMs)
+            val raw = clip.sourceStartMs + ((i + 0.5f) * tilePx / pxPerMs).toLong().coerceAtMost(clip.durationMs)
+            val timeMs = if (clip.kind == MediaKind.IMAGE) 0L else (raw + grid / 2) / grid * grid
             Thumb(
                 clip.sourceUri, clip.kind, timeMs,
                 Modifier.offset { IntOffset((i * tilePx).roundToInt(), 0) }.size(height),
@@ -331,14 +379,14 @@ private fun WaveStrip(clip: Clip, pxPerMs: Float, visible: Visible, color: Color
 }
 
 @Composable
-private fun MainClipView(ctl: EditorController, clip: Clip, pxPerMs: Float, visible: Visible) {
+private fun MainClipView(ctl: EditorController, clip: Clip, pxPerMs: Float, visible: Visible, snapMs: Long, modifier: Modifier) {
     val density = LocalDensity.current
     val widthPx = clip.durationMs * pxPerMs
     var handleBaseStart by remember { mutableStateOf(0L) }
     var handleBaseEnd by remember { mutableStateOf(0L) }
 
     Box(
-        Modifier
+        modifier
             .width(with(density) { widthPx.toDp() })
             .fillMaxHeight()
             .padding(horizontal = 1.dp)
@@ -360,7 +408,8 @@ private fun MainClipView(ctl: EditorController, clip: Clip, pxPerMs: Float, visi
             // Trim handles: drag the left / right handle to hide or bring back the start / end.
             val current by rememberUpdatedState(clip)
             val scale by rememberUpdatedState(pxPerMs)
-            TrimHandle(Modifier.align(Alignment.CenterStart)) { start, movedPx ->
+            val snap by rememberUpdatedState(snapMs)
+            TrimHandle(Modifier.align(Alignment.CenterStart), onEnd = { ctl.endGesture() }) { start, movedPx ->
                 if (start) {
                     handleBaseStart = current.sourceStartMs
                     handleBaseEnd = current.sourceEndMs
@@ -370,12 +419,12 @@ private fun MainClipView(ctl: EditorController, clip: Clip, pxPerMs: Float, visi
                     else ctl.trimMain(current.id, sourceStartMs = handleBaseStart + deltaMs)
                 }
             }
-            TrimHandle(Modifier.align(Alignment.CenterEnd)) { start, movedPx ->
+            TrimHandle(Modifier.align(Alignment.CenterEnd), onEnd = { ctl.endGesture() }) { start, movedPx ->
                 if (start) {
                     handleBaseStart = current.sourceStartMs
                     handleBaseEnd = current.sourceEndMs
                 } else {
-                    ctl.trimMain(current.id, sourceEndMs = handleBaseEnd + (movedPx / scale).toLong())
+                    ctl.trimMain(current.id, sourceEndMs = handleBaseEnd + (movedPx / scale).toLong(), snapMs = snap)
                 }
             }
             Box(Modifier.matchParentSize().border(2.dp, Color.White, RoundedCornerShape(4.dp)))
@@ -398,13 +447,13 @@ private fun MainClipView(ctl: EditorController, clip: Clip, pxPerMs: Float, visi
  * dragged past another clip and changes lane.
  */
 @Composable
-private fun FreeTrack(ctl: EditorController, clips: List<Clip>, color: Color, pxPerMs: Float, laneHeight: Dp, visible: Visible) {
+private fun FreeTrack(ctl: EditorController, clips: List<Clip>, color: Color, pxPerMs: Float, laneHeight: Dp, visible: Visible, snapMs: Long) {
     if (clips.isEmpty()) return
     val lanes = TimelineOps.lanes(clips)
     val laneCount = (lanes.values.maxOrNull() ?: 0) + 1
     Box(Modifier.fillMaxWidth().height(laneHeight * laneCount + LANE_GAP * (laneCount - 1))) {
         for (clip in clips) {
-            key(clip.id) { ChipView(ctl, clip, color, pxPerMs, lanes[clip.id] ?: 0, laneHeight, visible) }
+            key(clip.id) { ChipView(ctl, clip, color, pxPerMs, lanes[clip.id] ?: 0, laneHeight, visible, snapMs) }
         }
     }
 }
@@ -424,7 +473,9 @@ private fun ChipView(
     lane: Int,
     laneHeight: Dp,
     visible: Visible,
+    snapMs: Long,
 ) {
+    val snap by rememberUpdatedState(snapMs)
     val density = LocalDensity.current
     val haptics = LocalHapticFeedback.current
     val current by rememberUpdatedState(clip)
@@ -451,10 +502,12 @@ private fun ChipView(
                     haptics.performHapticFeedback(HapticFeedbackType.LongPress)
                     if (!current.selected) ctl.select(current.id)
                 },
+                onDragEnd = { ctl.endGesture() },
+                onDragCancel = { ctl.endGesture() },
             ) { change, drag ->
                 change.consume()
                 moved += drag.x
-                ctl.move(current.id, baseStart + (moved / scale).toLong())
+                ctl.move(current.id, baseStart + (moved / scale).toLong(), snap)
             }
         }
     if (clip.selected) {
@@ -467,10 +520,12 @@ private fun ChipView(
                         baseStart = current.timelineStartMs
                         moved = 0f
                     },
+                    onDragEnd = { ctl.endGesture() },
+                    onDragCancel = { ctl.endGesture() },
                 ) { change, dx ->
                     change.consume()
                     moved += dx
-                    ctl.move(current.id, baseStart + (moved / scale).toLong())
+                    ctl.move(current.id, baseStart + (moved / scale).toLong(), snap)
                 }
             }
     }
@@ -489,13 +544,13 @@ private fun ChipView(
             ThumbStrip(clip, pxPerMs, laneHeight, visible)
         }
         if (clip.selected) {
-            TrimHandle(Modifier.align(Alignment.CenterStart)) { start, movedPx ->
+            TrimHandle(Modifier.align(Alignment.CenterStart), onEnd = { ctl.endGesture() }) { start, movedPx ->
                 if (start) baseStart = current.timelineStartMs
-                else ctl.trimStart(current.id, baseStart + (movedPx / scale).toLong())
+                else ctl.trimStart(current.id, baseStart + (movedPx / scale).toLong(), snap)
             }
-            TrimHandle(Modifier.align(Alignment.CenterEnd)) { start, movedPx ->
+            TrimHandle(Modifier.align(Alignment.CenterEnd), onEnd = { ctl.endGesture() }) { start, movedPx ->
                 if (start) baseEnd = current.timelineEndMs
-                else ctl.trimEnd(current.id, baseEnd + (movedPx / scale).toLong())
+                else ctl.trimEnd(current.id, baseEnd + (movedPx / scale).toLong(), snap)
             }
         }
     }
@@ -506,8 +561,14 @@ private fun ChipView(
  * starts and with (false, total pixels moved since the start) while it continues.
  */
 @Composable
-private fun TrimHandle(modifier: Modifier, width: Dp = HANDLE_WIDTH, onDrag: (start: Boolean, movedPx: Float) -> Unit) {
+private fun TrimHandle(
+    modifier: Modifier,
+    width: Dp = HANDLE_WIDTH,
+    onEnd: () -> Unit = {},
+    onDrag: (start: Boolean, movedPx: Float) -> Unit,
+) {
     val callback by rememberUpdatedState(onDrag)
+    val end by rememberUpdatedState(onEnd)
     Box(
         modifier
             .width(width)
@@ -520,6 +581,8 @@ private fun TrimHandle(modifier: Modifier, width: Dp = HANDLE_WIDTH, onDrag: (st
                         moved = 0f
                         callback(true, 0f)
                     },
+                    onDragEnd = { end() },
+                    onDragCancel = { end() },
                 ) { change, dx ->
                     change.consume()
                     moved += dx

@@ -17,14 +17,58 @@ jobs:
       - run: chmod +x gradlew
       - name: Core unit tests (JVM)
         run: ./gradlew :core:test
-      - name: Build debug APK
-        run: ./gradlew :app:assembleDebug
+      - name: Build debug APK and on-device test APK
+        run: ./gradlew :app:assembleDebug :app:assembleDebugAndroidTest
       - uses: actions/upload-artifact@v4
         with:
-          name: NockNock-debug-apk
-          path: app/build/outputs/apk/debug/*.apk
+          name: apks
+          path: |
+            app/build/outputs/apk/debug/*.apk
+            app/build/outputs/apk/androidTest/debug/*.apk
+
+  emulator:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: apks
+          path: app/build/outputs/apk
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Run on-device tests on an Android 12 emulator
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 31
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          ram-size: 4096M
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          disable-animations: true
+          script: bash ci/run-emulator-tests.sh
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: emulator-results
+          path: emulator-results
+
+  release:
+    needs: [build, emulator]
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: apks
+          path: apks
       - name: Publish APK and source ZIP as a release (direct download links)
-        if: github.ref == 'refs/heads/main'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -32,8 +76,8 @@ jobs:
           LABEL=$(tr -d '[:space:]' < release_label.txt)
           APK="Nock_Nock_${LABEL}.apk"
           SRC="Nock_Nock_${LABEL}_source.zip"
-          cp app/build/outputs/apk/debug/app-debug.apk "$APK"
+          cp apks/debug/app-debug.apk "$APK"
           git archive --format=zip --prefix="NockNock_${LABEL}_source/" -o "$SRC" HEAD
           gh release create "v${VERSION}" "$APK" "$SRC" --title "Nock Nock ${LABEL}" \
-            --notes "Debug APK and source code (version ${VERSION}) built by GitHub Actions run ${{ github.run_number }}." \
+            --notes "Debug APK and source code (version ${VERSION}). Built and tested on an Android emulator by GitHub Actions run ${{ github.run_number }}." \
             || gh release upload "v${VERSION}" "$APK" "$SRC" --clobber

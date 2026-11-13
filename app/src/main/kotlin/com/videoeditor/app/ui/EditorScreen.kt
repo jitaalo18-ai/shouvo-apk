@@ -4,6 +4,13 @@ import android.view.TextureView
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Canvas
+import com.videoeditor.core.AutoCutStrength
+import com.videoeditor.app.media.AutoCutOutcome
+import com.videoeditor.app.media.LiveFrames
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -344,6 +351,10 @@ fun EditorScreen(app: App, projectId: Long, onBack: () -> Unit) {
         }
     }
 
+    ctl.autoCutReview?.let { review ->
+        AutoCutSheet(ctl, review)
+    }
+
     ctl.library?.let { kind ->
         LaunchedEffect(kind) { ctl.player.pause() }
         LibraryDialog(
@@ -425,6 +436,75 @@ private fun StretchSlider(label: String, value: Float, onChange: (Float) -> Unit
     }
 }
 
+/**
+ * AutoCut review: shows what will be removed (red) and kept (blue) for the chosen strength
+ * before anything changes. Changing the strength re-plans instantly (no new analysis).
+ */
+@Composable
+private fun AutoCutSheet(ctl: EditorController, review: AutoCutOutcome.Ready) {
+    val plan = remember(review, ctl.autoCutStrength) { review.planFor(ctl.autoCutStrength) }
+    val clip = review.clip
+    Dialog(onDismissRequest = { ctl.cancelAutoCut() }) {
+        Surface(shape = RoundedCornerShape(16.dp), color = Panel, modifier = Modifier.testTag("autocutSheet")) {
+            Column(Modifier.padding(20.dp)) {
+                Text("AutoCut \u2014 remove pauses", fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                Spacer(Modifier.height(4.dp))
+                Text("Parts where nobody speaks are removed. The video file itself is not changed.", fontSize = 12.sp, color = Color.Gray)
+                Spacer(Modifier.height(14.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    for (strength in AutoCutStrength.values()) {
+                        val chosen = strength == ctl.autoCutStrength
+                        Text(
+                            strength.label,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = if (chosen) Color.Black else Color.White,
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(20.dp))
+                                .background(if (chosen) Color.White else Color(0xFF2C2F37))
+                                .clickable { ctl.autoCutStrength = strength }
+                                .padding(horizontal = 14.dp, vertical = 7.dp)
+                                .testTag("autocut_${strength.name}"),
+                        )
+                    }
+                }
+                Spacer(Modifier.height(14.dp))
+                // kept (blue) and removed (red) parts of the clip
+                Canvas(Modifier.fillMaxWidth().height(22.dp).clip(RoundedCornerShape(4.dp))) {
+                    val total = (clip.sourceEndMs - clip.sourceStartMs).coerceAtLeast(1).toFloat()
+                    drawRect(Color(0xFFE5484D))
+                    for (k in plan.keep) {
+                        val x0 = (k.startMs - clip.sourceStartMs) / total * size.width
+                        val x1 = (k.endMs - clip.sourceStartMs) / total * size.width
+                        drawRect(Accent, topLeft = Offset(x0, 0f), size = Size((x1 - x0).coerceAtLeast(1f), size.height))
+                    }
+                }
+                Spacer(Modifier.height(10.dp))
+                val newLength = clip.durationMs - plan.removedMs
+                Text(
+                    String.format(
+                        java.util.Locale.US, "Removes %.1f s in %d places \u00B7 %s \u2192 %s",
+                        plan.removedMs / 1000f, plan.cuts + if (plan.keep.firstOrNull()?.startMs != clip.sourceStartMs) 1 else 0,
+                        formatTime(clip.durationMs), formatTime(newLength),
+                    ),
+                    fontSize = 13.sp,
+                    modifier = Modifier.testTag("autocutSummary"),
+                )
+                Spacer(Modifier.height(16.dp))
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                    TextButton(onClick = { ctl.cancelAutoCut() }) { Text("Cancel") }
+                    Spacer(Modifier.width(8.dp))
+                    Button(
+                        onClick = { ctl.applyAutoCut() },
+                        enabled = plan.removedMs >= 100,
+                        modifier = Modifier.testTag("autocutApply"),
+                    ) { Text("Apply") }
+                }
+            }
+        }
+    }
+}
+
 @Composable
 private fun ToolButton(icon: ImageVector, label: String, onClick: () -> Unit) {
     Column(
@@ -474,20 +554,20 @@ private fun PreviewCanvas(ctl: EditorController, position: Long) {
             }
         }
 
-        // Where the main clip sits: fitted into the frame, then zoomed / moved / rotated.
-        val place: Modifier = if (current != null) {
-            val clipAspect = current.aspect.coerceAtLeast(0.01f)
+        // Where a main clip sits: fitted into the frame, then zoomed / moved / rotated.
+        fun placeFor(c: Clip): Modifier {
+            val clipAspect = c.aspect.coerceAtLeast(0.01f)
             val fitW: Dp = if (clipAspect > aspect) canvasW else canvasH * clipAspect
-            val zoomed = fitW * TimelineOps.mainZoom(current)
-            val w = zoomed * current.stretchX
-            val h = zoomed / clipAspect * current.stretchY
-            Modifier
-                .offset(x = canvasW * current.posX - w / 2, y = canvasH * current.posY - h / 2)
+            val zoomed = fitW * TimelineOps.mainZoom(c)
+            val w = zoomed * c.stretchX
+            val h = zoomed / clipAspect * c.stretchY
+            return Modifier
+                .offset(x = canvasW * c.posX - w / 2, y = canvasH * c.posY - h / 2)
                 .size(w, h)
-                .rotate(current.rotation)
-        } else {
-            Modifier
+                .rotate(c.rotation)
         }
+        val place: Modifier = if (current != null) placeFor(current) else Modifier
+        val liveFrame by LiveFrames.frame.collectAsState()
 
         // Not clipped itself, so the selection border may reach outside the frame.
         Box(Modifier.size(canvasW, canvasH)) {
@@ -513,6 +593,19 @@ private fun PreviewCanvas(ctl: EditorController, position: Long) {
                             maxSize = 1280, contentScale = ContentScale.FillBounds, background = Color.Black,
                         )
                     }
+                }
+
+                // While a trim handle is dragged: the exact frame at the moving edge.
+                val trimmed = ctl.liveTrimClipId?.let { ctl.timeline.byId(it) }
+                val frame = liveFrame
+                if (trimmed != null && frame != null && frame.uri == trimmed.sourceUri) {
+                    Box(Modifier.matchParentSize().background(Color.Black))
+                    Image(
+                        bitmap = frame.bitmap.asImageBitmap(),
+                        contentDescription = null,
+                        contentScale = ContentScale.FillBounds,
+                        modifier = placeFor(trimmed).testTag("liveTrimFrame"),
+                    )
                 }
 
                 // Touch layer for the main video. It lies above the video surface so the gestures

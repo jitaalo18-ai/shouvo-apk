@@ -13,10 +13,13 @@ import com.videoeditor.app.media.AutoCutEngine
 import com.videoeditor.app.media.AutoCutOutcome
 import com.videoeditor.app.media.CanvasFormat
 import com.videoeditor.app.media.Exporter
+import com.videoeditor.app.media.LiveFrames
 import com.videoeditor.app.media.MediaProbe
 import com.videoeditor.app.media.PlaybackController
 import com.videoeditor.app.media.canvasSize
+import com.videoeditor.core.AutoCutStrength
 import com.videoeditor.core.MediaKind
+import com.videoeditor.core.Snap
 import com.videoeditor.core.Timeline
 import com.videoeditor.core.TimelineOps
 import com.videoeditor.core.Track
@@ -83,12 +86,20 @@ class EditorController(private val app: App, val projectId: Long, private val sc
     private val position: Long get() = player.positionMs.value
 
     init {
+        current = this
         scope.launch {
             projectName = app.projects.get(projectId)?.name ?: ""
             timeline = TimelineOps.normalize(app.projects.load(projectId))
             player.setTimeline(timeline)
             loaded = true
         }
+    }
+
+    companion object {
+        /** The open editor (used by the on-device tests to look at the state). */
+        @Volatile
+        var current: EditorController? = null
+            private set
     }
 
     // ---- Undo / redo ---------------------------------------------------------------------
@@ -113,7 +124,7 @@ class EditorController(private val app: App, val projectId: Long, private val sc
             canRedo = false
         }
         timeline = t
-        player.setTimeline(t)
+        player.setTimeline(t, interactive = !saveNow)
         if (saveNow) save() else saveSoon()
     }
 
@@ -142,6 +153,8 @@ class EditorController(private val app: App, val projectId: Long, private val sc
     fun save() {
         pendingSave?.cancel()
         pendingSave = null
+        // Never save before the project has been loaded: that would overwrite it with nothing.
+        if (!loaded) return
         app.appScope.launch {
             saveLock.withLock { app.projects.save(projectId, timeline) }
             app.library.cleanUpRemoved()
@@ -174,6 +187,11 @@ class EditorController(private val app: App, val projectId: Long, private val sc
 
     // ---- Step 4: AutoCut -----------------------------------------------------------------
 
+    /** AutoCut result waiting for the user to choose a strength and apply it (review sheet). */
+    var autoCutReview by mutableStateOf<AutoCutOutcome.Ready?>(null)
+        private set
+    var autoCutStrength by mutableStateOf(AutoCutStrength.NORMAL)
+
     fun autoCut() {
         val clip = timeline.selected ?: return
         if (clip.track != Track.MAIN || clip.kind != MediaKind.VIDEO) {
@@ -185,25 +203,44 @@ class EditorController(private val app: App, val projectId: Long, private val sc
         busy = Busy("Finding the parts where nobody is speaking…", 0f)
         scope.launch {
             try {
-                val outcome = AutoCutEngine.analyze(app, clip) { p ->
-                    busy = Busy("Finding the parts where nobody is speaking…", p)
-                }
-                when (outcome) {
+                when (val outcome = AutoCutEngine.analyze(app, clip) { p -> busy = Busy("Finding the parts where nobody is speaking…", p) }) {
                     is AutoCutOutcome.Unchanged -> message = outcome.message
-                    is AutoCutOutcome.Ready -> {
-                        val result = TimelineOps.applyKeepRanges(timeline, clip.id, outcome.plan.keep, ::newClipId)
-                        if (result.changed) {
-                            commitEdit(result.timeline)
-                            val seconds = String.format(Locale.US, "%.1f", outcome.plan.removedMs / 1000f)
-                            message = "AutoCut removed $seconds s without speech."
-                        } else {
-                            message = result.reason ?: "Nothing was changed."
-                        }
-                    }
+                    is AutoCutOutcome.Ready -> autoCutReview = outcome
                 }
             } finally {
                 busy = null
             }
+        }
+    }
+
+    fun cancelAutoCut() {
+        autoCutReview = null
+    }
+
+    /** Applies the reviewed AutoCut with the chosen strength. */
+    fun applyAutoCut() {
+        val review = autoCutReview ?: return
+        autoCutReview = null
+        val now = timeline.byId(review.clip.id)
+        if (now == null || now.sourceUri != review.clip.sourceUri || now.sourceStartMs != review.clip.sourceStartMs ||
+            now.sourceEndMs != review.clip.sourceEndMs
+        ) {
+            message = "The clip changed while AutoCut was open. Run AutoCut again."
+            return
+        }
+        val plan = review.planFor(autoCutStrength)
+        if (plan.keep.isEmpty() || plan.removedMs < 100) {
+            message = "Nothing to remove at this strength. Nothing was changed."
+            return
+        }
+        val result = TimelineOps.applyKeepRanges(timeline, review.clip.id, plan.keep, ::newClipId)
+        if (result.changed) {
+            commitEdit(result.timeline)
+            player.seekTo(review.clip.timelineStartMs)
+            val seconds = String.format(Locale.US, "%.1f", plan.removedMs / 1000f)
+            message = "AutoCut removed $seconds s of pauses (${plan.cuts} cuts)."
+        } else {
+            message = result.reason ?: "Nothing was changed."
         }
     }
 
@@ -297,9 +334,76 @@ class EditorController(private val app: App, val projectId: Long, private val sc
         }
     }
 
-    /** Trim handles of a main-track clip. */
-    fun trimMain(id: String, sourceStartMs: Long? = null, sourceEndMs: Long? = null) =
-        commitEdit(TimelineOps.trimMain(timeline, id, sourceStartMs, sourceEndMs), saveNow = false)
+    // ---- Gestures on the timeline ----------------------------------------------------------
+
+    /** Timeline time the clip being dragged has locked onto (shown as a guide line), or null. */
+    var snapGuideMs by mutableStateOf<Long?>(null)
+        private set
+
+    /** Main clip being trimmed: the preview shows its live frame at the moving edge. */
+    var liveTrimClipId by mutableStateOf<String?>(null)
+        private set
+    private var trimEdgeTimelineMs: Long? = null
+
+    private fun targets(excludeId: String) = Snap.targets(timeline, excludeId, position)
+
+    /** Trim handles of a main-track clip. The preview follows the edge being dragged. */
+    fun trimMain(id: String, sourceStartMs: Long? = null, sourceEndMs: Long? = null, snapMs: Long = 0) {
+        var end = sourceEndMs
+        val before = timeline.byId(id) ?: return
+        snapGuideMs = null
+        if (end != null && snapMs > 0 && before.kind != MediaKind.IMAGE) {
+            // the right edge of a main clip moves on the timeline: let it lock onto the playhead etc.
+            val rawEdge = before.timelineStartMs + (end - before.sourceStartMs)
+            val snapped = Snap.edge(rawEdge, targets(id), snapMs)
+            if (snapped.guideMs != null) {
+                end = before.sourceStartMs + (snapped.value - before.timelineStartMs)
+                snapGuideMs = snapped.guideMs
+            }
+        }
+        val t = TimelineOps.trimMain(timeline, id, sourceStartMs, end)
+        commitEdit(t, saveNow = false)
+        val after = t.byId(id) ?: return
+        if (after.kind == MediaKind.VIDEO) {
+            liveTrimClipId = id
+            val frameMs = if (sourceStartMs != null) after.sourceStartMs else (after.sourceEndMs - 40).coerceAtLeast(after.sourceStartMs)
+            LiveFrames.request(app, after.sourceUri, frameMs)
+        }
+        trimEdgeTimelineMs = if (sourceStartMs != null) after.timelineStartMs else after.timelineEndMs - 40
+    }
+
+    fun move(id: String, startMs: Long, snapMs: Long = 0) {
+        val clip = timeline.byId(id) ?: return
+        val snapped = if (snapMs > 0) Snap.move(startMs, clip.durationMs, targets(id), snapMs) else com.videoeditor.core.Snapped(startMs, null)
+        snapGuideMs = snapped.guideMs
+        commitEdit(TimelineOps.move(timeline, id, snapped.value), saveNow = false)
+    }
+
+    fun trimStart(id: String, startMs: Long, snapMs: Long = 0) {
+        val snapped = if (snapMs > 0) Snap.edge(startMs, targets(id), snapMs) else com.videoeditor.core.Snapped(startMs, null)
+        snapGuideMs = snapped.guideMs
+        commitEdit(TimelineOps.trimStart(timeline, id, snapped.value), saveNow = false)
+    }
+
+    fun trimEnd(id: String, endMs: Long, snapMs: Long = 0) {
+        val snapped = if (snapMs > 0) Snap.edge(endMs, targets(id), snapMs) else com.videoeditor.core.Snapped(endMs, null)
+        snapGuideMs = snapped.guideMs
+        commitEdit(TimelineOps.trimEnd(timeline, id, snapped.value), saveNow = false)
+    }
+
+    /** A drag on the timeline ended: apply it to the preview at once and save. */
+    fun endGesture() {
+        snapGuideMs = null
+        val edge = trimEdgeTimelineMs
+        trimEdgeTimelineMs = null
+        player.flush()
+        if (liveTrimClipId != null) {
+            liveTrimClipId = null
+            LiveFrames.clear()
+            if (edge != null) player.seekTo(edge)
+        }
+        if (pendingSave != null) save()
+    }
 
     /** Moves the selected main-track clip one place earlier (-1) or later (+1). */
     fun moveSelectedMain(delta: Int) {
@@ -332,11 +436,6 @@ class EditorController(private val app: App, val projectId: Long, private val sc
     fun transform(id: String, x: Float, y: Float, scale: Float, rotation: Float) =
         commitEdit(TimelineOps.transform(timeline, id, x, y, scale, rotation), saveNow = false)
 
-    fun move(id: String, startMs: Long) = commitEdit(TimelineOps.move(timeline, id, startMs), saveNow = false)
-
-    fun trimStart(id: String, startMs: Long) = commitEdit(TimelineOps.trimStart(timeline, id, startMs), saveNow = false)
-
-    fun trimEnd(id: String, endMs: Long) = commitEdit(TimelineOps.trimEnd(timeline, id, endMs), saveNow = false)
 
     // ---- Rendering -----------------------------------------------------------------------
 
@@ -360,6 +459,8 @@ class EditorController(private val app: App, val projectId: Long, private val sc
 
     fun release() {
         save()
+        LiveFrames.clear()
         player.release()
+        if (current === this) current = null
     }
 }

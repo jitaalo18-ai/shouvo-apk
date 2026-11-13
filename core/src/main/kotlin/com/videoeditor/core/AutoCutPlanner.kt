@@ -11,6 +11,17 @@ data class AutoCutConfig(
 
 data class AutoCutPlan(val keep: List<MsRange>, val removedMs: Long, val cuts: Int)
 
+/**
+ * How hard AutoCut cuts. Measured on real narration (3-minute stretches): GENTLE only removes
+ * long breaks, NORMAL also tightens the pauses between sentences, TIGHT removes almost every
+ * pause between phrases (fast "reel" pacing). All levels keep margins around every word.
+ */
+enum class AutoCutStrength(val label: String, val config: AutoCutConfig) {
+    GENTLE("Gentle", AutoCutConfig(minSilenceMs = 700, padBeforeMs = 150, padAfterMs = 220)),
+    NORMAL("Normal", AutoCutConfig(minSilenceMs = 400, padBeforeMs = 110, padAfterMs = 160)),
+    TIGHT("Tight", AutoCutConfig(minSilenceMs = 250, padBeforeMs = 80, padAfterMs = 110)),
+}
+
 /** Turns detected speech into the source ranges of a clip that should be kept. */
 object AutoCutPlanner {
     /**

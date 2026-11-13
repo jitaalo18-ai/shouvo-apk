@@ -39,8 +39,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.produceState
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
@@ -88,7 +88,11 @@ fun formatTime(ms: Long): String {
     return String.format(Locale.US, "%02d:%02d.%d", total / 60, total % 60, tenths)
 }
 
-/** Video frame / image thumbnail, loaded off the main thread and cached. */
+/**
+ * Video frame / image thumbnail. Shows a cached frame at once if there is one (the exact one or,
+ * while it loads, the nearest known frame of the same file) and swaps in the exact frame when it
+ * is ready. Loading continues even if this tile leaves the screen, so it is never wasted.
+ */
 @Composable
 fun Thumb(
     uri: String,
@@ -98,10 +102,21 @@ fun Thumb(
     maxSize: Int = 160,
     contentScale: ContentScale = ContentScale.Crop,
     background: Color = Color(0xFF22252C),
+    exact: Boolean = false,
 ) {
     val context = LocalContext.current.applicationContext
-    val bitmap by produceState<Bitmap?>(initialValue = null, uri, timeMs / 1000, maxSize) {
-        value = Thumbnails.load(context, uri, kind, timeMs, maxSize)
+    var bitmap by remember(uri, timeMs, maxSize, exact) {
+        mutableStateOf(
+            Thumbnails.peek(uri, kind, timeMs, maxSize, exact)
+                ?: if (kind == MediaKind.VIDEO) Thumbnails.nearest(uri, timeMs, maxSize) else null,
+        )
+    }
+    LaunchedEffect(uri, timeMs, maxSize, exact) {
+        if (Thumbnails.peek(uri, kind, timeMs, maxSize, exact) == null) {
+            Thumbnails.load(context, uri, kind, timeMs, maxSize, exact)?.let { bitmap = it }
+        } else {
+            bitmap = Thumbnails.peek(uri, kind, timeMs, maxSize, exact)
+        }
     }
     Box(modifier.background(background)) {
         bitmap?.let {

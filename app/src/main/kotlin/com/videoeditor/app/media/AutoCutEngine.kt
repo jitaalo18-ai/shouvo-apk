@@ -7,6 +7,8 @@ import android.media.MediaExtractor
 import android.media.MediaFormat
 import android.net.Uri
 import com.videoeditor.core.AutoCutPlan
+import com.videoeditor.core.AutoCutStrength
+import com.videoeditor.core.MsRange
 import com.videoeditor.core.AutoCutPlanner
 import com.videoeditor.core.Clip
 import com.videoeditor.core.MonoDownsampler
@@ -18,7 +20,14 @@ import kotlinx.coroutines.withContext
 import java.nio.ByteOrder
 
 sealed class AutoCutOutcome {
-    data class Ready(val plan: AutoCutPlan) : AutoCutOutcome()
+    /**
+     * Speech was found. [speech] is relative to [baseSourceMs] (source time of the first analysed
+     * sample); plan it with [planFor] for any strength without analysing again.
+     */
+    data class Ready(val clip: Clip, val speech: List<MsRange>, val baseSourceMs: Long) : AutoCutOutcome() {
+        fun planFor(strength: AutoCutStrength): AutoCutPlan =
+            AutoCutPlanner.plan(speech, baseSourceMs, clip.sourceStartMs, clip.sourceEndMs, strength.config)
+    }
     /** Nothing was changed; [message] tells the user why. */
     data class Unchanged(val message: String) : AutoCutOutcome()
 }
@@ -143,11 +152,12 @@ object AutoCutEngine {
                     VadStatus.UNRELIABLE ->
                         AutoCutOutcome.Unchanged("Speech could not be separated from the background reliably, so nothing was removed.")
                     VadStatus.OK -> {
-                        val plan = AutoCutPlanner.plan(result.speech, baseUs / 1000, clip.sourceStartMs, clip.sourceEndMs)
-                        if (plan.keep.isEmpty() || plan.removedMs < 100) {
-                            AutoCutOutcome.Unchanged("No silent sections long enough to remove were found.")
+                        val ready = AutoCutOutcome.Ready(clip, result.speech, baseUs / 1000)
+                        val tight = ready.planFor(AutoCutStrength.TIGHT)
+                        if (tight.keep.isEmpty() || tight.removedMs < 100) {
+                            AutoCutOutcome.Unchanged("No pauses long enough to remove were found. Nothing was changed.")
                         } else {
-                            AutoCutOutcome.Ready(plan)
+                            ready
                         }
                     }
                 }

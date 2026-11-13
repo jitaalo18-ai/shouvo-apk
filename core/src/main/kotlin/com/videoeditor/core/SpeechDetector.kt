@@ -22,6 +22,16 @@ data class VadConfig(
     val noiseWindowMs: Int = 10_000,
     val fillGapMs: Int = 250,
     val minSpeechMs: Int = 120,
+    /** Word edges continue while the full-band level is this much above the background ... */
+    val edgeMarginDb: Float = 12f,
+    /** ... and no further below the typical speech level than this. */
+    val edgeBelowSpeechDb: Float = 30f,
+    /**
+     * A pause is kept (not cut) when it contains a sound that is both this much above the
+     * background and no more than [gapVetoBelowSpeechDb] below the typical speech level.
+     */
+    val gapVetoAboveFloorDb: Float = 15f,
+    val gapVetoBelowSpeechDb: Float = 30f,
 )
 
 data class VadResult(val status: VadStatus, val speech: List<MsRange>, val analyzedMs: Long)
@@ -44,6 +54,7 @@ class SpeechDetector(private val sampleRate: Int, private val cfg: VadConfig = V
     private val frame = ShortArray(frameLen)
     private var fill = 0
     private var bandDb = FloatArray(4096)
+    private var fullDb = FloatArray(4096)
     private var frames = 0
     private val re = FloatArray(fftSize)
     private val im = FloatArray(fftSize)
@@ -90,7 +101,11 @@ class SpeechDetector(private val sampleRate: Int, private val cfg: VadConfig = V
         }
         val rmsDb = 10.0 * log10(sumSq / frameLen + 1e-12)
         val db = (rmsDb + 10.0 * log10(band / total + 1e-9)).toFloat()
-        if (frames == bandDb.size) bandDb = bandDb.copyOf(frames * 2)
+        if (frames == bandDb.size) {
+            bandDb = bandDb.copyOf(frames * 2)
+            fullDb = fullDb.copyOf(frames * 2)
+        }
+        fullDb[frames] = rmsDb.toFloat()
         bandDb[frames++] = db
     }
 
@@ -132,6 +147,7 @@ class SpeechDetector(private val sampleRate: Int, private val cfg: VadConfig = V
         }
         fillShortRuns(speech, false, cfg.fillGapMs / cfg.frameMs)   // bridge tiny gaps inside words
         fillShortRuns(speech, true, cfg.minSpeechMs / cfg.frameMs)  // drop clicks / bumps
+        protectWordEdges(speech, n)
 
         val ranges = ArrayList<MsRange>()
         var start = -1
@@ -145,6 +161,57 @@ class SpeechDetector(private val sampleRate: Int, private val cfg: VadConfig = V
         }
         if (ranges.isEmpty()) return VadResult(VadStatus.NO_SPEECH, emptyList(), analyzedMs)
         return VadResult(VadStatus.OK, ranges, analyzedMs)
+    }
+
+    /**
+     * The speech-band test alone misses sounds whose energy lies outside the voice band, such as
+     * "s" / "sh" / "f" and soft word endings, so they could be cut. Using the full-band level:
+     *  1. each speech run is extended while the sound is still clearly above the background;
+     *  2. a pause that contains anything nearly as loud as speech is not a pause at all and is
+     *     kept as speech (safety rule: never remove audible sound).
+     */
+    private fun protectWordEdges(speech: BooleanArray, n: Int) {
+        val full = fullDb.copyOf(n)
+        val sorted = full.copyOf().also { it.sort() }
+        val floor = sorted[(n * 0.10f).toInt().coerceIn(0, n - 1)]
+        val speechLevels = full.filterIndexed { i, _ -> speech[i] }.sorted()
+        if (speechLevels.isEmpty()) return
+        val speechRef = speechLevels[speechLevels.size / 2]
+        val tailThreshold = maxOf(floor + cfg.edgeMarginDb, speechRef - cfg.edgeBelowSpeechDb)
+        val vetoThreshold = maxOf(floor + cfg.gapVetoAboveFloorDb, speechRef - cfg.gapVetoBelowSpeechDb)
+
+        // 1. extend edges into still-audible sound
+        val extended = speech.copyOf()
+        for (i in 0 until n) {
+            if (!speech[i]) continue
+            if (i + 1 < n && !speech[i + 1]) {
+                var j = i + 1
+                while (j < n && !speech[j] && full[j] > tailThreshold) extended[j++] = true
+            }
+            if (i > 0 && !speech[i - 1]) {
+                var j = i - 1
+                while (j >= 0 && !speech[j] && full[j] > tailThreshold) extended[j--] = true
+            }
+        }
+        System.arraycopy(extended, 0, speech, 0, n)
+
+        // 2. veto pauses that still contain loud sound
+        var i = 0
+        while (i < n) {
+            if (speech[i]) {
+                i++
+                continue
+            }
+            var j = i
+            var loudest = -200f
+            while (j < n && !speech[j]) {
+                if (full[j] > loudest) loudest = full[j]
+                j++
+            }
+            val interior = i > 0 && j < n
+            if (interior && loudest > vetoThreshold) for (k in i until j) speech[k] = true
+            i = j
+        }
     }
 
     /** Flips interior runs of [value] shorter than [maxLen] frames. Runs touching the edges stay. */
