@@ -30,7 +30,7 @@ What changed
   branch feature/v0.13-extract-audio was not merged.
 
 Testing infrastructure
-- core JVM tests: 48 (run_core_tests.sh locally / gradle :core:test in CI).
+- core JVM tests: 47 (run_core_tests.sh locally / gradle :core:test in CI).
 - app/src/androidTest: MediaPipelineTest (7) + EditorUiTest (1 end-to-end) on an Android 12
   x86_64 emulator in GitHub Actions (job "emulator"). Screenshots, report.txt, instrumentation
   output and logcat are pushed to branch ci-results (artifact download is blocked here).

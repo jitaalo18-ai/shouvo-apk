@@ -1,7 +1,7 @@
 # V0.13 validation (2026-11-13)
 
 Executed (GitHub Actions, final run before merge):
-- core JVM tests: all passed (48), incl. soft word ending outside the voice band is not cut
+- core JVM tests: all passed (47), incl. soft word ending outside the voice band is not cut
   (verified to fail without the fix), strength ordering, snap tests incl. ripple edge.
 - Android 12 emulator (API 31, x86_64), 8/8 instrumented tests passed:
   - probe, thumbnails (12 frames ~1.4–2.3 s cold, 8–18 ms from disk cache), thumbnail work kept
