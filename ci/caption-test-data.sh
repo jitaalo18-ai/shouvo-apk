@@ -34,7 +34,7 @@ PY
 # about 40 s of Bangla: several different FLEURS sentences one after the other (checks that long
 # speech is captioned completely, not cut off)
 python3 - "$OUT" <<'PY'
-import csv, os, sys, wave
+import csv, os, subprocess, sys
 out = sys.argv[1]
 seen, parts, texts = set(), [], []
 for r in csv.reader(open('/tmp/test.tsv', encoding='utf8'), delimiter='\t', quoting=csv.QUOTE_NONE):
@@ -43,15 +43,17 @@ for r in csv.reader(open('/tmp/test.tsv', encoding='utf8'), delimiter='\t', quot
         continue
     seen.add(r[3])
     parts.append(wav); texts.append(r[3])
-    if sum((os.path.getsize(p) - 44) / 32000 for p in parts) > 38:
+    if sum(os.path.getsize(p) / 64000 for p in parts) > 38:     # float32 mono 16 kHz
         break
-with wave.open(os.path.join(out, 'bn_long.wav'), 'wb') as w:
-    w.setnchannels(1); w.setsampwidth(2); w.setframerate(16000)
-    for p in parts:
-        with wave.open(p) as r:
-            w.writeframes(r.readframes(r.getnframes()))
-        w.writeframes(b'\0\0' * 8000)      # half a second between sentences
+# FLEURS files are 32-bit float: join them with ffmpeg, half a second of silence after each
+cmd = ['ffmpeg', '-loglevel', 'error', '-y']
+for p in parts:
+    cmd += ['-i', p]
+graph = ''.join(f'[{i}:a]apad=pad_dur=0.5[a{i}];' for i in range(len(parts)))
+graph += ''.join(f'[a{i}]' for i in range(len(parts))) + f'concat=n={len(parts)}:v=0:a=1[out]'
+cmd += ['-filter_complex', graph, '-map', '[out]', '-ar', '16000', '-ac', '1', '-c:a', 'pcm_s16le', os.path.join(out, 'bn_long.wav')]
+subprocess.run(cmd, check=True)
 open(os.path.join(out, 'bn_long.txt'), 'w', encoding='utf8').write(' '.join(texts))
-print('bangla long:', len(parts), 'sentences')
+print('bangla long:', len(parts), 'sentences,', os.path.getsize(os.path.join(out, 'bn_long.wav')) // 32000, 's')
 PY
 ls -la "$OUT"
