@@ -1,3 +1,28 @@
+# V0.14 validation (2026-11-14)
+
+Executed (GitHub Actions, run on the merged code):
+- core JVM tests: 58 passed, incl. 11 new compound tests: plays exactly like the clips it was
+  made from, clips between the ticked ones are included, trim + split cut through the inner clips,
+  uncompound gives the clips back with new ids, nested compounds, compound framing moves / zooms /
+  turns everything inside (incl. off-centre child around the compound centre), duplicate main,
+  paste at the playhead, library ids inside compounds.
+- Android 12 emulator, 11/11 instrumented tests passed (8 from V0.13 + 3 new):
+  - CompoundDataTest: a V0.13 (schema 3) database is upgraded to 4 and the old project is intact;
+    a nested compound with framing and a library clip inside is saved and read back exactly; the
+    library item counts as used; deleting the project removes its clips.
+  - CompoundDataTest: export of compound clips with zoom + rotation, split and trimmed: right
+    length (13.0 s), sound present, portrait output.
+  - CompoundUiTest (through the real UI): Compound -> All -> Compound (4 clips -> 1, same length,
+    same pieces play); playback crosses from one inner clip to the next; tick 2nd + 4th -> 3 clips
+    packed; Split the compound; Uncompound restores the 4 clips; Copy, Paste at the end; Duplicate;
+    close + reopen restores compounds with their clips; ⋮ -> Delete project -> confirm -> gone.
+  Screenshots reviewed by eye (pick mode ticks, compound badge, split, paste, delete dialog).
+Found and fixed while testing: annotation compile error; cut-off "Uncompound" label.
+
+Not executed / needs a real phone: compound of long real projects (e.g. 9-minute AutoCut project)
+for scrolling smoothness, export of a long compound, Samsung S25 Ultra feel.
+
+---
 # V0.13 validation (2026-11-13)
 
 Executed (GitHub Actions, final run before merge):
