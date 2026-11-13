@@ -167,12 +167,16 @@ fun EditorScreen(app: App, projectId: Long, onBack: () -> Unit) {
     }
 
     var showStretch by remember { mutableStateOf(false) }
-    val snackbar = remember { SnackbarHostState() }
+    // Status messages are shown as a small pill over the top of the preview. It does not take
+    // touches and never covers the timeline, so gestures keep working while it is visible.
+    var shownMessage by remember { mutableStateOf<String?>(null) }
     val message = ctl.message
     LaunchedEffect(message) {
         if (message != null) {
-            snackbar.showSnackbar(message)
+            shownMessage = message
             ctl.message = null
+            kotlinx.coroutines.delay(2500)
+            shownMessage = null
         }
     }
 
@@ -346,8 +350,16 @@ fun EditorScreen(app: App, projectId: Long, onBack: () -> Unit) {
             }
         }
 
-        SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter).padding(bottom = 90.dp)) { data ->
-            Snackbar(snackbarData = data)
+        shownMessage?.let { text ->
+            Box(
+                Modifier.align(Alignment.TopCenter)
+                    .padding(top = 72.dp, start = 24.dp, end = 24.dp)
+                    .background(Color(0xE6202124), RoundedCornerShape(20.dp))
+                    .padding(horizontal = 16.dp, vertical = 10.dp)
+                    .testTag("statusMessage")
+            ) {
+                Text(text, color = Color.White, fontSize = 13.sp)
+            }
         }
     }
 

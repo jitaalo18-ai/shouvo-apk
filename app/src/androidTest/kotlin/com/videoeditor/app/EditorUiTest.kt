@@ -9,6 +9,7 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.pinch
 import androidx.compose.ui.test.swipe
 import androidx.compose.ui.geometry.Offset
@@ -108,7 +109,14 @@ class EditorUiTest {
         pause(800)
         assertEquals(pieces, editor.timeline.main.size)
 
+        // the status message must not cover the timeline
+        val clipTop = rule.onNodeWithTag("mainClip_0").fetchSemanticsNode().boundsInRoot.top
+        rule.onAllNodesWithTag("statusMessage").fetchSemanticsNodes().forEach {
+            assertTrue("status message overlaps the timeline", it.boundsInRoot.bottom < clipTop)
+        }
+
         // two-finger zoom on the timeline (3x)
+        val widthBefore = rule.onNodeWithTag("mainClip_0").fetchSemanticsNode().boundsInRoot.width
         rule.onNodeWithTag("timeline").performTouchInput {
             pinch(
                 Offset(centerX - 40f, centerY), Offset(centerX - 120f, centerY),
@@ -118,6 +126,9 @@ class EditorUiTest {
         }
         pause(2_000)
         Shots.take("07_zoomed_in")
+        val widthAfter = rule.onNodeWithTag("mainClip_0").fetchSemanticsNode().boundsInRoot.width
+        Report.note("ui: pinch changed first clip width from $widthBefore px to $widthAfter px")
+        assertTrue("pinch zoomed in ($widthBefore -> $widthAfter)", widthAfter > widthBefore * 2f)
 
         // trim the end of the first clip with its handle
         if (editor.timeline.main[0].selected.not()) rule.onNodeWithTag("mainClip_0").performClick()
