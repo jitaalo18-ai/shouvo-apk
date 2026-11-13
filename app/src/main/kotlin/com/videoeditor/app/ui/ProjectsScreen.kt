@@ -20,6 +20,14 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.MusicNote
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.ui.platform.testTag
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.LinearProgressIndicator
@@ -71,6 +79,8 @@ fun ProjectsScreen(app: App, onOpen: (Long) -> Unit) {
     val scope = rememberCoroutineScope()
     val projects by remember { app.projects.observeProjects() }.collectAsState(initial = emptyList())
     var importing by remember { mutableStateOf(false) }
+    var deleting by remember { mutableStateOf<ProjectEntity?>(null) }
+    var renaming by remember { mutableStateOf<ProjectEntity?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
 
     val importMedia = rememberMediaImporter(videoOnly = false, multiple = true) { uris ->
@@ -173,10 +183,60 @@ fun ProjectsScreen(app: App, onOpen: (Long) -> Unit) {
         } else {
             LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp), contentPadding = PaddingValues(bottom = 24.dp)) {
                 items(projects, key = { it.id }) { project ->
-                    ProjectRow(app, project) { onOpen(project.id) }
+                    ProjectRow(
+                        app, project,
+                        onClick = { onOpen(project.id) },
+                        onRename = { renaming = project },
+                        onDelete = { deleting = project },
+                    )
                 }
             }
         }
+    }
+
+    deleting?.let { project ->
+        AlertDialog(
+            onDismissRequest = { deleting = null },
+            title = { Text("Delete project?") },
+            text = {
+                Text("\"${project.name}\" and all its edits will be deleted. This cannot be undone.\n\nYour videos and photos in the Gallery are not deleted.")
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        deleting = null
+                        app.appScope.launch {
+                            app.projects.delete(project.id)
+                            app.library.cleanUpRemoved()
+                        }
+                    },
+                    modifier = Modifier.testTag("confirmDeleteProject"),
+                ) { Text("Delete", color = Color(0xFFFF6B6B)) }
+            },
+            dismissButton = { TextButton(onClick = { deleting = null }) { Text("Cancel") } },
+        )
+    }
+
+    renaming?.let { project ->
+        var name by remember(project.id) { mutableStateOf(project.name) }
+        AlertDialog(
+            onDismissRequest = { renaming = null },
+            title = { Text("Rename project") },
+            text = {
+                OutlinedTextField(value = name, onValueChange = { name = it.take(80) }, singleLine = true)
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        renaming = null
+                        val newName = name
+                        app.appScope.launch { app.projects.rename(project.id, newName) }
+                    },
+                    enabled = name.isNotBlank(),
+                ) { Text("Save") }
+            },
+            dismissButton = { TextButton(onClick = { renaming = null }) { Text("Cancel") } },
+        )
     }
 
     if (chooseTarget) {
@@ -232,7 +292,7 @@ fun ProjectsScreen(app: App, onOpen: (Long) -> Unit) {
 }
 
 @Composable
-private fun ProjectRow(app: App, project: ProjectEntity, onClick: () -> Unit) {
+private fun ProjectRow(app: App, project: ProjectEntity, onClick: () -> Unit, onRename: () -> Unit, onDelete: () -> Unit) {
     val first by produceState<Clip?>(initialValue = null, project.id, project.updatedAt) {
         value = app.projects.firstMainClip(project.id)
     }
@@ -260,6 +320,31 @@ private fun ProjectRow(app: App, project: ProjectEntity, onClick: () -> Unit) {
                 SimpleDateFormat("d MMM yyyy, HH:mm", Locale.getDefault()).format(Date(project.updatedAt))
             }
             Text("Edited $edited", color = Color.Gray, fontSize = 12.sp)
+        }
+        var menu by remember { mutableStateOf(false) }
+        Box {
+            IconButton(onClick = { menu = true }, modifier = Modifier.testTag("projectMenu")) {
+                Icon(Icons.Filled.MoreVert, contentDescription = "Project options", tint = Color.Gray)
+            }
+            DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                DropdownMenuItem(
+                    text = { Text("Rename") },
+                    leadingIcon = { Icon(Icons.Filled.Edit, contentDescription = null) },
+                    onClick = {
+                        menu = false
+                        onRename()
+                    },
+                )
+                DropdownMenuItem(
+                    text = { Text("Delete", color = Color(0xFFFF6B6B)) },
+                    leadingIcon = { Icon(Icons.Filled.Delete, contentDescription = null, tint = Color(0xFFFF6B6B)) },
+                    onClick = {
+                        menu = false
+                        onDelete()
+                    },
+                    modifier = Modifier.testTag("deleteProject"),
+                )
+            }
         }
     }
 }

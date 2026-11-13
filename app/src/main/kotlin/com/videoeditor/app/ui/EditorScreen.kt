@@ -43,6 +43,10 @@ import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.LayersClear
+import androidx.compose.material.icons.filled.ContentPaste
+import androidx.compose.material.icons.filled.AutoAwesomeMotion
 import androidx.compose.material.icons.filled.Crop
 import androidx.compose.material.icons.filled.FileCopy
 import androidx.compose.material.icons.filled.Flip
@@ -282,20 +286,55 @@ fun EditorScreen(app: App, projectId: Long, onBack: () -> Unit) {
             }
 
             // timeline
-            TimelineView(ctl, position, Modifier.fillMaxWidth().height(timelineHeight(ctl.timeline)), onAddMedia = { importMain() })
+            TimelineView(ctl, position, Modifier.fillMaxWidth().height(timelineHeight(ctl.timeline, ctl.openGroupId)), onAddMedia = { importMain() })
+
+            // editing inside a compound clip
+            ctl.openGroupId?.let {
+                Row(
+                    Modifier.fillMaxWidth().background(Color(0xFF241F3A)).padding(start = 12.dp, end = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(Icons.Filled.AutoAwesomeMotion, contentDescription = null, tint = Color(0xFF8E7CFF), modifier = Modifier.size(16.dp))
+                    Text("  Editing inside a compound clip", fontSize = 12.sp, color = Color.White, modifier = Modifier.weight(1f))
+                    TextButton(onClick = { ctl.closeCompound() }, modifier = Modifier.testTag("closeCompound")) { Text("Done") }
+                }
+            }
 
             // toolbars
             val selected = ctl.timeline.selected
-            if (selected == null) {
+            val picking = ctl.picking
+            val selectedGroup = selected?.let { ctl.collapsedGroupOf(it) }
+            if (picking != null) {
+                // choosing clips for a compound
+                Row(Modifier.fillMaxWidth().background(Panel).padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(onClick = { ctl.cancelCompound() }, modifier = Modifier.testTag("cancelCompound")) {
+                        Icon(Icons.Filled.Close, contentDescription = "Cancel")
+                    }
+                    Column(Modifier.weight(1f)) {
+                        Text("Compound clip", fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                        Text(
+                            if (picking.isEmpty()) "Tap the clips to combine" else "${picking.size} selected",
+                            fontSize = 12.sp, color = Color.Gray,
+                        )
+                    }
+                    TextButton(onClick = { ctl.pickAll() }, modifier = Modifier.testTag("pickAll")) { Text("Select all") }
+                    Button(
+                        onClick = { ctl.makeCompound() },
+                        enabled = picking.isNotEmpty(),
+                        modifier = Modifier.padding(end = 8.dp).testTag("makeCompound"),
+                    ) { Text("Combine") }
+                }
+            } else if (selected == null) {
                 Row(
                     Modifier.fillMaxWidth().background(Bg).horizontalScroll(rememberScrollState()).padding(vertical = 6.dp),
                     horizontalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
-                    // Visible buttons only; their functions are specified later.
+                    if (ctl.canPaste) ToolButton(Icons.Filled.ContentPaste, "Paste") { ctl.paste() }
                     ToolButton(Icons.Filled.GraphicEq, "Sound FX") { ctl.library = LibraryKind.SOUND_FX }
                     ToolButton(Icons.Filled.MusicNote, "BG MUSIC") { ctl.library = LibraryKind.MUSIC }
                     ToolButton(Icons.Filled.Movie, "Video FX") { ctl.library = LibraryKind.VIDEO_FX }
                     ToolButton(Icons.Filled.Layers, "Overlay") { importOverlay() }
+                    ToolButton(Icons.Filled.AutoAwesomeMotion, "Compound") { ctl.startCompound() }
                     ToolButton(Icons.Filled.TextFields, "Text") { }
                     ToolButton(Icons.Filled.Mic, "Voice") { }
                     ToolButton(Icons.Filled.Link, "Links") { }
@@ -306,17 +345,36 @@ fun EditorScreen(app: App, projectId: Long, onBack: () -> Unit) {
                         Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, contentDescription = "Back", modifier = Modifier.size(30.dp))
                     }
                     Row(Modifier.weight(1f).horizontalScroll(rememberScrollState())) {
-                        ToolButton(Icons.Filled.MusicNote, "BG MUSIC") { ctl.library = LibraryKind.MUSIC }
-                        if (selected.track == Track.MAIN) {
+                        if (selectedGroup != null) {
+                            // a closed compound clip: edited as one block
+                            ToolButton(Icons.Filled.Edit, "Edit") { ctl.openCompound() }
+                            ToolButton(Icons.Filled.LayersClear, "Break apart") { ctl.breakApart() }
+                            ToolButton(Icons.Filled.ContentCut, "Split") { ctl.split() }
+                            ToolButton(Icons.Filled.ContentCopy, "Copy") { ctl.copySelected() }
+                            if (ctl.canPaste) ToolButton(Icons.Filled.ContentPaste, "Paste") { ctl.paste() }
+                            ToolButton(Icons.Filled.FileCopy, "Duplicate") { ctl.duplicateSelected() }
+                            ToolButton(Icons.Filled.Delete, "Delete") { ctl.deleteSelected() }
+                            ToolButton(Icons.AutoMirrored.Filled.ArrowBack, "Move left") { ctl.moveSelectedMain(-1) }
+                            ToolButton(Icons.AutoMirrored.Filled.ArrowForward, "Move right") { ctl.moveSelectedMain(1) }
+                            ToolButton(Icons.Filled.MusicNote, "BG MUSIC") { ctl.library = LibraryKind.MUSIC }
+                            ToolButton(Icons.Filled.GraphicEq, "Sound FX") { ctl.library = LibraryKind.SOUND_FX }
+                            ToolButton(Icons.Filled.Layers, "Overlay") { importOverlay() }
+                        } else if (selected.track == Track.MAIN) {
+                            ToolButton(Icons.Filled.MusicNote, "BG MUSIC") { ctl.library = LibraryKind.MUSIC }
                             // working tools
                             ToolButton(Icons.Filled.ContentCut, "Split") { ctl.split() }
                             ToolButton(Icons.Filled.AutoFixHigh, "AutoCut") { ctl.autoCut() }
+                            ToolButton(Icons.Filled.AutoAwesomeMotion, "Compound") { ctl.startCompound() }
+                            ToolButton(Icons.Filled.ContentCopy, "Copy") { ctl.copySelected() }
+                            if (ctl.canPaste) ToolButton(Icons.Filled.ContentPaste, "Paste") { ctl.paste() }
+                            ToolButton(Icons.Filled.FileCopy, "Duplicate") { ctl.duplicateSelected() }
                             ToolButton(Icons.Filled.Movie, "Video FX") { ctl.library = LibraryKind.VIDEO_FX }
                             ToolButton(Icons.Filled.GraphicEq, "Sound FX") { ctl.library = LibraryKind.SOUND_FX }
                             ToolButton(Icons.Filled.Layers, "Overlay") { importOverlay() }
                             ToolButton(Icons.Filled.Delete, "Delete") { ctl.deleteSelected() }
                             ToolButton(Icons.AutoMirrored.Filled.ArrowBack, "Move left") { ctl.moveSelectedMain(-1) }
                             ToolButton(Icons.AutoMirrored.Filled.ArrowForward, "Move right") { ctl.moveSelectedMain(1) }
+                            if (selected.groupId != null) ToolButton(Icons.Filled.LayersClear, "Break apart") { ctl.breakApart() }
                             // shown now, functions come in later versions
                             ToolButton(Icons.Filled.AutoAwesome, "Effects") { ctl.comingSoon("Effects") }
                             ToolButton(Icons.Filled.Tune, "Adjust") { ctl.comingSoon("Adjust") }
@@ -328,12 +386,13 @@ fun EditorScreen(app: App, projectId: Long, onBack: () -> Unit) {
                             ToolButton(Icons.Filled.Vignette, "Mask") { ctl.comingSoon("Mask") }
                             ToolButton(Icons.Filled.Opacity, "Opacity") { ctl.comingSoon("Opacity") }
                             ToolButton(Icons.Filled.SwapHoriz, "Replace") { ctl.comingSoon("Replace") }
-                            ToolButton(Icons.Filled.ContentCopy, "Copy") { ctl.comingSoon("Copy") }
-                            ToolButton(Icons.Filled.FileCopy, "Duplicate") { ctl.comingSoon("Duplicate") }
                             ToolButton(Icons.Filled.Wallpaper, "Green screen") { ctl.comingSoon("Green screen") }
                         } else if (selected.track == Track.OVERLAY) {
+                            ToolButton(Icons.Filled.MusicNote, "BG MUSIC") { ctl.library = LibraryKind.MUSIC }
                             // overlay tools: working ones first
                             ToolButton(Icons.Filled.ContentCut, "Split") { ctl.split() }
+                            ToolButton(Icons.Filled.ContentCopy, "Copy") { ctl.copySelected() }
+                            if (ctl.canPaste) ToolButton(Icons.Filled.ContentPaste, "Paste") { ctl.paste() }
                             ToolButton(Icons.Filled.FileCopy, "Duplicate") { ctl.duplicateSelected() }
                             ToolButton(Icons.Filled.Delete, "Delete") { ctl.deleteSelected() }
                             // shown now, functions come in later versions
@@ -345,7 +404,10 @@ fun EditorScreen(app: App, projectId: Long, onBack: () -> Unit) {
                             ToolButton(Icons.Filled.Flip, "Mirror") { ctl.comingSoon("Mirror") }
                             ToolButton(Icons.Filled.Person, "Cutout") { ctl.comingSoon("Cutout") }
                         } else {
+                            ToolButton(Icons.Filled.MusicNote, "BG MUSIC") { ctl.library = LibraryKind.MUSIC }
                             ToolButton(Icons.Filled.ContentCut, "Split") { ctl.split() }
+                            ToolButton(Icons.Filled.ContentCopy, "Copy") { ctl.copySelected() }
+                            if (ctl.canPaste) ToolButton(Icons.Filled.ContentPaste, "Paste") { ctl.paste() }
                             ToolButton(Icons.Filled.FileCopy, "Duplicate") { ctl.duplicateSelected() }
                             ToolButton(Icons.Filled.Delete, "Delete") { ctl.deleteSelected() }
                         }

@@ -599,3 +599,160 @@ class SnapTests {
         assertEquals(Snapped(2_700, null), Snap.edge(2_700, targets, 150))
     }
 }
+
+class CompoundTests {
+    private var n = 0
+    private val ids = { "n${n++}" }
+    private fun overlay(id: String, at: Long, dur: Long) = video(id, dur).copy(track = Track.OVERLAY, timelineStartMs = at)
+
+    /** a(0-2s) b(2-5s) c(5-6s) d(6-10s) + overlay o at 3s (over b) + music m at 0 */
+    private fun base(): Timeline = TimelineOps.normalize(
+        Timeline(listOf(video("a", 2000), video("b", 3000), video("c", 1000), video("d", 4000), overlay("o", 3000, 1000),
+            video("m", 9000).copy(track = Track.MUSIC, kind = MediaKind.AUDIO))),
+    )
+
+    private fun groupOf(t: Timeline, id: String) = t.byId(id)!!.groupId
+
+    @Test
+    fun makeFillsTheRangeAndKeepsPlayback() {
+        val t = base()
+        val r = Compound.make(t, setOf("b", "d", "o"), "G")
+        assertTrue(r.changed)
+        val g = r.timeline
+        assertEquals(listOf(null, "G", "G", "G"), g.main.map { it.groupId })
+        assertEquals("G", groupOf(g, "o"))
+        assertEquals(null, groupOf(g, "m"))
+        // nothing about what plays changed
+        assertEquals(t.main.map { Triple(it.id, it.sourceStartMs, it.timelineStartMs) }, g.main.map { Triple(it.id, it.sourceStartMs, it.timelineStartMs) })
+        assertEquals(MsRange(2000, 10000), Compound.span(g, "G"))
+        assertFalse(Compound.make(t, setOf("o"), "H").changed)
+        assertFalse("already one compound", Compound.make(g, setOf("c"), "H").changed)
+    }
+
+    @Test
+    fun movingTheCompoundMovesItsOverlay() {
+        val g = Compound.make(base(), setOf("b", "c", "o"), "G").timeline
+        val moved = Compound.move(g, "G", -1)
+        assertEquals(listOf("b", "c", "a", "d"), moved.main.map { it.id })
+        assertContiguous(moved)
+        // the overlay was 1 s into b; b now starts at 0
+        assertEquals(1000L, moved.byId("o")!!.timelineStartMs)
+        assertEquals(0L, moved.byId("m")!!.timelineStartMs)
+        // a single clip jumps over the whole compound
+        val back = TimelineOps.moveMain(moved, "a", -1)
+        assertEquals(listOf("a", "b", "c", "d"), back.main.map { it.id })
+        assertEquals(3000L, back.byId("o")!!.timelineStartMs)
+    }
+
+    @Test
+    fun clipInsideACompoundMovesOnlyWithinIt() {
+        val g = Compound.make(base(), setOf("b", "c"), "G").timeline
+        assertEquals(listOf("a", "c", "b", "d"), TimelineOps.moveMain(g, "b", 1).main.map { it.id })
+        assertEquals(g, TimelineOps.moveMain(g, "c", 1))
+    }
+
+    @Test
+    fun splitMakesTwoCompounds() {
+        val g = Compound.make(base(), setOf("b", "c", "o"), "G").timeline
+        val r = Compound.split(g, "G", 3500, ids, "H")
+        assertTrue(r.changed)
+        val s = r.timeline
+        assertContiguous(s)
+        assertEquals(10000L, s.durationMs) // unchanged length
+        assertEquals(MsRange(2000, 3500), Compound.span(s, "G"))
+        assertEquals(MsRange(3500, 6000), Compound.span(s, "H"))
+        assertEquals("G", groupOf(s, "o")) // overlay starts at 3 s, in the left part
+        // near a clip edge the cut goes on the edge (no tiny piece)
+        val e = Compound.split(g, "G", 5040, ids, "H").timeline
+        assertEquals(MsRange(2000, 5000), Compound.span(e, "G"))
+        assertEquals(listOf("c"), Compound.mainMembers(e, "H").map { it.id })
+        assertFalse(Compound.split(g, "G", 2050, ids, "H").changed)
+    }
+
+    @Test
+    fun trimHidesAndBringsBackWholeClips() {
+        val g = Compound.make(base(), setOf("b", "c", "d"), "G").timeline // b(3s) c(1s) d(4s) = 8 s
+        val shorter = Compound.trim(g, "G", 3500, 0) // all of b and half of c
+        assertEquals(listOf("c", "d"), Compound.mainMembers(shorter, "G").map { it.id })
+        assertEquals(500L, shorter.byId("c")!!.durationMs)
+        assertEquals(6500L, shorter.durationMs)
+        assertContiguous(shorter)
+        // dragging back out from the same start restores b
+        assertEquals(g.main, Compound.trim(g, "G", 0, 0).main)
+        val endCut = Compound.trim(g, "G", 0, 4500) // all of d and half of c
+        assertEquals(listOf("b", "c"), Compound.mainMembers(endCut, "G").map { it.id })
+        assertEquals(500L, endCut.byId("c")!!.durationMs)
+        // never shorter than the minimum
+        assertEquals(TimelineOps.MIN_TRIM_MS, Compound.span(Compound.trim(g, "G", 99_000, 0), "G")!!.lengthMs)
+        // extend the end: d is a 4 s file already fully used -> no change; a longer file grows
+        val longer = Compound.make(TimelineOps.normalize(Timeline(listOf(video("x", 2000), video("y", 2000).copy(sourceDurationMs = 5000)))), setOf("x", "y"), "G").timeline
+        assertEquals(5000L, Compound.trim(longer, "G", 0, -1000).durationMs)
+    }
+
+    @Test
+    fun duplicateAndDeleteTheWholeCompound() {
+        val g = Compound.make(base(), setOf("b", "c", "o"), "G").timeline
+        val d = Compound.duplicate(g, "G", ids, "H")
+        assertEquals(14000L, d.durationMs)
+        assertEquals(listOf(null, "G", "G", "H", "H", null), d.main.map { it.groupId })
+        assertTrue(d.main[3].selected)
+        val copyO = Compound.freeMembers(d, "H").single()
+        assertEquals(7000L, copyO.timelineStartMs) // 4 s later, like its compound
+        assertEquals(10000L, d.byId("d")!!.timelineStartMs)
+        val removed = Compound.remove(d, "G").timeline
+        assertEquals(listOf("a", "H", "H", "d"), removed.main.map { it.groupId ?: it.id })
+        assertEquals(null, removed.byId("o"))
+        assertEquals(3000L, Compound.freeMembers(removed, "H").single().timelineStartMs) // still 1 s into its compound (H starts at 2 s)
+        assertFalse(Compound.remove(Compound.make(base(), setOf("a", "d"), "G").timeline, "G").changed)
+    }
+
+    @Test
+    fun breakApartRestoresPlainClips() {
+        val t = base()
+        val g = Compound.make(t, setOf("a", "c"), "G").timeline
+        assertEquals(t, Compound.breakApart(g, "G"))
+    }
+
+    @Test
+    fun editsInsideACompoundKeepItTogether() {
+        val g = Compound.make(base(), setOf("b", "c", "o"), "G").timeline
+        // splitting a member keeps both halves in the compound
+        val s = TimelineOps.split(g, "b", 3000, ids).timeline
+        assertEquals(3, Compound.mainMembers(s, "G").size)
+        // inserting between two members joins the compound; inserting at its edge does not
+        val inside = TimelineOps.insertMainAt(g, 5000, video("z", 1000), ids)
+        assertEquals("G", groupOf(inside, "z"))
+        val edge = TimelineOps.insertMainAt(g, 6000, video("z", 1000), ids)
+        assertEquals(null, groupOf(edge, "z"))
+        // trimming the start of the first member keeps the overlay on the same moment of b
+        val trimmed = TimelineOps.trimMain(g, "b", newSourceStartMs = 500)
+        assertEquals(2500L, trimmed.byId("o")!!.timelineStartMs)
+        // deleting every main member dissolves the compound
+        val gone = TimelineOps.remove(TimelineOps.remove(g, "b"), "c")
+        assertEquals(null, groupOf(gone, "o"))
+        // AutoCut pieces stay inside
+        val cut = TimelineOps.applyKeepRanges(g, "b", listOf(MsRange(0, 1000), MsRange(2000, 3000)), ids).timeline
+        assertEquals(3, Compound.mainMembers(cut, "G").size)
+    }
+
+    @Test
+    fun copyPasteAndDuplicate() {
+        val g = Compound.make(base(), setOf("b", "c", "o"), "G").timeline
+        val clipboard = Compound.members(g, "G")
+        val p = TimelineOps.paste(g, 10000, clipboard, ids) { "P" }
+        assertEquals(14000L, p.durationMs)
+        assertEquals(listOf(null, "G", "G", null, "P", "P"), p.main.map { it.groupId })
+        assertEquals(11000L, Compound.freeMembers(p, "P").single().timelineStartMs)
+        assertTrue(p.main[4].selected)
+        // a single overlay pastes at the playhead
+        val one = TimelineOps.paste(base(), 7000, listOf(base().byId("o")!!), ids) { "X" }
+        assertEquals(2, one.track(Track.OVERLAY).size)
+        assertEquals(7000L, one.selected!!.timelineStartMs)
+        // duplicate a main clip: right after it, selected
+        val d = TimelineOps.duplicateMain(base(), "a", ids)
+        assertEquals(5, d.main.size)
+        assertEquals(2000L, d.selected!!.timelineStartMs)
+        assertEquals("a", d.main[0].id)
+        assertEquals(d.main[0].sourceUri, d.main[1].sourceUri)
+    }
+}

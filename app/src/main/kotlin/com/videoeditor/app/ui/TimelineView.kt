@@ -33,6 +33,9 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.AutoAwesomeMotion
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Icon
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
@@ -71,6 +74,7 @@ import androidx.compose.ui.unit.sp
 import com.videoeditor.app.media.Thumbnails
 import com.videoeditor.app.media.Waveforms
 import com.videoeditor.core.Clip
+import com.videoeditor.core.Compound
 import com.videoeditor.core.MediaKind
 import com.videoeditor.core.Timeline
 import com.videoeditor.core.TimelineOps
@@ -99,11 +103,18 @@ private fun laneHeight(clips: List<Clip>, height: Dp): Dp {
 }
 
 /** Keep the preview large for simple projects; scroll vertically when many tracks overlap. */
-fun timelineHeight(timeline: Timeline): Dp = (RULER_HEIGHT + 28.dp + MAIN_HEIGHT +
+fun timelineHeight(timeline: Timeline, openGroupId: String? = null): Dp = (RULER_HEIGHT + 28.dp + MAIN_HEIGHT +
     (if (timeline.track(Track.MUSIC).isEmpty()) ADD_AUDIO_HEIGHT + LANE_GAP else 0.dp) +
-    laneHeight(timeline.track(Track.OVERLAY), VISUAL_LANE) +
-    laneHeight(timeline.track(Track.SFX), AUDIO_LANE) +
-    laneHeight(timeline.track(Track.MUSIC), AUDIO_LANE)).coerceIn(164.dp, 248.dp)
+    laneHeight(shownOn(timeline, Track.OVERLAY, openGroupId), VISUAL_LANE) +
+    laneHeight(shownOn(timeline, Track.SFX, openGroupId), AUDIO_LANE) +
+    laneHeight(shownOn(timeline, Track.MUSIC, openGroupId), AUDIO_LANE)).coerceIn(164.dp, 248.dp)
+
+/** Clips drawn on a free track: layers inside a closed compound are part of its block. */
+private fun shownOn(timeline: Timeline, track: Track, openGroupId: String?): List<Clip> =
+    timeline.track(track).filter { it.groupId == null || it.groupId == openGroupId }
+
+private val CompoundColor = Color(0xFF8E7CFF)
+private val PickColor = Color(0xFF4F7CFF)
 
 /** The part of the timeline content (in pixels from its start) that is on or near the screen. */
 private class Visible(val left: Float, val right: Float)
@@ -220,7 +231,7 @@ fun TimelineView(ctl: EditorController, position: Long, modifier: Modifier = Mod
                 .fillMaxHeight()
                 .verticalScroll(verticalScroll)
                 .horizontalScroll(scroll)
-                .pointerInput(Unit) { detectTapGestures { ctl.select(null) } },
+                .pointerInput(Unit) { detectTapGestures { ctl.tapEmpty() } },
         ) {
             Spacer(Modifier.width(half))
             Box(Modifier.width(contentWidth)) {
@@ -248,13 +259,29 @@ fun TimelineView(ctl: EditorController, position: Long, modifier: Modifier = Mod
                             }
                         }
                     }
-                    FreeTrack(ctl, music, MusicColor, pxPerMs, AUDIO_LANE, visible, snapMs)
-                    FreeTrack(ctl, timeline.track(Track.SFX), SfxColor, pxPerMs, AUDIO_LANE, visible, snapMs)
-                    FreeTrack(ctl, timeline.track(Track.OVERLAY), OverlayColor, pxPerMs, VISUAL_LANE, visible, snapMs)
+                    val open = ctl.openGroupId
+                    FreeTrack(ctl, shownOn(timeline, Track.MUSIC, open), MusicColor, pxPerMs, AUDIO_LANE, visible, snapMs)
+                    FreeTrack(ctl, shownOn(timeline, Track.SFX, open), SfxColor, pxPerMs, AUDIO_LANE, visible, snapMs)
+                    FreeTrack(ctl, shownOn(timeline, Track.OVERLAY, open), OverlayColor, pxPerMs, VISUAL_LANE, visible, snapMs)
                     // main video track
                     Row(Modifier.height(MAIN_HEIGHT)) {
-                        timeline.main.forEachIndexed { index, clip ->
-                            key(clip.id) { MainClipView(ctl, clip, pxPerMs, visible, snapMs, Modifier.testTag("mainClip_$index")) }
+                        // a closed compound is one block; everything else one view per clip
+                        var index = 0
+                        var compoundNo = 0
+                        for (unit in Compound.units(timeline.main)) {
+                            val group = unit.first().groupId
+                            if (group != null && group != open) {
+                                val tag = "compound_${compoundNo++}"
+                                key("g_$group") { CompoundView(ctl, group, unit, pxPerMs, visible, snapMs, Modifier.testTag(tag)) }
+                            } else {
+                                for (clip in unit) {
+                                    val tag = "mainClip_$index"
+                                    key(clip.id) { MainClipView(ctl, clip, pxPerMs, visible, snapMs, Modifier.testTag(tag), inOpenGroup = group != null) }
+                                    index++
+                                }
+                                continue
+                            }
+                            index += unit.size
                         }
                     }
                 }
@@ -385,7 +412,10 @@ private fun WaveStrip(clip: Clip, pxPerMs: Float, visible: Visible, color: Color
 }
 
 @Composable
-private fun MainClipView(ctl: EditorController, clip: Clip, pxPerMs: Float, visible: Visible, snapMs: Long, modifier: Modifier) {
+private fun MainClipView(ctl: EditorController, clip: Clip, pxPerMs: Float, visible: Visible, snapMs: Long, modifier: Modifier, inOpenGroup: Boolean = false) {
+    val picking = ctl.picking
+    val picked = picking != null && clip.id in picking
+    val showHandles = clip.selected && picking == null
     val density = LocalDensity.current
     val widthPx = clip.durationMs * pxPerMs
     var handleBaseStart by remember { mutableStateOf(0L) }
@@ -398,7 +428,7 @@ private fun MainClipView(ctl: EditorController, clip: Clip, pxPerMs: Float, visi
         modifier
             .width(with(density) { widthPx.toDp() })
             .fillMaxHeight()
-            .zIndex(if (clip.selected) 1f else 0f),
+            .zIndex(if (showHandles) 1f else 0f),
     ) {
         Box(
             Modifier
@@ -406,7 +436,7 @@ private fun MainClipView(ctl: EditorController, clip: Clip, pxPerMs: Float, visi
                 .padding(horizontal = 1.dp)
                 .clip(RoundedCornerShape(4.dp))
                 .background(Bg)
-                .clickable { ctl.select(clip.id) },
+                .clickable { ctl.tapClip(clip.id) },
         ) {
             // thumbnails on top, the clip's own sound as a waveform underneath
             Box(Modifier.fillMaxWidth().height(THUMB_HEIGHT).background(Color(0xFF22252C))) {
@@ -418,7 +448,11 @@ private fun MainClipView(ctl: EditorController, clip: Clip, pxPerMs: Float, visi
                     Modifier.align(Alignment.BottomStart).fillMaxWidth().height(WAVE_HEIGHT).background(WaveBackground),
                 )
             }
-            if (clip.selected && widthPx > with(density) { 46.dp.toPx() }) {
+            if (inOpenGroup) {
+                // the clips of the open compound are marked with its colour
+                Box(Modifier.fillMaxWidth().height(3.dp).background(CompoundColor))
+            }
+            if (showHandles && widthPx > with(density) { 46.dp.toPx() }) {
                 Text(
                     String.format(java.util.Locale.US, "%.1fs", clip.durationMs / 1000f),
                     fontSize = 11.sp,
@@ -431,7 +465,8 @@ private fun MainClipView(ctl: EditorController, clip: Clip, pxPerMs: Float, visi
                 )
             }
         }
-        if (clip.selected) {
+        if (picked) PickedMark(Modifier.matchParentSize())
+        if (showHandles) {
             // Trim handles: drag the left / right handle to hide or bring back the start / end.
             val current by rememberUpdatedState(clip)
             val scale by rememberUpdatedState(pxPerMs)
@@ -462,6 +497,109 @@ private fun MainClipView(ctl: EditorController, clip: Clip, pxPerMs: Float, visi
                 } else {
                     ctl.trimMain(current.id, sourceEndMs = handleBaseEnd + (movedPx / scale).toLong(), snapMs = snap)
                 }
+            }
+        }
+    }
+}
+
+/** Blue tint and a tick on a clip chosen for a new compound. */
+@Composable
+private fun PickedMark(modifier: Modifier) {
+    Box(modifier.background(PickColor.copy(alpha = 0.35f)).border(2.dp, PickColor, RoundedCornerShape(4.dp))) {
+        Box(
+            Modifier.align(Alignment.TopEnd).padding(4.dp).size(18.dp).background(PickColor, CircleShape),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(Icons.Filled.Check, contentDescription = "Chosen", tint = Color.White, modifier = Modifier.size(14.dp))
+        }
+    }
+}
+
+/**
+ * A closed compound clip: one block that shows the thumbnails and sound of all its clips, a
+ * label with the number of clips, and (when selected) trim handles for the whole compound.
+ */
+@Composable
+private fun CompoundView(ctl: EditorController, group: String, members: List<Clip>, pxPerMs: Float, visible: Visible, snapMs: Long, modifier: Modifier) {
+    val density = LocalDensity.current
+    val start = members.first().timelineStartMs
+    val lengthMs = members.sumOf { it.durationMs }
+    val widthPx = lengthMs * pxPerMs
+    val picking = ctl.picking
+    val picked = picking != null && members.all { it.id in picking }
+    val selected = members.any { it.selected } && picking == null
+    val layers = Compound.freeMembers(ctl.timeline, group).size
+    val firstId = members.first().id
+
+    Box(
+        modifier
+            .width(with(density) { widthPx.toDp() })
+            .fillMaxHeight()
+            .zIndex(if (selected) 1f else 0f),
+    ) {
+        Box(
+            Modifier
+                .matchParentSize()
+                .padding(horizontal = 1.dp)
+                .clip(RoundedCornerShape(4.dp))
+                .background(Color(0xFF241F3A))
+                .clickable { ctl.tapClip(firstId) },
+        ) {
+            for (m in members) {
+                val x = with(density) { ((m.timelineStartMs - start) * pxPerMs).toDp() }
+                val w = with(density) { (m.durationMs * pxPerMs).toDp() }
+                Box(Modifier.offset(x = x).width(w).fillMaxHeight().clip(RoundedCornerShape(0.dp))) {
+                    Box(Modifier.fillMaxWidth().height(THUMB_HEIGHT).background(Color(0xFF22252C))) {
+                        ThumbStrip(m, pxPerMs, THUMB_HEIGHT, visible)
+                    }
+                    if (m.hasAudio) {
+                        WaveStrip(
+                            m, pxPerMs, visible, WaveColor,
+                            Modifier.align(Alignment.BottomStart).fillMaxWidth().height(WAVE_HEIGHT).background(WaveBackground),
+                        )
+                    }
+                }
+            }
+            // a compound is framed in its own colour
+            Box(Modifier.matchParentSize().border(2.dp, CompoundColor, RoundedCornerShape(4.dp)))
+            if (widthPx > with(density) { 40.dp.toPx() }) {
+                Row(
+                    Modifier
+                        .padding(start = 4.dp, top = 4.dp)
+                        .background(Color(0xCC1B1630), RoundedCornerShape(4.dp))
+                        .padding(horizontal = 4.dp, vertical = 1.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(Icons.Filled.AutoAwesomeMotion, contentDescription = null, tint = CompoundColor, modifier = Modifier.size(12.dp))
+                    if (widthPx > with(density) { 90.dp.toPx() }) {
+                        val label = buildString {
+                            append(" ").append(members.size).append(if (members.size == 1) " clip" else " clips")
+                            if (layers > 0) append(" +").append(layers)
+                            if (selected) append(" · ").append(String.format(java.util.Locale.US, "%.1fs", lengthMs / 1000f))
+                        }
+                        Text(label, fontSize = 10.sp, color = Color.White, maxLines = 1)
+                    }
+                }
+            }
+        }
+        if (picked) PickedMark(Modifier.matchParentSize())
+        if (selected) {
+            val scale by rememberUpdatedState(pxPerMs)
+            val snap by rememberUpdatedState(snapMs)
+            Box(Modifier.matchParentSize().border(2.dp, Color.White, RoundedCornerShape(2.dp)))
+            TrimHandle(
+                Modifier.align(Alignment.CenterStart).offset(x = -HANDLE_WIDTH)
+                    .clip(RoundedCornerShape(topStart = 6.dp, bottomStart = 6.dp)).testTag("compoundTrimStart"),
+                onEnd = { ctl.endGesture() },
+            ) { begin, movedPx ->
+                if (!begin) ctl.trimCompound(group, atStart = true, deltaMs = (movedPx / scale).toLong())
+            }
+            TrimHandle(
+                Modifier.align(Alignment.CenterEnd).offset(x = HANDLE_WIDTH)
+                    .clip(RoundedCornerShape(topEnd = 6.dp, bottomEnd = 6.dp)).testTag("compoundTrimEnd"),
+                onEnd = { ctl.endGesture() },
+            ) { begin, movedPx ->
+                if (!begin) ctl.trimCompound(group, atStart = false, deltaMs = (movedPx / scale).toLong(), snapMs = snap)
             }
         }
     }
@@ -518,7 +656,7 @@ private fun ChipView(
         .height(laneHeight)
         .clip(shape)
         .background(color)
-        .pointerInput(clip.id) { detectTapGestures { ctl.select(current.id) } }
+        .pointerInput(clip.id) { detectTapGestures { ctl.tapClip(current.id) } }
         .pointerInput(clip.id) {
             var moved = 0f
             detectDragGesturesAfterLongPress(
@@ -526,7 +664,7 @@ private fun ChipView(
                     baseStart = current.timelineStartMs
                     moved = 0f
                     haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                    if (!current.selected) ctl.select(current.id)
+                    if (!current.selected && ctl.picking == null) ctl.select(current.id)
                 },
                 onDragEnd = { ctl.endGesture() },
                 onDragCancel = { ctl.endGesture() },
@@ -569,6 +707,7 @@ private fun ChipView(
         } else {
             ThumbStrip(clip, pxPerMs, laneHeight, visible)
         }
+        if (ctl.picking?.contains(clip.id) == true) PickedMark(Modifier.matchParentSize())
         if (clip.selected) {
             TrimHandle(Modifier.align(Alignment.CenterStart).testTag("chipTrimStart"), onEnd = { ctl.endGesture() }) { start, movedPx ->
                 if (start) baseStart = current.timelineStartMs

@@ -44,6 +44,7 @@ fun ClipEntity.toClip() = Clip(
     rotation = rotation,
     stretchX = stretchX,
     stretchY = stretchY,
+    groupId = groupId,
 )
 
 fun Clip.toEntity(projectId: Long) = ClipEntity(
@@ -69,6 +70,7 @@ fun Clip.toEntity(projectId: Long) = ClipEntity(
     rotation = rotation,
     stretchX = stretchX,
     stretchY = stretchY,
+    groupId = groupId,
 )
 
 /** Builds a clip that plays the whole of [info]. */
@@ -105,10 +107,21 @@ class ProjectRepository(private val db: AppDatabase) {
     suspend fun create(media: List<MediaInfo>): Long {
         val now = System.currentTimeMillis()
         val stamp = SimpleDateFormat("d MMM, HH:mm", Locale.getDefault()).format(Date(now))
-        val id = dao.insert(ProjectEntity(name = "Project ${dao.count() + 1} · $stamp", createdAt = now, updatedAt = now))
+        // the next free number, so deleting a project never produces two "Project 3"
+        val used = dao.names().mapNotNull { Regex("^Project (\\d+)").find(it)?.groupValues?.get(1)?.toIntOrNull() }
+        val number = (used.maxOrNull() ?: 0) + 1
+        val id = dao.insert(ProjectEntity(name = "Project $number · $stamp", createdAt = now, updatedAt = now))
         val timeline = TimelineOps.appendMain(Timeline(), media.map { clipFrom(it, Track.MAIN) })
         save(id, timeline)
         return id
+    }
+
+    /** Deletes the project and its editing decisions. Media in the Gallery is never touched. */
+    suspend fun delete(id: Long) = dao.deleteProject(id)
+
+    suspend fun rename(id: Long, name: String) {
+        val clean = name.trim()
+        if (clean.isNotEmpty()) dao.rename(id, clean.take(80))
     }
 
     suspend fun load(id: Long): Timeline = Timeline(dao.clips(id).map { it.toClip() })

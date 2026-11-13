@@ -61,6 +61,7 @@ data class ClipEntity(
     @ColumnInfo(defaultValue = "0") val rotation: Float = 0f,
     @ColumnInfo(defaultValue = "1") val stretchX: Float = 1f,
     @ColumnInfo(defaultValue = "1") val stretchY: Float = 1f,
+    val groupId: String? = null,
 )
 
 /**
@@ -96,6 +97,22 @@ abstract class ProjectDao {
 
     @Insert
     abstract suspend fun insert(project: ProjectEntity): Long
+
+    @Query("SELECT name FROM projects")
+    abstract suspend fun names(): List<String>
+
+    @Query("UPDATE projects SET name = :name WHERE id = :id")
+    abstract suspend fun rename(id: Long, name: String)
+
+    @Query("DELETE FROM projects WHERE id = :id")
+    abstract suspend fun deleteProjectRow(id: Long)
+
+    /** Deletes a project and all its clips (the clips first, so it works without FK cascade). */
+    @Transaction
+    open suspend fun deleteProject(id: Long) {
+        deleteClips(id)
+        deleteProjectRow(id)
+    }
 
     @Query("UPDATE projects SET updatedAt = :time WHERE id = :id")
     abstract suspend fun touch(id: Long, time: Long)
@@ -152,7 +169,7 @@ abstract class LibraryDao {
 
 @Database(
     entities = [ProjectEntity::class, ClipEntity::class, LibraryItemEntity::class],
-    version = 3,
+    version = 4,
     exportSchema = false,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -162,8 +179,15 @@ abstract class AppDatabase : RoomDatabase() {
     companion object {
         fun create(context: Context): AppDatabase =
             Room.databaseBuilder(context, AppDatabase::class.java, "video_editor.db")
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
                 .build()
+
+        /** 0.14: compound clips (clips that share a group id). Existing clips are in no group. */
+        val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE clips ADD COLUMN groupId TEXT")
+            }
+        }
 
         /** 0.8: clips can be made wider / taller. */
         val MIGRATION_2_3 = object : Migration(2, 3) {

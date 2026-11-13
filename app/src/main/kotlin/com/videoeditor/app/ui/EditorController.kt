@@ -18,6 +18,8 @@ import com.videoeditor.app.media.MediaProbe
 import com.videoeditor.app.media.PlaybackController
 import com.videoeditor.app.media.canvasSize
 import com.videoeditor.core.AutoCutStrength
+import com.videoeditor.core.Clip
+import com.videoeditor.core.Compound
 import com.videoeditor.core.MediaKind
 import com.videoeditor.core.Snap
 import com.videoeditor.core.Timeline
@@ -40,6 +42,14 @@ data class Busy(val label: String, val progress: Float? = null)
  * (see TimelineOps), pushes it to the preview player and saves it to Room, so closing the app at
  * any moment keeps the project.
  */
+/**
+ * Copied clips (Copy -> Paste). Lives as long as the app process, so a clip can also be pasted
+ * into another project. A copied compound holds all its clips.
+ */
+object ClipClipboard {
+    var items by mutableStateOf<List<Clip>>(emptyList())
+}
+
 class EditorController(private val app: App, val projectId: Long, uiScope: CoroutineScope) {
     /**
      * The screen's scope, pinned to the main thread. ExoPlayer and Compose state must only be touched
@@ -130,12 +140,15 @@ class EditorController(private val app: App, val projectId: Long, uiScope: Corou
             canRedo = false
         }
         timeline = t
+        openGroupId?.let { if (Compound.span(t, it) == null) openGroupId = null }
         player.setTimeline(t, interactive = !saveNow)
         if (saveNow) save() else saveSoon()
     }
 
     private fun restore(t: Timeline) {
         dragOpen = false
+        picking = null
+        if (openGroupId != null && Compound.span(t, openGroupId!!) == null) openGroupId = null
         timeline = t
         player.setTimeline(t)
         canUndo = undoStack.isNotEmpty()
@@ -178,6 +191,7 @@ class EditorController(private val app: App, val projectId: Long, uiScope: Corou
     }
 
     fun select(id: String?) {
+        if (picking != null) return
         val target = if (id != null && timeline.selected?.id == id) null else id
         if (target == null && timeline.selected == null) return
         commitEdit(TimelineOps.select(timeline, target), undoable = false)
@@ -187,7 +201,9 @@ class EditorController(private val app: App, val projectId: Long, uiScope: Corou
 
     fun split() {
         val clip = timeline.selected ?: return
-        val result = TimelineOps.split(timeline, clip.id, position, ::newClipId)
+        val group = collapsedGroupOf(clip)
+        val result = if (group != null) Compound.split(timeline, group, position, ::newClipId, newClipId())
+        else TimelineOps.split(timeline, clip.id, position, ::newClipId)
         if (result.changed) commitEdit(result.timeline) else message = result.reason
     }
 
@@ -200,6 +216,10 @@ class EditorController(private val app: App, val projectId: Long, uiScope: Corou
 
     fun autoCut() {
         val clip = timeline.selected ?: return
+        if (collapsedGroupOf(clip) != null) {
+            message = "Tap Edit to open the compound clip, then use AutoCut on a clip inside it."
+            return
+        }
         if (clip.track != Track.MAIN || clip.kind != MediaKind.VIDEO) {
             message = "AutoCut works on video clips."
             return
@@ -277,7 +297,7 @@ class EditorController(private val app: App, val projectId: Long, uiScope: Corou
         when (kind) {
             LibraryKind.VIDEO_FX -> {
                 val clip = clipFrom(info, Track.MAIN, libraryItemId = item.id)
-                commitEdit(TimelineOps.insertMainAt(timeline, position, clip, ::newClipId))
+                commitEdit(TimelineOps.insertMainAt(timeline, insertTime(position), clip, ::newClipId))
             }
             LibraryKind.SOUND_FX, LibraryKind.MUSIC -> {
                 val track = if (kind == LibraryKind.SOUND_FX) Track.SFX else Track.MUSIC
@@ -306,6 +326,11 @@ class EditorController(private val app: App, val projectId: Long, uiScope: Corou
     /** Deletes the selected clip (any track). The last main clip cannot be deleted. */
     fun deleteSelected() {
         val clip = timeline.selected ?: return
+        collapsedGroupOf(clip)?.let { group ->
+            val r = Compound.remove(timeline, group)
+            if (r.changed) commitEdit(r.timeline) else message = r.reason
+            return
+        }
         if (clip.track == Track.MAIN && timeline.main.size <= 1) {
             message = "A project needs at least one clip on the main track."
             return
@@ -399,7 +424,7 @@ class EditorController(private val app: App, val projectId: Long, uiScope: Corou
 
     /** A drag on the timeline ended: apply it to the preview at once and save. */
     fun endGesture() {
-        android.util.Log.d("NockNock", "endGesture edge=$trimEdgeTimelineMs live=$liveTrimClipId")
+        compoundTrimBase = null
         snapGuideMs = null
         val edge = trimEdgeTimelineMs
         trimEdgeTimelineMs = null
@@ -416,7 +441,8 @@ class EditorController(private val app: App, val projectId: Long, uiScope: Corou
     fun moveSelectedMain(delta: Int) {
         val clip = timeline.selected ?: return
         if (clip.track != Track.MAIN) return
-        val moved = TimelineOps.moveMain(timeline, clip.id, delta)
+        val group = collapsedGroupOf(clip)
+        val moved = if (group != null) Compound.move(timeline, group, delta) else TimelineOps.moveMain(timeline, clip.id, delta)
         if (moved == timeline) {
             message = if (delta < 0) "This clip is already the first one." else "This clip is already the last one."
         } else {
@@ -431,9 +457,164 @@ class EditorController(private val app: App, val projectId: Long, uiScope: Corou
     /** Size of the rendered frame in pixels (used for the position read-out). */
     val canvasPixels: Pair<Int, Int> get() = canvasSize(targetAspect)
 
+    /** Duplicate: a copy right after the clip (main track) or on a new lane (overlay / audio). */
     fun duplicateSelected() {
         val clip = timeline.selected ?: return
-        if (clip.track != Track.MAIN) commitEdit(TimelineOps.duplicate(timeline, clip.id, ::newClipId))
+        val group = collapsedGroupOf(clip)
+        when {
+            group != null -> commitEdit(Compound.duplicate(timeline, group, ::newClipId, newClipId()))
+            clip.track == Track.MAIN -> commitEdit(TimelineOps.duplicateMain(timeline, clip.id, ::newClipId))
+            else -> commitEdit(TimelineOps.duplicate(timeline, clip.id, ::newClipId))
+        }
+    }
+
+    // ---- Copy / paste ----------------------------------------------------------------------
+
+    val canPaste: Boolean get() = ClipClipboard.items.isNotEmpty()
+
+    fun copySelected() {
+        val clip = timeline.selected ?: return
+        val group = collapsedGroupOf(clip)
+        ClipClipboard.items = (if (group != null) Compound.members(timeline, group) else listOf(clip)).map { it.copy(selected = false) }
+        message = if (group != null) "Compound clip copied. Move the playhead and tap Paste." else "Clip copied. Move the playhead and tap Paste."
+    }
+
+    /** Pastes the copied clip(s) at the playhead (next to a closed compound, never inside it). */
+    fun paste() {
+        val items = ClipClipboard.items
+        if (items.isEmpty()) return
+        if (picking != null) picking = null
+        commitEdit(TimelineOps.paste(timeline, insertTime(position), items, ::newClipId, ::newClipId))
+    }
+
+    /** A time to insert main-track clips at: inside a closed compound it moves to its nearer edge. */
+    private fun insertTime(ms: Long): Long {
+        val clip = TimelineOps.locate(timeline, ms)?.clip ?: return ms
+        val group = collapsedGroupOf(clip) ?: return ms
+        val span = Compound.span(timeline, group) ?: return ms
+        return if (ms - span.startMs < span.endMs - ms) span.startMs else span.endMs
+    }
+
+    // ---- Compound clips --------------------------------------------------------------------
+
+    /** The compound that is open for editing (its clips are shown one by one), or null. */
+    var openGroupId by mutableStateOf<String?>(null)
+        private set
+
+    /** Clips chosen for a new compound (multi-select mode), or null when not choosing. */
+    var picking by mutableStateOf<Set<String>?>(null)
+        private set
+
+    /** The closed compound [clip] belongs to: the timeline shows and edits it as one block. */
+    fun collapsedGroupOf(clip: Clip): String? = clip.groupId?.takeIf { it != openGroupId }
+
+    private fun pickIds(c: Clip): Set<String> =
+        collapsedGroupOf(c)?.let { g -> Compound.members(timeline, g).map { it.id }.toSet() } ?: setOf(c.id)
+
+    /** A tap on an empty part of the timeline. */
+    fun tapEmpty() {
+        if (picking == null) select(null)
+    }
+
+    /** A tap on a clip: selects it, or ticks / unticks it while choosing clips for a compound. */
+    fun tapClip(id: String) {
+        val chosen = picking
+        if (chosen == null) {
+            select(id)
+            return
+        }
+        val c = timeline.byId(id) ?: return
+        val ids = pickIds(c)
+        picking = if (ids.all { it in chosen }) chosen - ids else chosen + ids
+    }
+
+    /** Starts choosing clips for a compound; the selected clip (if any) is already ticked. */
+    fun startCompound() {
+        player.pause()
+        openGroupId = null
+        val c = timeline.selected
+        picking = if (c == null) emptySet() else pickIds(c)
+        if (c != null) commitEdit(TimelineOps.select(timeline, null), undoable = false)
+    }
+
+    /** Ticks every video, overlay and sound effect clip (background music stays separate). */
+    fun pickAll() {
+        if (picking == null) return
+        picking = timeline.clips.filter { it.track != Track.MUSIC }.map { it.id }.toSet()
+    }
+
+    fun cancelCompound() {
+        picking = null
+    }
+
+    fun makeCompound() {
+        val chosen = picking ?: return
+        val group = newClipId()
+        val r = Compound.make(timeline, chosen, group)
+        if (!r.changed) {
+            message = r.reason
+            return
+        }
+        picking = null
+        val members = Compound.mainMembers(r.timeline, group)
+        commitEdit(TimelineOps.select(r.timeline, members.first().id))
+        val extra = Compound.freeMembers(r.timeline, group).size
+        message = "Compound clip made from ${members.size} clip${if (members.size == 1) "" else "s"}" +
+            (if (extra > 0) " + $extra layer${if (extra == 1) "" else "s"}." else ".")
+    }
+
+    /** Opens the selected compound: its clips appear one by one and can be edited. */
+    fun openCompound() {
+        val c = timeline.selected ?: return
+        val group = c.groupId ?: return
+        openGroupId = group
+        commitEdit(TimelineOps.select(timeline, null), undoable = false)
+    }
+
+    /** Closes the open compound and selects it again as one block. */
+    fun closeCompound() {
+        val group = openGroupId ?: return
+        openGroupId = null
+        val first = Compound.mainMembers(timeline, group).firstOrNull()
+        commitEdit(TimelineOps.select(timeline, first?.id), undoable = false)
+    }
+
+    fun breakApart() {
+        val c = timeline.selected ?: return
+        val group = c.groupId ?: return
+        val count = Compound.mainMembers(timeline, group).size
+        if (openGroupId == group) openGroupId = null
+        commitEdit(Compound.breakApart(timeline, group))
+        message = "Compound clip broken apart into $count clip${if (count == 1) "" else "s"}."
+    }
+
+    private var compoundTrimBase: Timeline? = null
+
+    /** Drag of a compound's trim handle by [deltaMs] (from where the drag started). */
+    fun trimCompound(group: String, atStart: Boolean, deltaMs: Long, snapMs: Long = 0) {
+        val base = compoundTrimBase ?: timeline.also { compoundTrimBase = it }
+        val span = Compound.span(base, group) ?: return
+        var cut = if (atStart) deltaMs else -deltaMs
+        snapGuideMs = null
+        if (!atStart && snapMs > 0) {
+            val first = Compound.mainMembers(base, group).first()
+            val snapped = Snap.edge(span.endMs + deltaMs, Snap.mainEdgeTargets(base, first.id, position), snapMs)
+            if (snapped.guideMs != null) {
+                cut = span.endMs - snapped.value
+                snapGuideMs = snapped.guideMs
+            }
+        }
+        var t = Compound.trim(base, group, if (atStart) cut else 0, if (atStart) 0 else cut)
+        val members = Compound.mainMembers(t, group)
+        if (members.isEmpty()) return
+        if (t.selected == null) t = TimelineOps.select(t, members.first().id)
+        commitEdit(t, saveNow = false)
+        val edge = if (atStart) members.first() else members.last()
+        if (edge.kind == MediaKind.VIDEO) {
+            liveTrimClipId = edge.id
+            LiveFrames.request(app, edge.sourceUri, if (atStart) edge.sourceStartMs else (edge.sourceEndMs - 40).coerceAtLeast(edge.sourceStartMs))
+        }
+        trimEdgeTimelineMs = if (atStart) edge.timelineStartMs else edge.timelineEndMs - 40
     }
 
     fun comingSoon(feature: String) {

@@ -42,6 +42,11 @@ data class Clip(
     val stretchX: Float = 1f,
     val stretchY: Float = 1f,
     val selected: Boolean = false,
+    /**
+     * Compound clip this clip belongs to (null = none). The main-track members of a compound are
+     * always next to each other; free-track members (overlay / sound / music) move with it.
+     */
+    val groupId: String? = null,
 ) {
     val durationMs: Long get() = sourceEndMs - sourceStartMs
     val timelineEndMs: Long get() = timelineStartMs + durationMs

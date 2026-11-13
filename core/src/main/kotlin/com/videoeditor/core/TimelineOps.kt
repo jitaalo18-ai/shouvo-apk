@@ -23,9 +23,16 @@ object TimelineOps {
         return Timeline(laid + others)
     }
 
-    private fun others(t: Timeline) = t.clips.filter { it.track != Track.MAIN }
+    internal fun others(t: Timeline) = t.clips.filter { it.track != Track.MAIN }
 
-    fun normalize(t: Timeline): Timeline = relay(t.main, others(t))
+    /**
+     * Re-lays the main track and keeps compound clips consistent: free-track members follow
+     * their compound, and a compound whose main clips were pulled apart is repaired.
+     */
+    internal fun relayFrom(before: Timeline, mainOrdered: List<Clip>, others: List<Clip>): Timeline =
+        Compound.repair(Compound.follow(before, relay(mainOrdered, others)))
+
+    fun normalize(t: Timeline): Timeline = relayFrom(t, t.main, others(t))
 
     /** Timeline time -> (main clip, source timestamp). Times past the end map to the last frame. */
     fun locate(t: Timeline, timelineMs: Long): MainPosition? {
@@ -99,34 +106,47 @@ object TimelineOps {
             )
         }
         val main = t.main.flatMap { if (it.id == clipId) pieces else listOf(it) }
-        return EditResult(relay(main, others(t)), true)
+        return EditResult(relayFrom(t, main, others(t)), true)
     }
 
     fun appendMain(t: Timeline, clips: List<Clip>): Timeline =
-        relay(t.main + clips.map { it.copy(track = Track.MAIN) }, others(t))
+        relayFrom(t, t.main + clips.map { it.copy(track = Track.MAIN) }, others(t))
 
     /**
      * Inserts [clip] into the main track at [timelineMs]. If the playhead is inside a clip, that
      * clip is split and the new clip goes between the two halves.
      */
-    fun insertMainAt(t: Timeline, timelineMs: Long, clip: Clip, newId: () -> String): Timeline {
-        val incoming = clip.copy(track = Track.MAIN, selected = false)
-        val pos = locate(t, timelineMs) ?: return relay(listOf(incoming), others(t))
+    fun insertMainAt(t: Timeline, timelineMs: Long, clip: Clip, newId: () -> String): Timeline =
+        insertMainListAt(t, timelineMs, listOf(clip), newId)
+
+    /**
+     * Inserts [incoming] (in order) into the main track at [timelineMs], splitting the clip under
+     * that time if needed. Clips inserted between two clips of the same compound join it.
+     */
+    fun insertMainListAt(t: Timeline, timelineMs: Long, incoming: List<Clip>, newId: () -> String): Timeline {
+        if (incoming.isEmpty()) return t
+        val list = incoming.map { it.copy(track = Track.MAIN, selected = false) }
+        val pos = locate(t, timelineMs) ?: return relayFrom(t, list, others(t))
         val target = pos.clip
         val main = t.main.toMutableList()
         val idx = pos.index
+        val at: Int
         when {
-            timelineMs >= t.durationMs || timelineMs > target.timelineEndMs - MIN_SPLIT_MS ->
-                main.add(idx + 1, incoming)
-            timelineMs < target.timelineStartMs + MIN_SPLIT_MS -> main.add(idx, incoming)
+            timelineMs >= t.durationMs || timelineMs > target.timelineEndMs - MIN_SPLIT_MS -> at = idx + 1
+            timelineMs < target.timelineStartMs + MIN_SPLIT_MS -> at = idx
             else -> {
                 val cut = target.timelineToSource(timelineMs)
                 main[idx] = target.copy(sourceEndMs = cut)
-                main.add(idx + 1, incoming)
-                main.add(idx + 2, target.copy(id = newId(), sourceStartMs = cut, selected = false))
+                main.add(idx + 1, target.copy(id = newId(), sourceStartMs = cut, selected = false))
+                at = idx + 1
             }
         }
-        return relay(main, others(t))
+        // between two parts of one compound: the new clips become part of it
+        val prev = main.getOrNull(at - 1)?.groupId
+        val next = main.getOrNull(at)?.groupId
+        val joined = if (prev != null && prev == next) list.map { it.copy(groupId = prev) } else list
+        main.addAll(at, joined)
+        return relayFrom(t, main, others(t))
     }
 
     /** Adds a free-positioned clip (overlay / sound effect / music). Overlays go on top. */
@@ -178,7 +198,10 @@ object TimelineOps {
     }
 
     /** Removes a clip. Main clips re-flow so the track stays gap-less. */
-    fun remove(t: Timeline, id: String): Timeline = normalize(Timeline(t.clips.filter { it.id != id }))
+    fun remove(t: Timeline, id: String): Timeline {
+        val rest = t.clips.filter { it.id != id }
+        return relayFrom(t, rest.filter { it.track == Track.MAIN }.sortedBy { it.timelineStartMs }, rest.filter { it.track != Track.MAIN })
+    }
 
     fun select(t: Timeline, id: String?): Timeline =
         Timeline(t.clips.map { it.copy(selected = id != null && it.id == id) })
@@ -205,18 +228,70 @@ object TimelineOps {
             }
             clip.copy(sourceStartMs = start, sourceEndMs = end)
         }
-        return relay(t.main.map { if (it.id == id) trimmed else it }, others(t))
+        return relayFrom(t, t.main.map { if (it.id == id) trimmed else it }, others(t))
     }
 
-    /** Moves a main-track clip one place earlier (-1) or later (+1). */
+    /**
+     * Moves a main-track clip one place earlier (-1) or later (+1). A clip outside compounds jumps
+     * over a whole compound; a clip inside a compound moves only within it.
+     */
     fun moveMain(t: Timeline, id: String, delta: Int): Timeline {
+        val clip = t.byId(id) ?: return t
+        if (clip.track != Track.MAIN) return t
+        val gid = clip.groupId
+        if (gid == null) {
+            val units = Compound.units(t.main).toMutableList()
+            val from = units.indexOfFirst { u -> u.any { it.id == id } }
+            val to = (from + delta).coerceIn(0, units.lastIndex)
+            if (from < 0 || to == from) return t
+            units.add(to, units.removeAt(from))
+            return relayFrom(t, units.flatten(), others(t))
+        }
         val main = t.main.toMutableList()
         val from = main.indexOfFirst { it.id == id }
-        if (from < 0) return t
-        val to = (from + delta).coerceIn(0, main.lastIndex)
+        val first = main.indexOfFirst { it.groupId == gid }
+        val last = main.indexOfLast { it.groupId == gid }
+        val to = (from + delta).coerceIn(first, last)
         if (to == from) return t
         main.add(to, main.removeAt(from))
-        return relay(main, others(t))
+        return relayFrom(t, main, others(t))
+    }
+
+    /** Puts a copy of main clip [id] right after it and selects the copy. */
+    fun duplicateMain(t: Timeline, id: String, newId: () -> String): Timeline {
+        val c = t.byId(id) ?: return t
+        if (c.track != Track.MAIN) return t
+        val copy = c.copy(id = newId(), selected = false)
+        val main = t.main.toMutableList()
+        main.add(main.indexOfFirst { it.id == id } + 1, copy)
+        return select(relayFrom(t, main, others(t)), copy.id)
+    }
+
+    /**
+     * Pastes copied clips at [atMs]. Main clips are inserted (a collapsed compound should be
+     * avoided by the caller by passing its edge); free clips keep their timing relative to the
+     * main clips they were copied with. Everything gets new ids; a copied compound becomes a new
+     * compound ([newGroupId]). The first pasted clip is selected.
+     */
+    fun paste(t: Timeline, atMs: Long, items: List<Clip>, newId: () -> String, newGroupId: () -> String): Timeline {
+        if (items.isEmpty()) return t
+        val gid = if (items.any { it.groupId != null }) newGroupId() else null
+        val fresh = items.map { it.copy(id = newId(), selected = false, groupId = if (it.groupId != null) gid else null) }
+        val mainItems = fresh.filter { it.track == Track.MAIN }.sortedBy { it.timelineStartMs }
+        val freeItems = fresh.filter { it.track != Track.MAIN }
+        var out = t
+        val offset: Long
+        if (mainItems.isNotEmpty()) {
+            out = insertMainListAt(t, atMs, mainItems, newId)
+            val placed = out.byId(mainItems.first().id)!!
+            offset = placed.timelineStartMs - mainItems.first().timelineStartMs
+        } else {
+            offset = atMs - (freeItems.minOfOrNull { it.timelineStartMs } ?: atMs)
+        }
+        for (f in freeItems.sortedBy { it.layer }) {
+            out = addClip(out, f.copy(timelineStartMs = f.timelineStartMs + offset))
+        }
+        return select(out, (mainItems.firstOrNull() ?: freeItems.first()).id)
     }
 
     const val MIN_STRETCH = 0.25f
