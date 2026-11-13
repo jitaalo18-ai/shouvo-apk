@@ -802,7 +802,7 @@ class MultiTrackCompoundTests {
         // audio / overlays cut into several pieces count by covered source time
         return flat.clips.flatMap { c ->
             val step = 250L
-            (c.timelineStartMs until c.timelineEndMs step step).map { ms ->
+            ((c.timelineStartMs + 249) / 250 * 250 until c.timelineEndMs step step).map { ms ->
                 val frame = if (c.track == Track.OVERLAY) String.format("%.3f/%.3f/%.3f", c.posX, c.posY, c.scale) else ""
                 "${c.track}|${c.sourceUri}|$ms|${c.timelineToSource(ms)}|$frame"
             }

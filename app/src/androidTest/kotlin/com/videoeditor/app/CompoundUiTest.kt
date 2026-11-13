@@ -223,7 +223,7 @@ class CompoundUiTest {
     /** What plays where, sampled every 250 ms per track (so a cut-up clip equals the whole clip). */
     private fun plays(t: Timeline): List<String> =
         Compound.flatten(t, editor.canvasAspect).clips.flatMap { c ->
-            (c.timelineStartMs until c.timelineEndMs step 250L).map { ms ->
+            ((c.timelineStartMs + 249) / 250 * 250 until c.timelineEndMs step 250L).map { ms ->
                 val frame = if (c.track == Track.OVERLAY) String.format("%.3f/%.3f/%.3f", c.posX, c.posY, c.scale) else ""
                 "${c.track}|${c.sourceUri}|$ms|${c.timelineToSource(ms)}|$frame"
             }
