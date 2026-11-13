@@ -1,7 +1,7 @@
-# Nock Nock (Android video editor) - v0.14 source
+# Nock Nock (Android video editor) - v0.15 source
 
 Native Android video editor: Kotlin, Jetpack Compose, Media3 (ExoPlayer + Transformer), Room.
-Read PROGRESS.md first - it is the current checkpoint. V0.14: compound clips (pack many clips into one, split / trim / uncompound), working Copy / Paste / Duplicate, project delete. Device tests run in CI (see TEST_REPORT.md).
+Read PROGRESS.md first - it is the current checkpoint. V0.15: long-press multi-select on every track and compound clips that can hold video, overlays, sounds and music (add to a compound later, uncompound, multi delete). Device tests run in CI (see TEST_REPORT.md).
 
 ## Get an APK
 

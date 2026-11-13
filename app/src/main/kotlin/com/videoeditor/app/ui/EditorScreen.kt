@@ -849,7 +849,7 @@ private fun MultiSelectBar(ctl: EditorController) {
                 if (picked == 0) "Tap clips to select" else "$count selected",
                 fontSize = 14.sp, fontWeight = FontWeight.SemiBold,
             )
-            Text("Any track. Hold or tap to add / remove", fontSize = 10.sp, color = Color.Gray, maxLines = 1)
+            Text("Tap clips on any track", fontSize = 11.sp, color = Color.Gray, maxLines = 1)
         }
         TextButton(onClick = { ctl.pickAll() }, modifier = Modifier.testTag("pickAll")) {
             Text(if (picked > 0 && picked == ctl.timeline.clips.size) "None" else "All")

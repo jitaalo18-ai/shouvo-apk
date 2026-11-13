@@ -1,3 +1,30 @@
+# V0.15 — multi-select on every track, compound clips with overlays / sounds / music (2026-11-14)
+
+Current version: 0.15 (versionCode 15), label V0.15. Branch v0.15-multitrack-compound merged to main.
+
+What changed
+- Multi-select like CapCut (mobile): long-press any clip - main video, overlay, Sound FX, BG music,
+  also an overlay or the video in the preview - to start; then tap (or long-press) more clips to
+  add / remove them. Picked clips get a blue tick. Bar: "N selected", All / None, Delete (all
+  picked, one undo step), Compound. On overlay / sound chips: hold + let go = pick, hold + drag =
+  move (as before). The "Compound" button on every toolbar starts the same mode.
+- Compound with clips of any track (core/Compound.kt):
+  - with main clips: compound on the main track; picked overlay / sound / music clips go inside;
+    the part of such a clip outside the compound's time is split off and stays on its track, so
+    the project plays exactly as before. Overlays inside move / zoom / turn with the compound's
+    framing (Compound.placeOverlay) and are drawn below the project's own overlays.
+  - only overlays / sounds: a compound on the overlay track (or SFX / music track if all audio),
+    first start to last end; move, trim, split, copy as one clip.
+  - picking an existing compound plus new clips adds them to it (it is opened first, so the
+    result is one compound, never nested).
+  - Uncompound puts every clip back on its own track (overlay order kept).
+  - flatten() covers all tracks: player (aux players for overlay / sound pieces), preview overlays
+    and export.
+- Overlay / sound toolbars got Compound and (for a compound) Uncompound.
+- No database change (children were already stored as JSON in V0.14; free-track children use the
+  same fields). Text clips do not exist yet - when Text is built it will work with this too.
+
+---
 # V0.14 — compound clips, Copy / Paste / Duplicate, project delete (2026-11-14)
 
 Current version: 0.14 (versionCode 14), label V0.14. Branch v0.14-compound-clip merged to main.

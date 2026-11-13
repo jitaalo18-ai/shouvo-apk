@@ -1,3 +1,26 @@
+# V0.15 validation (2026-11-14)
+
+Executed (GitHub Actions on the merged code):
+- core JVM tests: 67 passed, incl. 9 new multi-track tests: main + overlay + sound + music in one
+  compound plays exactly as before (sampled every 250 ms per track, incl. overlay framing); the
+  music part past the compound stays on its track; overlay-only and sound-only compounds; adding
+  clips to an existing compound gives one flat compound; uncompound restores tracks and overlay
+  order; splitting a compound does not play its music twice; moving a compound takes its overlays
+  along; compound framing moves / zooms overlays inside; trimming an overlay compound.
+- Android 12 emulator, 12/12 instrumented tests passed, incl. the new
+  CompoundUiTest.multiTrackCompoundByLongPress: long-press video clip, long-press overlay chip,
+  tap sound, music and second video (and tap again to untick), Compound -> one compound with
+  {MAIN 2, OVERLAY 1, SFX 1, MUSIC 1}, same playback, plays; Undo / Redo; hold the compound + tap
+  the other overlay -> added (6 clips, not nested); Uncompound -> all back on their tracks;
+  long-press + tap + Delete removes two clips at once, Undo brings them back.
+  Screenshots reviewed by eye.
+Test fixes on the way (not app bugs): sampling helper on a shared time grid; on the slow emulator
+playback reached the end before the test pressed Pause, so tests now stop it via the controller.
+
+Not executed / needs a real phone: long-press feel and haptics on the S25 Ultra, very long music
+inside compounds, export of a large multi-track compound.
+
+---
 # V0.14 validation (2026-11-14)
 
 Executed (GitHub Actions, run on the merged code):
