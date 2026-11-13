@@ -32,8 +32,11 @@ class CaptionsTest {
     private val ctx get() = Fixtures.target
     private fun id() = UUID.randomUUID().toString()
 
-    private fun model(m: CaptionModel): Boolean =
-        CaptionModels.isReady(ctx, m) || Pushed.copyTo(m.fileName, CaptionModels.file(ctx, m))
+    private fun model(m: CaptionModel): Boolean {
+        // the voice-activity model comes with every model download in the app
+        Pushed.copyTo(CaptionModel.VAD_FILE, CaptionModels.vadFile(ctx))
+        return CaptionModels.isReady(ctx, m) || Pushed.copyTo(m.fileName, CaptionModels.file(ctx, m))
+    }
 
     @Test fun englishSpeechBecomesTimedCaptions() = runBlocking {
         assertTrue("speech library loaded: ${WhisperNative.available}", WhisperNative.available)

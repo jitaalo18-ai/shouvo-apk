@@ -2,7 +2,11 @@ package com.videoeditor.app.captions
 
 import android.content.Context
 import com.videoeditor.core.Clip
+import com.videoeditor.core.Captions
+import com.videoeditor.core.MsRange
+import com.videoeditor.core.SpeechDetector
 import com.videoeditor.core.SpeechPiece
+import com.videoeditor.core.VadStatus
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -33,6 +37,8 @@ object AutoCaptioner {
 
         val audio = SpeechAudio.timeline(context, mainPieces) { onProgress("Reading the sound…", it * 0.08f) }
         if (audio.isEmpty() || audio.all { abs(it) < 1e-4f }) return emptyList()
+        // where people really speak (the AutoCut voice detector), to time the captions exactly
+        val speech = withContext(Dispatchers.Default) { speechRanges(audio) }
 
         return withContext(Dispatchers.Default) {
             onProgress("Loading the speech model…", 0.08f)
@@ -48,12 +54,28 @@ object AutoCaptioner {
                 ) { p -> onProgress("Listening… $p%", 0.1f + 0.9f * p / 100f) }
                 coroutineContext[Job]?.let { if (it.isCancelled) throw CancellationException() }
                 lines ?: throw Failed("Speech recognition stopped before it finished.")
-                lines.mapNotNull(::parse)
+                val pieces = lines.mapNotNull(::parse)
+                if (speech.isEmpty()) pieces else Captions.alignToSpeech(pieces, speech)
             } finally {
                 stop?.dispose()
                 WhisperNative.free(ctx)
             }
         }
+    }
+
+    /** Speech ranges (ms) found by the voice detector, or empty when it is not sure. */
+    fun speechRanges(audio: FloatArray): List<MsRange> {
+        val detector = SpeechDetector(SpeechAudio.RATE)
+        val chunk = ShortArray(16_000)
+        var i = 0
+        while (i < audio.size) {
+            val n = minOf(chunk.size, audio.size - i)
+            for (k in 0 until n) chunk[k] = (audio[i + k] * 32767f).toInt().coerceIn(-32768, 32767).toShort()
+            detector.accept(chunk, n)
+            i += n
+        }
+        val result = detector.finish()
+        return if (result.status == VadStatus.OK) result.speech else emptyList()
     }
 
     fun parse(line: String): SpeechPiece? {

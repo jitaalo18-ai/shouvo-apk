@@ -23,6 +23,21 @@ object Captions {
         """^[\s\p{Punct}।॥♪♫]*$|^\s*[\[(（].{0,30}[\])）]\s*$""",
     )
 
+    /**
+     * Speech recognisers often start a piece at the beginning of their listening window, i.e. in
+     * the silence before the words. Moves the start / end of every piece onto the speech that
+     * really is inside it ([speech] from the voice detector), so a caption appears when the words
+     * are said - not before. Pieces without detected speech are left as they are.
+     */
+    fun alignToSpeech(pieces: List<SpeechPiece>, speech: List<MsRange>, padBeforeMs: Long = 120, padAfterMs: Long = 250): List<SpeechPiece> =
+        pieces.map { p ->
+            val inside = speech.filter { it.endMs > p.startMs && it.startMs < p.endMs }
+            if (inside.isEmpty()) return@map p
+            val start = maxOf(p.startMs, inside.first().startMs - padBeforeMs)
+            val end = minOf(p.endMs, inside.last().endMs + padAfterMs)
+            if (end - start >= 200) p.copy(startMs = start, endMs = end) else p
+        }
+
     fun clean(text: String): String = text.replace(Regex("\\s+"), " ").trim()
 
     fun isNoise(text: String): Boolean = clean(text).isEmpty() || noise.matches(clean(text))

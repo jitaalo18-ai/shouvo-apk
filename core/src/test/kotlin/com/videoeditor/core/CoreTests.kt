@@ -958,6 +958,17 @@ class CaptionTests {
     }
 
     @Test
+    fun captionsStartWhenTheWordsAreSaid() {
+        // the recogniser put the first piece at 0 s, but the voice starts at 1.5 s
+        val pieces = listOf(SpeechPiece(0, 3_900, "Hello everyone"), SpeechPiece(3_900, 7_400, "make a video"), SpeechPiece(9_000, 9_500, "no voice here"))
+        val speech = listOf(MsRange(1_500, 3_700), MsRange(4_100, 6_000))
+        val aligned = Captions.alignToSpeech(pieces, speech)
+        assertEquals(SpeechPiece(1_380, 3_900, "Hello everyone"), aligned[0])
+        assertEquals(SpeechPiece(3_980, 6_250, "make a video"), aligned[1])
+        assertEquals("no detected speech: unchanged", pieces[2], aligned[2])
+    }
+
+    @Test
     fun noiseIsRecognised() {
         assertTrue(Captions.isNoise(" (music) "))
         assertTrue(Captions.isNoise("♪♪"))
