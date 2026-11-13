@@ -81,9 +81,11 @@ class PlaybackController(private val context: Context, private val scope: Corout
      */
     fun setTimeline(timeline: Timeline, interactive: Boolean = false) {
         if (released) return
-        // compound clips play as the pieces inside them (framing does not matter to the player)
-        wantedClips = Compound.flatten(timeline, 1f).main
-        syncAuxPlayers(timeline)
+        // compound clips play as the pieces inside them, on every track (framing does not
+        // matter to the player)
+        val flat = Compound.flatten(timeline, 1f)
+        wantedClips = flat.main
+        syncAuxPlayers(flat)
         pendingApply?.cancel()
         if (interactive) {
             pendingApply = scope.launch {

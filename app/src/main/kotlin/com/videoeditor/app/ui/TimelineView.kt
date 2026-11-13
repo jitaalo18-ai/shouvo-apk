@@ -72,6 +72,8 @@ import androidx.compose.ui.unit.sp
 import com.videoeditor.app.media.Thumbnails
 import com.videoeditor.app.media.Waveforms
 import com.videoeditor.core.Clip
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.material.icons.filled.MergeType
 import androidx.compose.material.icons.filled.CheckCircle
@@ -112,6 +114,8 @@ fun timelineHeight(timeline: Timeline): Dp = (RULER_HEIGHT + 28.dp + MAIN_HEIGHT
 
 /** The part of the timeline content (in pixels from its start) that is on or near the screen. */
 private class Visible(val left: Float, val right: Float)
+
+private val CompoundColor = Color(0xFF6D4AFF)
 
 /**
  * Scrollable timeline with a fixed playhead in the middle (the content moves under it).
@@ -258,8 +262,8 @@ fun TimelineView(ctl: EditorController, position: Long, modifier: Modifier = Mod
                     FreeTrack(ctl, timeline.track(Track.OVERLAY), OverlayColor, pxPerMs, VISUAL_LANE, visible, snapMs)
                     // main video track
                     Row(Modifier.height(MAIN_HEIGHT)) {
-                        val pick = ctl.compoundPick
-                        val range = ctl.compoundRange
+                        val pick = ctl.multiPick
+                        val range = ctl.pickRange
                         timeline.main.forEachIndexed { index, clip ->
                             key(clip.id) {
                                 val mark = when {
@@ -401,9 +405,11 @@ private fun WaveStrip(clip: Clip, pxPerMs: Float, visible: Visible, color: Color
 
 private enum class PickMark { NONE, TICKED, INCLUDED, OFF }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun MainClipView(ctl: EditorController, clip: Clip, pxPerMs: Float, visible: Visible, snapMs: Long, mark: PickMark, modifier: Modifier) {
     val density = LocalDensity.current
+    val haptics = LocalHapticFeedback.current
     val widthPx = clip.durationMs * pxPerMs
     var handleBaseStart by remember { mutableStateOf(0L) }
     var handleBaseEnd by remember { mutableStateOf(0L) }
@@ -423,7 +429,12 @@ private fun MainClipView(ctl: EditorController, clip: Clip, pxPerMs: Float, visi
                 .padding(horizontal = 1.dp)
                 .clip(RoundedCornerShape(4.dp))
                 .background(Bg)
-                .clickable { ctl.select(clip.id) },
+                .combinedClickable(
+                    onLongClick = {
+                        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                        ctl.longPress(clip.id)
+                    },
+                ) { ctl.select(clip.id) },
         ) {
             if (clip.isCompound) {
                 CompoundStrips(clip, pxPerMs, visible)
@@ -513,7 +524,7 @@ private fun MainClipView(ctl: EditorController, clip: Clip, pxPerMs: Float, visi
 @Composable
 private fun CompoundStrips(clip: Clip, pxPerMs: Float, visible: Visible) {
     val density = LocalDensity.current
-    val pieces = remember(clip) { Compound.pieces(clip, 1f) }
+    val pieces = remember(clip) { Compound.pieces(clip, 1f).filter { it.track == Track.MAIN } }
     Box(Modifier.fillMaxSize().background(Color(0xFF22252C))) {
         for (piece in pieces) {
             // pieces scrolled out of view are not drawn at all
@@ -553,7 +564,10 @@ private fun CompoundBadge(clip: Clip, withText: Boolean) {
     ) {
         Icon(Icons.Filled.MergeType, contentDescription = "Compound clip", tint = Color.White, modifier = Modifier.size(12.dp))
         if (withText) {
-            Text(" ${Compound.leafCount(clip)} clips", fontSize = 10.sp, color = Color.White, maxLines = 1)
+            val tracks = Compound.leafTracks(clip)
+            val extra = tracks.filterKeys { it != Track.MAIN }.values.sum()
+            val text = " ${Compound.leafCount(clip)} clips" + if (extra > 0 && clip.track == Track.MAIN) " · $extra on top" else ""
+            Text(text, fontSize = 10.sp, color = Color.White, maxLines = 1)
         }
     }
 }
@@ -569,8 +583,11 @@ private fun FreeTrack(ctl: EditorController, clips: List<Clip>, color: Color, px
     val lanes = TimelineOps.lanes(clips)
     val laneCount = (lanes.values.maxOrNull() ?: 0) + 1
     Box(Modifier.fillMaxWidth().height(laneHeight * laneCount + LANE_GAP * (laneCount - 1))) {
-        for (clip in clips) {
-            key(clip.id) { ChipView(ctl, clip, color, pxPerMs, lanes[clip.id] ?: 0, laneHeight, visible, snapMs) }
+        clips.forEachIndexed { index, clip ->
+            key(clip.id) {
+                val chipColor = if (clip.isCompound) CompoundColor else color
+                ChipView(ctl, clip, chipColor, pxPerMs, lanes[clip.id] ?: 0, laneHeight, visible, snapMs, ctl.multiPick?.contains(clip.id) == true, "chip_${clip.track.name}_$index")
+            }
         }
     }
 }
@@ -591,6 +608,8 @@ private fun ChipView(
     laneHeight: Dp,
     visible: Visible,
     snapMs: Long,
+    picked: Boolean,
+    tag: String,
 ) {
     val snap by rememberUpdatedState(snapMs)
     val density = LocalDensity.current
@@ -607,24 +626,35 @@ private fun ChipView(
         .offset { IntOffset((current.timelineStartMs * scale).roundToInt(), (laneState * laneStepPx).roundToInt()) }
         .width(with(density) { (clip.durationMs * pxPerMs).toDp() })
         .height(laneHeight)
+        .testTag(tag)
         .clip(shape)
         .background(color)
-        .pointerInput(clip.id) { detectTapGestures { ctl.select(current.id) } }
+        // onLongPress here only stops the tap from also firing after a long hold; the hold itself
+        // is handled by the hold-and-drag detector below
+        .pointerInput(clip.id) { detectTapGestures(onLongPress = { }) { ctl.select(current.id) } }
         .pointerInput(clip.id) {
+            // hold and let go: pick the clip (multi-select); hold and drag: move it
             var moved = 0f
+            var dragged = false
             detectDragGesturesAfterLongPress(
                 onDragStart = {
                     baseStart = current.timelineStartMs
                     moved = 0f
+                    dragged = false
                     haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                    if (!current.selected) ctl.select(current.id)
                 },
-                onDragEnd = { ctl.endGesture() },
+                onDragEnd = {
+                    if (dragged) ctl.endGesture() else ctl.longPress(current.id)
+                },
                 onDragCancel = { ctl.endGesture() },
             ) { change, drag ->
                 change.consume()
                 moved += drag.x
-                ctl.move(current.id, baseStart + (moved / scale).toLong(), snap)
+                if (!dragged && kotlin.math.abs(moved) > viewConfiguration.touchSlop) {
+                    dragged = true
+                    if (!current.selected && ctl.multiPick == null) ctl.select(current.id)
+                }
+                if (dragged) ctl.move(current.id, baseStart + (moved / scale).toLong(), snap)
             }
         }
     if (clip.selected) {
@@ -647,8 +677,14 @@ private fun ChipView(
             }
     }
 
+    if (picked) body = body.border(2.dp, Accent, shape)
     Box(body) {
-        if (clip.kind == MediaKind.AUDIO) {
+        if (clip.isCompound) {
+            Row(Modifier.align(Alignment.CenterStart).padding(horizontal = 22.dp), verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Filled.MergeType, contentDescription = "Compound clip", tint = Color.White, modifier = Modifier.size(12.dp))
+                Text(" Compound · ${Compound.leafCount(clip)}", fontSize = 10.sp, maxLines = 1, color = Color.White)
+            }
+        } else if (clip.kind == MediaKind.AUDIO) {
             WaveStrip(clip, pxPerMs, visible, Color(0x66FFFFFF), Modifier.matchParentSize().padding(vertical = 3.dp))
             Text(
                 clip.name,
@@ -659,6 +695,13 @@ private fun ChipView(
             )
         } else {
             ThumbStrip(clip, pxPerMs, laneHeight, visible)
+        }
+        if (picked) {
+            Box(Modifier.matchParentSize().background(Accent.copy(alpha = 0.35f)))
+            Icon(
+                Icons.Filled.CheckCircle, contentDescription = "Ticked", tint = Color.White,
+                modifier = Modifier.align(Alignment.Center).size(16.dp),
+            )
         }
         if (clip.selected) {
             TrimHandle(Modifier.align(Alignment.CenterStart).testTag("chipTrimStart"), onEnd = { ctl.endGesture() }) { start, movedPx ->

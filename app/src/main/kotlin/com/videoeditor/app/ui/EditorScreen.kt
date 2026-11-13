@@ -126,6 +126,8 @@ import com.videoeditor.app.App
 import com.videoeditor.app.data.LibraryKind
 import com.videoeditor.app.media.CanvasFormat
 import com.videoeditor.core.Clip
+import androidx.compose.foundation.layout.PaddingValues
+import com.videoeditor.core.Compound
 import com.videoeditor.core.FrameState
 import com.videoeditor.core.Framing
 import com.videoeditor.core.MediaKind
@@ -290,8 +292,8 @@ fun EditorScreen(app: App, projectId: Long, onBack: () -> Unit) {
             // toolbars
             val selected = ctl.timeline.selected
             val clipboard = EditorController.clipboard
-            if (ctl.compoundPick != null) {
-                CompoundPickBar(ctl)
+            if (ctl.multiPick != null) {
+                MultiSelectBar(ctl)
             } else if (selected == null) {
                 Row(
                     Modifier.fillMaxWidth().background(Bg).horizontalScroll(rememberScrollState()).padding(vertical = 6.dp),
@@ -344,9 +346,11 @@ fun EditorScreen(app: App, projectId: Long, onBack: () -> Unit) {
                             ToolButton(Icons.Filled.Wallpaper, "Green screen") { ctl.comingSoon("Green screen") }
                         } else if (selected.track == Track.OVERLAY) {
                             ToolButton(Icons.Filled.ContentCut, "Split") { ctl.split() }
+                            if (selected.isCompound) ToolButton(Icons.Filled.CallSplit, "Uncompound") { ctl.uncompoundSelected() }
                             ToolButton(Icons.Filled.ContentCopy, "Copy") { ctl.copySelected() }
                             if (clipboard != null) ToolButton(Icons.Filled.ContentPaste, "Paste") { ctl.paste() }
                             ToolButton(Icons.Filled.FileCopy, "Duplicate") { ctl.duplicateSelected() }
+                            ToolButton(Icons.Filled.MergeType, "Compound") { ctl.startCompound() }
                             ToolButton(Icons.Filled.Delete, "Delete") { ctl.deleteSelected() }
                             // shown now, functions come in later versions
                             ToolButton(Icons.Filled.Opacity, "Opacity") { ctl.comingSoon("Opacity") }
@@ -358,9 +362,11 @@ fun EditorScreen(app: App, projectId: Long, onBack: () -> Unit) {
                             ToolButton(Icons.Filled.Person, "Cutout") { ctl.comingSoon("Cutout") }
                         } else {
                             ToolButton(Icons.Filled.ContentCut, "Split") { ctl.split() }
+                            if (selected.isCompound) ToolButton(Icons.Filled.CallSplit, "Uncompound") { ctl.uncompoundSelected() }
                             ToolButton(Icons.Filled.ContentCopy, "Copy") { ctl.copySelected() }
                             if (clipboard != null) ToolButton(Icons.Filled.ContentPaste, "Paste") { ctl.paste() }
                             ToolButton(Icons.Filled.FileCopy, "Duplicate") { ctl.duplicateSelected() }
+                            ToolButton(Icons.Filled.MergeType, "Compound") { ctl.startCompound() }
                             ToolButton(Icons.Filled.Delete, "Delete") { ctl.deleteSelected() }
                         }
                     }
@@ -652,7 +658,16 @@ private fun PreviewCanvas(ctl: EditorController, position: Long) {
                 Box(
                     Modifier
                         .matchParentSize()
-                        .pointerInput(Unit) { detectTapGestures { ctl.select(latest?.id) } }
+                        .pointerInput(Unit) {
+                            detectTapGestures(
+                                onLongPress = {
+                                    latest?.let {
+                                        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                                        ctl.longPress(it.id)
+                                    }
+                                },
+                            ) { ctl.select(latest?.id) }
+                        }
                         .pointerInput(canvasWPx, canvasHPx, aspect) {
                             detectTransformGestures { _, pan, zoom, rotation ->
                                 val c = latest ?: return@detectTransformGestures
@@ -694,7 +709,8 @@ private fun PreviewCanvas(ctl: EditorController, position: Long) {
                 )
 
                 val total = ctl.timeline.durationMs
-                for (clip in ctl.timeline.track(Track.OVERLAY).sortedBy { it.layer }) {
+                // overlays, including those inside compound clips (pieces of the flat timeline)
+                for (clip in ctl.flat.track(Track.OVERLAY).sortedBy { it.layer }) {
                     key(clip.id) {
                         if (position >= clip.timelineStartMs && position < clip.timelineEndMs && position < total) {
                             OverlayView(ctl, clip, canvasW, canvasH, canvasWPx, canvasHPx)
@@ -703,7 +719,7 @@ private fun PreviewCanvas(ctl: EditorController, position: Long) {
                 }
             }
 
-            if (top != null && top.selected) Box(placeFor(top).border(2.dp, Accent))
+            if (top != null && (top.selected || ctl.multiPick?.contains(top.id) == true)) Box(placeFor(top).border(2.dp, Accent))
 
             // alignment guides: dashed lines at the frame centre / edges the video is locked onto
             if (showReadout && guides != 0) {
@@ -747,14 +763,27 @@ private fun PreviewCanvas(ctl: EditorController, position: Long) {
 @Composable
 private fun OverlayView(ctl: EditorController, clip: Clip, canvasW: Dp, canvasH: Dp, canvasWPx: Float, canvasHPx: Float) {
     val current by rememberUpdatedState(clip)
+    val haptics = LocalHapticFeedback.current
+    // a piece of a compound clip belongs to the compound: taps select the compound, and it is
+    // framed through the compound (not moved on its own)
+    val owner = Compound.ownerId(clip.id)
+    val isPiece = owner != clip.id
+    val picked = ctl.multiPick?.contains(owner) == true
     val w = canvasW * clip.scale * clip.stretchX
     val h = canvasW * clip.scale / clip.aspect.coerceAtLeast(0.01f) * clip.stretchY
     // Gestures are read before the rotation is applied, so drags follow the finger on screen.
     var modifier = Modifier
         .offset(x = canvasW * clip.posX - w / 2, y = canvasH * clip.posY - h / 2)
         .size(w, h)
-        .pointerInput(clip.id) { detectTapGestures { ctl.select(current.id) } }
-    if (clip.selected) {
+        .pointerInput(clip.id) {
+            detectTapGestures(
+                onLongPress = {
+                    haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                    ctl.longPress(owner)
+                },
+            ) { ctl.select(owner) }
+        }
+    if (clip.selected && !isPiece) {
         modifier = modifier.pointerInput(clip.id, canvasWPx, canvasHPx) {
             // one finger drags; two fingers resize and rotate
             detectTransformGestures { _, pan, zoom, rotation ->
@@ -770,7 +799,7 @@ private fun OverlayView(ctl: EditorController, clip: Clip, canvasW: Dp, canvasH:
         }
     }
     modifier = modifier.rotate(clip.rotation)
-    if (clip.selected) modifier = modifier.border(2.dp, Accent)
+    if (clip.selected || picked) modifier = modifier.border(2.dp, Accent)
     Box(modifier) {
         if (clip.kind == MediaKind.IMAGE) {
             Thumb(
@@ -801,37 +830,41 @@ private class FramingGesture {
 }
 
 /**
- * Bar shown while clips are being picked for a compound clip: tap clips on the timeline to tick
- * them; everything from the first to the last ticked clip goes into the compound clip.
+ * Bar shown in multi-select mode (long-press a clip to start): tap or long-press clips on any
+ * track - or overlays in the preview - to pick them, then make one compound clip of them.
  */
 @Composable
-private fun CompoundPickBar(ctl: EditorController) {
-    val range = ctl.compoundRange
-    val count = range?.let { it.last - it.first + 1 } ?: 0
+private fun MultiSelectBar(ctl: EditorController) {
+    val count = ctl.pickCount
+    val picked = ctl.multiPick?.size ?: 0
     Row(
-        Modifier.fillMaxWidth().background(Panel).padding(horizontal = 4.dp, vertical = 6.dp).testTag("compoundBar"),
+        Modifier.fillMaxWidth().background(Panel).padding(horizontal = 4.dp, vertical = 6.dp).testTag("multiBar"),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        IconButton(onClick = { ctl.cancelCompound() }) {
-            Icon(Icons.Filled.Close, contentDescription = "Cancel compound")
+        IconButton(onClick = { ctl.cancelPicking() }) {
+            Icon(Icons.Filled.Close, contentDescription = "Cancel selection")
         }
         Column(Modifier.weight(1f)) {
             Text(
-                if (count == 0) "Tap clips to put into one" else "$count clips selected",
+                if (picked == 0) "Tap clips to select" else "$count selected",
                 fontSize = 14.sp, fontWeight = FontWeight.SemiBold,
             )
-            Text("Clips between the ticked ones join too", fontSize = 11.sp, color = Color.Gray)
+            Text("Any track. Hold or tap to add / remove", fontSize = 10.sp, color = Color.Gray, maxLines = 1)
         }
-        TextButton(onClick = { ctl.pickAll() }, modifier = Modifier.testTag("compoundAll")) {
-            Text(if (count == ctl.timeline.main.size) "None" else "All")
+        TextButton(onClick = { ctl.pickAll() }, modifier = Modifier.testTag("pickAll")) {
+            Text(if (picked > 0 && picked == ctl.timeline.clips.size) "None" else "All")
+        }
+        IconButton(onClick = { ctl.deletePicked() }, enabled = picked > 0, modifier = Modifier.testTag("pickDelete")) {
+            Icon(Icons.Filled.Delete, contentDescription = "Delete selected")
         }
         Button(
             onClick = { ctl.makeCompound() },
             enabled = count >= 2,
+            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
             modifier = Modifier.testTag("compoundMake"),
         ) {
             Icon(Icons.Filled.MergeType, contentDescription = null, modifier = Modifier.size(18.dp))
-            Spacer(Modifier.width(6.dp))
+            Spacer(Modifier.width(4.dp))
             Text("Compound")
         }
     }

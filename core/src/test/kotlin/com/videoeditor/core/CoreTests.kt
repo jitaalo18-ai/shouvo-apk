@@ -769,3 +769,165 @@ class CompoundTests {
         assertEquals(setOf(7L), Compound.libraryIds(c))
     }
 }
+
+class MultiTrackCompoundTests {
+    private var n = 0
+    private val ids: () -> String = { "n${n++}" }
+    private val aspect = 9f / 16f
+
+    private fun clip(id: String, track: Track, kind: MediaKind, uri: String, start: Long, end: Long, at: Long, layer: Int = 0) = Clip(
+        id = id, track = track, kind = kind, sourceUri = uri, sourceDurationMs = 60_000, sourceStartMs = start,
+        sourceEndMs = end, timelineStartMs = at, hasAudio = kind != MediaKind.IMAGE, aspect = 1f, layer = layer,
+    )
+
+    /** Main 0-3 s, 3-5 s, 5-10 s; overlay 2-4 s; image overlay 6-8 s; sound 4-6 s; music 1-12 s. */
+    private fun project(): Timeline {
+        val main = listOf(
+            clip("a", Track.MAIN, MediaKind.VIDEO, "va", 0, 3_000, 0),
+            clip("b", Track.MAIN, MediaKind.VIDEO, "vb", 0, 2_000, 0),
+            clip("c", Track.MAIN, MediaKind.VIDEO, "vc", 0, 5_000, 0),
+        )
+        val free = listOf(
+            clip("ov", Track.OVERLAY, MediaKind.VIDEO, "ov", 10_000, 12_000, 2_000, layer = 0).copy(posX = 0.3f, posY = 0.7f, scale = 0.5f),
+            clip("img", Track.OVERLAY, MediaKind.IMAGE, "img", 0, 2_000, 6_000, layer = 1).copy(sourceDurationMs = 0, scale = 0.2f),
+            clip("sfx", Track.SFX, MediaKind.AUDIO, "sfx", 500, 2_500, 4_000),
+            clip("mus", Track.MUSIC, MediaKind.AUDIO, "mus", 0, 11_000, 1_000),
+        )
+        return TimelineOps.normalize(Timeline(main + free))
+    }
+
+    /** What plays where: every piece's track, file, source range and start (plus overlay framing). */
+    private fun plays(t: Timeline): List<String> {
+        val flat = Compound.flatten(t, aspect)
+        // audio / overlays cut into several pieces count by covered source time
+        return flat.clips.flatMap { c ->
+            val step = 250L
+            (c.timelineStartMs until c.timelineEndMs step step).map { ms ->
+                val frame = if (c.track == Track.OVERLAY) String.format("%.3f/%.3f/%.3f", c.posX, c.posY, c.scale) else ""
+                "${c.track}|${c.sourceUri}|$ms|${c.timelineToSource(ms)}|$frame"
+            }
+        }.sorted()
+    }
+
+    @Test
+    fun mainOverlaySoundAndMusicGoIntoOneCompoundAndPlayTheSame() {
+        val t = project()
+        val r = Compound.create(t, listOf("a", "c", "ov", "img", "sfx", "mus"), ids, aspect)
+        assertTrue(r.changed)
+        val main = r.timeline.main.single()
+        assertTrue(main.isCompound)
+        assertEquals(mapOf(Track.MAIN to 3, Track.OVERLAY to 2, Track.SFX to 1, Track.MUSIC to 1), Compound.leafTracks(main))
+        // the music ran on past the end of the main track: that part stays on the music track
+        val music = r.timeline.track(Track.MUSIC)
+        assertEquals(1, music.size)
+        assertEquals(10_000L, music.single().timelineStartMs)
+        assertEquals(plays(t), plays(r.timeline))
+        assertTrue(r.timeline.track(Track.OVERLAY).isEmpty())
+    }
+
+    @Test
+    fun overlayAndSoundOnlyMakeACompoundOnTheOverlayTrack() {
+        val t = project()
+        val r = Compound.create(t, listOf("ov", "img", "sfx"), ids, aspect)
+        assertTrue(r.changed)
+        val c = r.timeline.track(Track.OVERLAY).single()
+        assertTrue(c.isCompound)
+        assertEquals(2_000L, c.timelineStartMs)
+        assertEquals(6_000L, c.durationMs)
+        assertTrue(r.timeline.track(Track.SFX).isEmpty())
+        assertEquals(3, r.timeline.main.size)
+        assertEquals(plays(t), plays(r.timeline))
+        // move it: everything inside moves with it
+        val moved = TimelineOps.move(r.timeline, c.id, 3_000)
+        val flat = Compound.flatten(moved, aspect)
+        assertEquals(5_000L, flat.track(Track.SFX).single().timelineStartMs)
+        assertEquals(3_000L, flat.track(Track.OVERLAY).first { it.sourceUri == "ov" }.timelineStartMs)
+    }
+
+    @Test
+    fun soundsOnlyStayOnASoundTrack() {
+        val r = Compound.create(project(), listOf("sfx", "mus"), ids, aspect)
+        assertTrue(r.changed)
+        assertTrue(r.timeline.track(Track.SFX).single().isCompound)
+        assertTrue(r.timeline.track(Track.MUSIC).isEmpty())
+        assertEquals(plays(project()), plays(r.timeline))
+    }
+
+    @Test
+    fun moreClipsCanBeAddedToAnExistingCompound() {
+        val first = Compound.create(project(), listOf("a", "b", "c", "ov"), ids, aspect).timeline
+        val compound = first.main.first { it.isCompound }
+        assertEquals(4, Compound.leafCount(compound))
+        val more = Compound.create(first, listOf(compound.id, "img", "sfx"), ids, aspect)
+        assertTrue(more.changed)
+        val joined = more.timeline.main.single { it.isCompound }
+        assertEquals("one compound, not one inside another", 6, joined.children.size)
+        assertEquals(1, more.timeline.main.size)
+        assertTrue(joined.children.none { it.isCompound })
+        assertEquals(plays(project()), plays(more.timeline))
+    }
+
+    @Test
+    fun uncompoundPutsOverlaysAndSoundsBackOnTheirTracks() {
+        val made = Compound.create(project(), listOf("a", "b", "c", "ov", "img", "sfx"), ids, aspect).timeline
+        val back = Compound.uncompound(made, made.main.single().id, ids, aspect)
+        assertTrue(back.changed)
+        assertEquals(3, back.timeline.main.size)
+        assertEquals(2, back.timeline.track(Track.OVERLAY).size)
+        assertEquals(1, back.timeline.track(Track.SFX).size)
+        assertTrue(back.timeline.clips.none { it.isCompound })
+        assertEquals(plays(project()), plays(back.timeline))
+        // overlay order kept: the image was above the video overlay
+        val ov = back.timeline.track(Track.OVERLAY).sortedBy { it.layer }
+        assertEquals(listOf("ov", "img"), ov.map { it.sourceUri })
+    }
+
+    @Test
+    fun splittingACompoundDoesNotPlayItsMusicTwice() {
+        val made = Compound.create(project(), listOf("a", "c", "mus"), ids, aspect).timeline
+        val c = made.main.single()
+        val split = TimelineOps.split(made, c.id, 4_000, ids)
+        assertTrue(split.changed)
+        assertEquals(plays(made), plays(split.timeline))
+        val musicPieces = Compound.flatten(split.timeline, aspect).track(Track.MUSIC)
+        assertEquals(11_000L, musicPieces.sumOf { it.durationMs })
+    }
+
+    @Test
+    fun movingACompoundOnTheMainTrackTakesItsOverlaysAlong() {
+        val t = TimelineOps.normalize(Timeline(project().clips + clip("d", Track.MAIN, MediaKind.VIDEO, "vd", 0, 4_000, 99_999)))
+        val made = Compound.create(t, listOf("a", "ov"), ids, aspect).timeline
+        val c = made.main.first()
+        val moved = TimelineOps.moveMain(made, c.id, 1)
+        val flat = Compound.flatten(moved, aspect)
+        // a (3 s) now starts after b (2 s); the overlay was 2 s into a -> starts at 4 s
+        assertEquals(2_000L, flat.main.first { it.sourceUri == "va" }.timelineStartMs)
+        // the piece inside the compound (the part after 3 s stayed on the overlay track)
+        val ovPiece = flat.track(Track.OVERLAY).first { it.sourceUri == "ov" && '/' in it.id }
+        assertEquals(4_000L, ovPiece.timelineStartMs)
+        assertEquals(1_000L, ovPiece.durationMs)
+    }
+
+    @Test
+    fun overlayInsideACompoundFollowsItsFraming() {
+        val made = Compound.create(project(), listOf("a", "b", "c", "ov"), ids, aspect).timeline
+        val c = made.main.single()
+        val zoomed = TimelineOps.transformMain(made, c.id, 0.5f, 0.5f, 2f, 0f)
+        val ov = Compound.flatten(zoomed, aspect).track(Track.OVERLAY).single { it.sourceUri == "ov" }
+        assertEquals(1f, ov.scale, 1e-4f)                  // 0.5 of the frame width, zoomed x2
+        assertEquals(0.5f + (0.3f - 0.5f) * 2f, ov.posX, 1e-4f)
+        assertEquals(0.5f + (0.7f - 0.5f) * 2f, ov.posY, 1e-4f)
+        assertTrue("inside the main video: below the project's own overlays", ov.layer < 0)
+    }
+
+    @Test
+    fun trimmingAnOverlayCompoundTrimsWhatIsInside() {
+        val made = Compound.create(project(), listOf("ov", "img"), ids, aspect).timeline
+        val c = made.track(Track.OVERLAY).single()
+        // compound runs 2-8 s; cut it to start at 5 s: the video overlay (2-4 s) disappears
+        val trimmed = TimelineOps.trimStart(made, c.id, 5_000)
+        val flat = Compound.flatten(trimmed, aspect).track(Track.OVERLAY)
+        assertEquals(listOf("img"), flat.map { it.sourceUri })
+        assertEquals(6_000L, flat.single().timelineStartMs)
+    }
+}

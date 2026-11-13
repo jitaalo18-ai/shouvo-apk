@@ -9,6 +9,13 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.longClick
+import androidx.compose.ui.test.performTouchInput
+import com.videoeditor.app.data.clipFrom
+import com.videoeditor.core.MediaKind
+import com.videoeditor.core.Timeline
+import com.videoeditor.core.TimelineOps
+import com.videoeditor.core.Track
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.videoeditor.app.ui.EditorController
 import com.videoeditor.core.Compound
@@ -91,11 +98,11 @@ class CompoundUiTest {
 
         // ---- Compound: nothing selected -> Compound -> All -> Compound
         tool("Compound")
-        assertNotNull("picking mode", editor.compoundPick)
-        rule.onNodeWithTag("compoundAll").performClick()
+        assertNotNull("picking mode", editor.multiPick)
+        rule.onNodeWithTag("pickAll").performClick()
         pause(600)
         Shots.take("20_compound_pick")
-        assertEquals(0..3, editor.compoundRange)
+        assertEquals(0..3, editor.pickRange)
         rule.onNodeWithTag("compoundMake").performClick()
         pause(1_200)
         Shots.take("21_compound_made")
@@ -131,7 +138,7 @@ class CompoundUiTest {
         rule.onNodeWithTag("mainClip_3").performClick()
         pause(600)
         Shots.take("23_compound_pick_two")
-        assertEquals(1..3, editor.compoundRange)
+        assertEquals(1..3, editor.pickRange)
         rule.onNodeWithTag("compoundMake").performClick()
         pause(1_000)
         assertEquals(2, editor.timeline.main.size)
@@ -211,5 +218,139 @@ class CompoundUiTest {
         assertTrue(rule.onAllNodesWithTag("projectMenu_$projectId").fetchSemanticsNodes().isEmpty())
         assertTrue(runBlocking { app.projects.load(projectId) }.clips.isEmpty())
         assertNull(runBlocking { app.projects.get(projectId) })
+    }
+
+    /** What plays where, sampled every 250 ms per track (so a cut-up clip equals the whole clip). */
+    private fun plays(t: Timeline): List<String> =
+        Compound.flatten(t, editor.canvasAspect).clips.flatMap { c ->
+            (c.timelineStartMs until c.timelineEndMs step 250L).map { ms ->
+                val frame = if (c.track == Track.OVERLAY) String.format("%.3f/%.3f/%.3f", c.posX, c.posY, c.scale) else ""
+                "${c.track}|${c.sourceUri}|$ms|${c.timelineToSource(ms)}|$frame"
+            }
+        }.sorted()
+
+    @Test fun multiTrackCompoundByLongPress() {
+        val app = Fixtures.target.applicationContext as App
+        val projectId = runBlocking {
+            val id = app.projects.create(listOf(Fixtures.info("speech_test.mp4"), Fixtures.info("portrait_test.mp4")))
+            var t = app.projects.load(id)
+            val first = t.main[0]
+            t = TimelineOps.trimMain(t, first.id, newSourceEndMs = 8_000)
+            val image = Fixtures.info("image_test.png")
+            val speech = Fixtures.info("speech_test.mp4")
+            t = TimelineOps.addClip(t, clipFrom(image, Track.OVERLAY, 1_000).copy(posX = 0.3f, posY = 0.3f, scale = 0.3f))
+            t = TimelineOps.addClip(t, clipFrom(image, Track.OVERLAY, 9_000).copy(posX = 0.7f, posY = 0.7f, scale = 0.25f))
+            t = TimelineOps.addClip(t, clipFrom(speech, Track.SFX, 2_000).copy(kind = MediaKind.AUDIO, sourceEndMs = 3_000, name = "sfx"))
+            t = TimelineOps.addClip(t, clipFrom(speech, Track.MUSIC, 0).copy(kind = MediaKind.AUDIO, sourceEndMs = 20_000, name = "music"))
+            app.projects.save(id, TimelineOps.select(t, null))
+            id
+        }
+        waitFor("project listed") { rule.onAllNodes(hasText("Edited", substring = true)).fetchSemanticsNodes().isNotEmpty() }
+        pause(1_000)
+        rule.onAllNodes(hasText("Edited", substring = true))[0].performClick()
+        waitFor("editor loaded") { EditorController.current?.loaded == true && EditorController.current?.projectId == projectId }
+        pause(2_000)
+        Shots.take("40_multi_start")
+        val original = editor.timeline
+        val before = plays(original)
+        assertEquals(2, original.main.size)
+        assertEquals(2, original.track(Track.OVERLAY).size)
+
+        // ---- long-press the first video clip: multi-select starts with it
+        rule.onNodeWithTag("mainClip_0").performTouchInput { longClick() }
+        pause(600)
+        assertEquals(setOf(original.main[0].id), editor.multiPick)
+        // hold the first overlay, then tap the sound, the music and the second video clip
+        rule.onNodeWithTag("chip_OVERLAY_0").performTouchInput { longClick() }
+        pause(400)
+        rule.onNodeWithTag("chip_SFX_0").performClick()
+        pause(300)
+        rule.onNodeWithTag("chip_MUSIC_0").performClick()
+        pause(300)
+        rule.onNodeWithTag("mainClip_1").performClick()
+        pause(600)
+        Shots.take("41_multi_picked")
+        assertEquals(5, editor.multiPick?.size)
+        assertEquals(5, editor.pickCount)
+        // tapping a picked clip again takes it out, tapping again puts it back
+        rule.onNodeWithTag("chip_SFX_0").performClick()
+        pause(300)
+        assertEquals(4, editor.multiPick?.size)
+        rule.onNodeWithTag("chip_SFX_0").performClick()
+        pause(300)
+
+        rule.onNodeWithTag("compoundMake").performClick()
+        pause(1_200)
+        Shots.take("42_multi_compound")
+        val compound = editor.timeline.main.single()
+        assertTrue(compound.isCompound)
+        assertEquals(
+            mapOf(Track.MAIN to 2, Track.OVERLAY to 1, Track.SFX to 1, Track.MUSIC to 1),
+            Compound.leafTracks(compound),
+        )
+        assertEquals("the second overlay was not picked", 1, editor.timeline.track(Track.OVERLAY).size)
+        // the music ran past the end of the video: that part stays on the music track
+        assertEquals(compound.timelineEndMs, editor.timeline.track(Track.MUSIC).single().timelineStartMs)
+        assertEquals("plays exactly as before", before, plays(editor.timeline))
+        Report.note("ui: multi-track compound ${Compound.leafTracks(compound)}")
+
+        // ---- it plays (video, overlay pieces and sound pieces)
+        seek(1_500)
+        rule.onNodeWithContentDescription("Play").performClick()
+        pause(1_500)
+        Shots.take("43_multi_playing")
+        rule.onNodeWithContentDescription("Pause").performClick()
+        pause(400)
+        assertTrue(editor.player.positionMs.value > 1_800)
+
+        // ---- undo / redo the compound
+        rule.onNodeWithContentDescription("Undo").performClick()
+        pause(800)
+        assertEquals(2, editor.timeline.main.size)
+        assertTrue(editor.timeline.clips.none { it.isCompound })
+        assertEquals(before, plays(editor.timeline))
+        rule.onNodeWithContentDescription("Redo").performClick()
+        pause(800)
+        assertTrue(editor.timeline.main.single().isCompound)
+
+        // ---- add the second overlay to the compound later: hold the compound, tap the overlay
+        rule.onNodeWithTag("mainClip_0").performTouchInput { longClick() }
+        pause(500)
+        rule.onNodeWithTag("chip_OVERLAY_0").performClick()
+        pause(500)
+        rule.onNodeWithTag("compoundMake").performClick()
+        pause(1_200)
+        Shots.take("44_added_to_compound")
+        val grown = editor.timeline.main.single()
+        assertTrue(grown.isCompound)
+        assertEquals("one compound, not one inside another", 6, grown.children.size)
+        assertTrue(editor.timeline.track(Track.OVERLAY).isEmpty())
+        assertEquals(before, plays(editor.timeline))
+
+        // ---- uncompound: everything goes back on its track
+        if (editor.timeline.selected?.id != grown.id) rule.onNodeWithTag("mainClip_0").performClick()
+        pause(400)
+        tool("Uncompound")
+        Shots.take("45_multi_uncompound")
+        assertTrue(editor.timeline.clips.none { it.isCompound })
+        assertEquals(2, editor.timeline.main.size)
+        assertEquals(2, editor.timeline.track(Track.OVERLAY).size)
+        assertEquals(1, editor.timeline.track(Track.SFX).size)
+        assertEquals(before, plays(editor.timeline))
+
+        // ---- several clips deleted at once (one undo step)
+        rule.onNodeWithTag("chip_OVERLAY_0").performTouchInput { longClick() }
+        pause(400)
+        rule.onNodeWithTag("chip_SFX_0").performClick()
+        pause(400)
+        rule.onNodeWithTag("pickDelete").performClick()
+        pause(800)
+        Shots.take("46_multi_deleted")
+        assertEquals(1, editor.timeline.track(Track.OVERLAY).size)
+        assertTrue(editor.timeline.track(Track.SFX).isEmpty())
+        rule.onNodeWithContentDescription("Undo").performClick()
+        pause(800)
+        assertEquals(2, editor.timeline.track(Track.OVERLAY).size)
+        assertEquals(1, editor.timeline.track(Track.SFX).size)
     }
 }

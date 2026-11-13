@@ -167,14 +167,14 @@ class EditorController(private val app: App, val projectId: Long, uiScope: Corou
 
     fun undo() {
         if (busy != null || undoStack.isEmpty()) return
-        compoundPick = null
+        multiPick = null
         redoStack.addLast(timeline)
         restore(undoStack.removeLast())
     }
 
     fun redo() {
         if (busy != null || redoStack.isEmpty()) return
-        compoundPick = null
+        multiPick = null
         undoStack.addLast(timeline)
         restore(redoStack.removeLast())
     }
@@ -202,9 +202,12 @@ class EditorController(private val app: App, val projectId: Long, uiScope: Corou
     }
 
     fun select(id: String?) {
-        // while picking clips for a compound, a tap ticks / unticks a main clip instead
-        if (compoundPick != null) {
-            if (id != null && timeline.byId(id)?.track == Track.MAIN) togglePick(id)
+        // while picking, a tap ticks / unticks a clip (any track) instead
+        if (multiPick != null) {
+            if (id != null) {
+                val owner = Compound.ownerId(id)
+                if (timeline.byId(owner) != null) togglePick(owner)
+            }
             return
         }
         val target = if (id != null && timeline.selected?.id == id) null else id
@@ -508,65 +511,95 @@ class EditorController(private val app: App, val projectId: Long, uiScope: Corou
 
     private fun leaves(c: Clip): List<Clip> = if (c.isCompound) c.children.flatMap { leaves(it) } else listOf(c)
 
-    // ---- Compound clips ------------------------------------------------------------------
+    // ---- Multi-select and compound clips --------------------------------------------------
 
     /**
-     * Compound picking mode: the main clips the user has ticked (null = not picking). The clips
-     * from the first to the last ticked one go into the compound clip.
+     * Multi-select mode (like CapCut): the clips the user has picked, on any track (null = not
+     * picking). Long-press a clip to start; then tap or long-press more clips (timeline or
+     * preview) to add or remove them.
      */
-    var compoundPick by mutableStateOf<Set<String>?>(null)
+    var multiPick by mutableStateOf<Set<String>?>(null)
         private set
 
-    /** Index range of the main clips that will be packed (first to last ticked). */
-    val compoundRange: IntRange?
+    /** Main-track clips that join a compound because they lie between picked main clips. */
+    val pickRange: IntRange?
         get() {
-            val pick = compoundPick ?: return null
+            val pick = multiPick ?: return null
             val idx = timeline.main.mapIndexedNotNull { i, c -> if (c.id in pick) i else null }
             return if (idx.isEmpty()) null else idx.min()..idx.max()
         }
 
-    fun startCompound() {
-        if (busy != null) return
-        if (timeline.main.size < 2) {
-            message = "Add at least two clips to the main track to make a compound clip."
-            return
+    /** How many clips a compound made now would hold (picked + main clips in between). */
+    val pickCount: Int
+        get() {
+            val pick = multiPick ?: return 0
+            val mainIds = timeline.main.map { it.id }.toSet()
+            val range = pickRange
+            return (if (range == null) 0 else range.last - range.first + 1) +
+                pick.count { it !in mainIds && timeline.byId(it) != null }
         }
+
+    private fun startPicking(first: String?) {
+        if (busy != null) return
         player.pause()
-        val selected = timeline.selected?.takeIf { it.track == Track.MAIN }
-        compoundPick = setOfNotNull(selected?.id)
+        multiPick = setOfNotNull(first)
         if (timeline.selected != null) commitEdit(TimelineOps.select(timeline, null), undoable = false)
     }
 
+    /** Long-press on a clip (timeline or preview): start picking, or add / remove it. */
+    fun longPress(id: String) {
+        val owner = Compound.ownerId(id)
+        if (timeline.byId(owner) == null) return
+        if (multiPick == null) startPicking(owner) else togglePick(owner)
+    }
+
+    /** "Compound" button: start picking with the selected clip already picked. */
+    fun startCompound() {
+        startPicking(timeline.selected?.id)
+    }
+
     fun togglePick(id: String) {
-        val pick = compoundPick ?: return
-        compoundPick = if (id in pick) pick - id else pick + id
+        val pick = multiPick ?: return
+        multiPick = if (id in pick) pick - id else pick + id
     }
 
     fun pickAll() {
-        if (compoundPick == null) return
-        val all = timeline.main.map { it.id }.toSet()
-        compoundPick = if (compoundPick == all) emptySet() else all
+        if (multiPick == null) return
+        val all = timeline.clips.map { it.id }.toSet()
+        multiPick = if (multiPick == all) emptySet() else all
     }
 
-    fun cancelCompound() {
-        compoundPick = null
+    fun cancelPicking() {
+        multiPick = null
     }
 
     fun makeCompound() {
-        val range = compoundRange ?: run {
-            message = "Tick the first and the last clip that should go into the compound clip."
-            return
-        }
-        val main = timeline.main
-        val ids = main.subList(range.first, range.last + 1).map { it.id }
-        val result = Compound.create(timeline, ids, ::newClipId, canvasAspect)
+        val pick = multiPick ?: return
+        val addingToOne = pick.any { timeline.byId(it)?.isCompound == true }
+        val result = Compound.create(timeline, pick, ::newClipId, canvasAspect)
         if (!result.changed) {
             message = result.reason
             return
         }
-        compoundPick = null
+        multiPick = null
         commitEdit(result.timeline)
-        message = "Compound clip made from ${ids.size} clips. Tap Uncompound to take them apart again."
+        val count = result.timeline.selected?.let { Compound.leafCount(it) } ?: pick.size
+        val text = if (addingToOne) "Added to the compound clip - it now holds $count clips."
+        else "Compound clip made from $count clips. Tap Uncompound to take them apart again."
+        message = text + (result.reason?.let { " $it" } ?: "")
+    }
+
+    /** Deletes every picked clip (one undo step). The main track keeps at least one clip. */
+    fun deletePicked() {
+        val pick = multiPick ?: return
+        if (pick.isEmpty()) return
+        if (timeline.main.all { it.id in pick }) {
+            message = "A project needs at least one clip on the main track."
+            return
+        }
+        multiPick = null
+        commitEdit(TimelineOps.normalize(Timeline(timeline.clips.filter { it.id !in pick })))
+        message = "Deleted ${pick.size} clip(s)."
     }
 
     fun uncompoundSelected() {
@@ -574,7 +607,7 @@ class EditorController(private val app: App, val projectId: Long, uiScope: Corou
         val result = Compound.uncompound(timeline, clip.id, ::newClipId, canvasAspect)
         if (result.changed) {
             commitEdit(result.timeline)
-            message = "Compound clip taken apart into ${clip.children.size} clips."
+            message = "Compound clip taken apart into ${clip.children.size} clips (back on their tracks)."
         } else {
             message = result.reason
         }
