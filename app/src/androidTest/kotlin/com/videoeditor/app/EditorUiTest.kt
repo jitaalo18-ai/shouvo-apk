@@ -161,9 +161,14 @@ class EditorUiTest {
         assertTrue("status message disappears on its own", rule.onAllNodesWithTag("statusMessage").fetchSemanticsNodes().isEmpty())
 
         // play a moment
+        val playFrom = editor.player.positionMs.value
+        val wallStart = android.os.SystemClock.elapsedRealtime()
         rule.onNodeWithContentDescription("Play").performClick()
         pause(2_000)
         val playing = editor.player.positionMs.value
+        val wall = android.os.SystemClock.elapsedRealtime() - wallStart
+        Report.note("ui: played ${playing - playFrom} ms of timeline in $wall ms of real time")
+        assertTrue("playback runs at normal speed (${playing - playFrom} ms in $wall ms)", playing - playFrom <= wall + 300)
         Shots.take("09_playing")
         rule.onNodeWithContentDescription("Pause").performClick()
         pause(500)

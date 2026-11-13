@@ -1,3 +1,28 @@
+# V0.13 validation (2026-11-13)
+
+Executed (GitHub Actions, final run before merge):
+- core JVM tests: all passed (48), incl. soft word ending outside the voice band is not cut
+  (verified to fail without the fix), strength ordering, snap tests incl. ripple edge.
+- Android 12 emulator (API 31, x86_64), 8/8 instrumented tests passed:
+  - probe, thumbnails (12 frames ~1.4–2.3 s cold, 8–18 ms from disk cache), thumbnail work kept
+    when a tile scrolls away, waveform.
+  - AutoCut on a 24 s test clip with 5 speech parts: analysis ~1.1–1.4 s, NORMAL keeps exactly
+    the speech ranges (±250 ms); export after AutoCut has the right length (14.16 s, audio present).
+  - player: incremental playlist update, one update per drag, scrub of 40 moves lands on the last.
+  - UI end-to-end: create project, open, select, scrub (18.4 s), AutoCut review -> Tight -> Apply
+    (7 clips), undo/redo, pinch zoom (clip 101 -> 303 px), status message not over the timeline
+    and gone on its own, trim end handle (edge follows finger, guide cleared, playhead on new
+    edge), play, Add audio opens BG MUSIC, reopen project (edits saved), short clip has two
+    separate handles. Screenshots reviewed by eye.
+Bugs found by these tests and fixed: snackbar blocked timeline touches; status message never
+hid; sticky snap on main-track trim; trim end not always reported; ExoPlayer wrong-thread after
+project load; cut-off duration label on narrow clips.
+
+Not executed / needs a real phone: feel of haptics and scrolling at 120 Hz, Samsung S25 Ultra
+specifically, long or 4K/HEVC files, real speech AutoCut in the app (the VAD itself was checked
+offline on the owner's two uploaded videos), Google Drive import, export of long projects.
+
+---
 # V0.12 validation
 
 Run core unit tests and debug APK compilation using GitHub Actions for this version.

@@ -418,7 +418,7 @@ private fun MainClipView(ctl: EditorController, clip: Clip, pxPerMs: Float, visi
                     Modifier.align(Alignment.BottomStart).fillMaxWidth().height(WAVE_HEIGHT).background(WaveBackground),
                 )
             }
-            if (clip.selected) {
+            if (clip.selected && widthPx > with(density) { 46.dp.toPx() }) {
                 Text(
                     String.format(java.util.Locale.US, "%.1fs", clip.durationMs / 1000f),
                     fontSize = 11.sp,

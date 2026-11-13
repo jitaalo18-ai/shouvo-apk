@@ -1,7 +1,7 @@
-# Nock Nock (Android video editor) - v0.12 source
+# Nock Nock (Android video editor) - v0.13 source
 
 Native Android video editor: Kotlin, Jetpack Compose, Media3 (ExoPlayer + Transformer), Room.
-Read PROGRESS.md first - it is the current checkpoint. V0.12 adds two-finger timeline zoom. V0.11 passed GitHub Actions tests and APK compilation. See PROGRESS.md for device checks.
+Read PROGRESS.md first - it is the current checkpoint. V0.13: dynamic timeline (fast thumbnails, incremental preview, live trim frame, snapping, handles outside clips), AutoCut strengths with a review sheet, and on-device emulator tests in CI (see TEST_REPORT.md).
 
 ## Get an APK
 

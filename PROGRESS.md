@@ -1,3 +1,45 @@
+# V0.13 — dynamic timeline, AutoCut review, on-device tests (2026-11-13)
+
+Current version: 0.13 (versionCode 13), label V0.13. Branch v0.13-dynamic-timeline merged to main.
+Standing rules (unchanged): APK + source ZIP of the same version as direct links every time;
+Instagram Edits is the behaviour/design reference (original design); honest test reporting;
+reply to the owner in Bangla; versions 0.14, 0.15 ...
+
+What changed
+- Thumbnails (app/media/Thumbnails.kt): own engine, 3 workers, newest-first queue, in-flight
+  dedup, 40 MB memory LRU + JPEG disk cache (cacheDir/thumbs), nearest-frame placeholder so a
+  tile is never empty while zooming/scrolling, per-uri MediaMetadataRetriever pool.
+- Preview player (PlaybackController): playlist updated incrementally (only changed clips are
+  replaced), drags apply 220 ms after the last move and immediately on finger-up (flush);
+  scrubbing uses fast key-frame seeks, latest target wins, exact seek on release.
+- Live trim frame: while a main clip edge is dragged the preview shows that exact frame
+  (LiveFrames); on release the playhead jumps to the trimmed edge.
+- Magnet snapping (core/Snap.kt) to 0, playhead and clip edges with a yellow guide + haptic
+  tick. Main-track right edge ignores clips that ripple with it (was sticky before).
+- Trim handles of the selected main clip sit OUTSIDE the clip (Edits style), so short clips
+  keep two separate handles; handle gesture always reports its end (try/finally).
+- "+ Add audio" row above the main track when there is no music; opens the BG MUSIC library.
+- Status messages: small pill over the preview, hides after 2.5 s, never covers the timeline
+  (the old snackbar sat on the timeline and swallowed pinch/trim touches).
+- AutoCut: strengths Gentle / Normal / Tight (min silence 700/400/250 ms), review sheet with a
+  kept(blue)/removed(red) bar and summary before applying; word-edge protection in the VAD
+  (soft s/f sounds and word tails are not cut); still non-destructive.
+- Fixes: save() before the project finished loading could overwrite it with an empty
+  timeline; editor coroutine scope pinned to the main thread (ExoPlayer wrong-thread crash).
+- Not done: "online render" (no server; preview/export stay on-device). The other account's
+  branch feature/v0.13-extract-audio was not merged.
+
+Testing infrastructure
+- core JVM tests: 48 (run_core_tests.sh locally / gradle :core:test in CI).
+- app/src/androidTest: MediaPipelineTest (7) + EditorUiTest (1 end-to-end) on an Android 12
+  x86_64 emulator in GitHub Actions (job "emulator"). Screenshots, report.txt, instrumentation
+  output and logcat are pushed to branch ci-results (artifact download is blocked here).
+- Release job (main only) needs build + emulator to pass.
+
+Next ideas: remember zoom per project, handles outside for chips too, captions, real-phone
+checks of feel (haptics, 120 Hz scrolling, long 4K files).
+
+---
 # V0.12 — two-finger timeline zoom
 
 Spread two fingers over the timeline to zoom in; pinch to zoom out. One-finger scrolling,
