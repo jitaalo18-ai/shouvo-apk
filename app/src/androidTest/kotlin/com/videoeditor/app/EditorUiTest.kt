@@ -40,7 +40,20 @@ class EditorUiTest {
 
     private fun waitFor(what: String, timeoutMs: Long = 15_000, condition: () -> Boolean) {
         try {
-            rule.waitUntil(timeoutMs) { condition() }
+            rule.waitUntil(timeoutMs) {
+                try {
+                    condition()
+                } catch (e: IllegalStateException) {
+                    // The emulator sometimes opens a system dialog (e.g. SIM settings) on top of the
+                    // app at start-up; then no app window is found. Bring the app back to the front.
+                    if (e.message?.contains("No compose hierarchies") == true) {
+                        androidx.test.platform.app.InstrumentationRegistry.getInstrumentation().uiAutomation
+                            .executeShellCommand("am start --activity-reorder-to-front -n com.videoeditor.app/.MainActivity").close()
+                        Thread.sleep(1_000)
+                        false
+                    } else throw e
+                }
+            }
         } catch (e: Throwable) {
             Shots.take("FAILED_$what")
             throw AssertionError("timed out waiting for: $what", e)
