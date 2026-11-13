@@ -64,7 +64,7 @@ class CompoundDataTest {
         val name = "migration_test.db"
         createVersion3(name)
         val db = Room.databaseBuilder(ctx, AppDatabase::class.java, name)
-            .addMigrations(AppDatabase.MIGRATION_1_2, AppDatabase.MIGRATION_2_3, AppDatabase.MIGRATION_3_4)
+            .addMigrations(AppDatabase.MIGRATION_1_2, AppDatabase.MIGRATION_2_3, AppDatabase.MIGRATION_3_4, AppDatabase.MIGRATION_4_5)
             .build()
         try {
             val repo = ProjectRepository(db)
@@ -75,18 +75,27 @@ class CompoundDataTest {
             assertEquals(15f, c.rotation, 0.001f)
             assertEquals(1.2f, c.stretchX, 0.001f)
             assertTrue(c.children.isEmpty())
-            Report.note("db: version 3 -> 4 upgrade kept the old project")
+            Report.note("db: version 3 -> 5 upgrade kept the old project")
+            assertEquals("", c.text)
+
+            // captions / texts (version 5) are stored, also inside compounds
+            val caption = com.videoeditor.core.Captions.textClip("cap", 500, 1_000, "আমি বাংলায় বলছি", name = "Caption", style = "BOX", posY = 0.8f)
+            repo.save(1, Timeline(old.clips + caption))
+            val reloaded = repo.load(1).byId("cap")
+            assertEquals(caption, reloaded)
 
             // a nested compound with a library clip deep inside is stored and read back exactly
             val fx = c.copy(id = "fx", libraryItemId = 7, sourceUri = "file:///fx.mp4")
-            var t = TimelineOps.normalize(Timeline(listOf(c, fx, c.copy(id = "third"))))
-            t = Compound.create(t, listOf("old", "fx"), ::id, 9f / 16f).timeline
+            var t = TimelineOps.normalize(Timeline(listOf(c, fx, c.copy(id = "third"), caption)))
+            t = Compound.create(t, listOf("old", "fx", "cap"), ::id, 9f / 16f).timeline
             t = Compound.create(t, t.main.map { it.id }, ::id, 9f / 16f).timeline
             t = TimelineOps.transformMain(t, t.main.single().id, 0.6f, 0.4f, 1.5f, 30f)
             repo.save(1, t)
             val back = repo.load(1)
             assertEquals(t.clips.toSet(), back.clips.toSet())
-            assertEquals(3, Compound.leafCount(back.main.single()))
+            assertEquals(4, Compound.leafCount(back.main.single()))
+            assertEquals("caption inside the compound keeps its words", "আমি বাংলায় বলছি",
+                Compound.flatten(back, 9f / 16f).track(com.videoeditor.core.Track.TEXT).single().text)
             assertEquals("library item inside the compound counts as used", 1, db.library().usageCount(7))
             assertEquals(listOf("Old project"), db.library().projectsUsing(7))
 
