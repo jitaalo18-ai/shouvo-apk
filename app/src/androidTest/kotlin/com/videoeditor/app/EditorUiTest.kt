@@ -48,6 +48,8 @@ class EditorUiTest {
 
     private fun pause(ms: Long) {
         Thread.sleep(ms)
+        // effects in the composition (e.g. the status message timer) run on the test clock
+        rule.mainClock.advanceTimeBy(ms)
         rule.waitForIdle()
     }
 
@@ -147,8 +149,11 @@ class EditorUiTest {
         Report.note("ui: trim changed first clip from $before ms to $after ms; guide=${editor.snapGuideMs}, live=${editor.liveTrimClipId}, playhead=${editor.player.positionMs.value}")
         assertTrue("trim made the clip shorter ($before -> $after)", after < before)
         // the finger moved 90 px to the left: the edge follows it (no sticky snapping to itself)
-        val expected = before - (90f / (widthAfter / before)).toLong()
-        assertTrue("edge followed the finger: expected about $expected ms, got $after ms", abs(after - expected) < 250)
+        // (the first touch-slop pixels only start the drag, as everywhere on Android)
+        val slop = androidx.test.platform.app.InstrumentationRegistry.getInstrumentation().targetContext
+            .let { android.view.ViewConfiguration.get(it).scaledTouchSlop }
+        val expected = before - ((90f - slop) / (widthAfter / before)).toLong()
+        assertTrue("edge followed the finger: expected about $expected ms, got $after ms", abs(after - expected) < 150)
         assertEquals("guide line cleared when the finger lifts", null, editor.snapGuideMs)
         assertEquals("live trim frame cleared", null, editor.liveTrimClipId)
         assertTrue("playhead moved to the new edge", abs(editor.player.positionMs.value - after) < 200)
