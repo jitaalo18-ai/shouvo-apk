@@ -51,7 +51,7 @@ class ExtractAudioTests {
     }
 
     @Test fun movingSplittingOrDeletingExtractedAudioLeavesVideoUnchanged() {
-        val v = video()
+        val v = video().copy(timelineStartMs = 0)
         val out = TimelineOps.extractAudio(Timeline(listOf(v)), v.id) { "a" }.timeline
         val muted = out.byId(v.id)
         val moved = TimelineOps.move(out, "a", 5000)
