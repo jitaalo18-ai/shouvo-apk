@@ -399,7 +399,6 @@ private fun WaveStrip(clip: Clip, pxPerMs: Float, visible: Visible, color: Color
     }
 }
 
-@Composable
 private enum class PickMark { NONE, TICKED, INCLUDED, OFF }
 
 @Composable
