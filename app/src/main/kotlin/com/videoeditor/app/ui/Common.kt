@@ -44,6 +44,9 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -65,10 +68,10 @@ val GuideYellow = Color(0xFFFFD60A)
 fun androidx.compose.ui.Modifier.onGestureEnd(key: Any?, onEnd: () -> Unit): androidx.compose.ui.Modifier =
     this.then(
         androidx.compose.ui.Modifier.pointerInput(key) {
-            androidx.compose.foundation.gestures.awaitEachGesture {
-                androidx.compose.foundation.gestures.awaitFirstDown(requireUnconsumed = false)
+            awaitEachGesture {
+                awaitFirstDown(requireUnconsumed = false)
                 while (true) {
-                    val event = awaitPointerEvent(androidx.compose.ui.input.pointer.PointerEventPass.Final)
+                    val event = awaitPointerEvent(PointerEventPass.Final)
                     if (event.changes.none { it.pressed }) break
                 }
                 onEnd()
