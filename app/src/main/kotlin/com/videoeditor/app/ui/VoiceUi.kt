@@ -43,6 +43,8 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.RadioButtonDefaults
 import androidx.compose.material3.Slider
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -132,6 +134,24 @@ fun VoicePanel(ctl: EditorController, modifier: Modifier = Modifier) {
                             colors = RadioButtonDefaults.colors(selectedColor = Color.White),
                         )
                         Text("Apply enhancement to all clips", fontSize = 14.sp)
+                    }
+                    Row(
+                        Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).clickable { ctl.setVoiceIsolate(!fx.isolate) }
+                            .padding(vertical = 4.dp).testTag("voiceIsolateRow"),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(Modifier.weight(1f)) {
+                            Text("Isolate voice", fontSize = 14.sp)
+                            Text(
+                                if (fx.isolate && ctl.isProcessing(clip)) "Processing…" else "Only the voice stays (AI, like the iPhone's)",
+                                fontSize = 11.sp, color = Color.Gray,
+                            )
+                        }
+                        Switch(
+                            checked = fx.isolate, onCheckedChange = { ctl.setVoiceIsolate(it) },
+                            colors = SwitchDefaults.colors(checkedTrackColor = Accent),
+                            modifier = Modifier.testTag("voiceIsolate"),
+                        )
                     }
                     LevelSlider(
                         label = "Reduce noise", tag = "voiceDenoise", value = fx.denoise, max = 1f,

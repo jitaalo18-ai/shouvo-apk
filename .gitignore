@@ -4,3 +4,6 @@ local.properties
 .idea/
 *.iml
 .kotlin/
+# built by third_party/deepfilternet/build-android.sh (CI)
+third_party/deepfilternet/android-libs/
+third_party/deepfilternet/target/

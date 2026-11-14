@@ -1,7 +1,7 @@
-# Nock Nock (Android video editor) - v0.19 source
+# Nock Nock (Android video editor) - v0.20 source
 
 Native Android video editor: Kotlin, Jetpack Compose, Media3 (ExoPlayer + Transformer), Room.
-Read PROGRESS.md first - it is the current checkpoint. V0.19: Voice enhance processes each file once like Edits (Processing popup, sparkles, whole-clip noise learning, video keeps playing); V0.18: Voice enhance (Auto / Volume / Enhance / Fade, noise reduction and voice EQ in preview and export); V0.17: smart alignment guides and auto-snapping (video, overlays, texts) in 9:16, 16:9, 1:1 and 4:5; V0.16: Auto Captions. Device tests run in CI (see TEST_REPORT.md).
+Read PROGRESS.md first - it is the current checkpoint. V0.20: Isolate voice (DeepFilterNet3 neural network on the phone, whole main timeline); V0.19: Voice enhance processes each file once like Edits (Processing popup, sparkles, whole-clip noise learning, video keeps playing); V0.18: Voice enhance (Auto / Volume / Enhance / Fade, noise reduction and voice EQ in preview and export); V0.17: smart alignment guides and auto-snapping (video, overlays, texts) in 9:16, 16:9, 1:1 and 4:5; V0.16: Auto Captions. Device tests run in CI (see TEST_REPORT.md).
 
 ## Get an APK
 
@@ -31,4 +31,9 @@ Requires Android 10 or newer on the phone.
 - whisper.cpp v1.8.7 and ggml (MIT) - app/src/main/cpp/whisper.cpp (LICENSE inside).
 - OpenAI Whisper (MIT) - the speech-recognition models.
 - mozilla-ai/whisper-large-v3-turbo-bn (Apache-2.0) - the Bangla caption model, converted to ggml.
-- Google FLEURS (CC-BY-4.0) - Bangla speech used only in the CI tests.
+- DeepFilterNet (libDF, MIT OR Apache-2.0, Hendrik Schröter) - Isolate voice: the Rust library
+  in third_party/deepfilternet (licenses inside, changes in NOCKNOCK_CHANGES.md) and the
+  DeepFilterNet3 network, app/src/main/assets/df/DeepFilterNet3_onnx.dfn (same license).
+  Building it needs Rust + cargo-ndk (third_party/deepfilternet/build-android.sh; CI does it);
+  without it the app builds and Isolate voice reports it is not available.
+- Google FLEURS (CC-BY-4.0) - Bangla speech used only in the CI tests. Mixed with synthetic traffic and music for the Isolate voice tests.

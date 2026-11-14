@@ -28,12 +28,14 @@ object VoiceEdits {
 
     /** "Apply enhancement to all clips": every clip gets [from]'s noise and voice settings. */
     fun enhanceAll(t: Timeline, from: AudioFx): Timeline =
-        change(t, audible(t).map { it.id }.toSet()) { it.copy(denoise = from.denoise, enhance = from.enhance) }
+        change(t, audible(t).map { it.id }.toSet()) { it.copy(denoise = from.denoise, enhance = from.enhance, isolate = from.isolate) }
 
     /** Whether every clip already has the same noise / voice settings as [from]. */
     fun allEnhancedLike(t: Timeline, from: AudioFx): Boolean {
         val list = audible(t)
-        return list.size > 1 && list.all { it.audio.denoise == from.denoise && it.audio.enhance == from.enhance }
+        return list.size > 1 && list.all {
+            it.audio.denoise == from.denoise && it.audio.enhance == from.enhance && it.audio.isolate == from.isolate
+        }
     }
 
     /** Noisy clips (by their analysis in [levels], keyed by clip id). */
@@ -56,6 +58,30 @@ object VoiceEdits {
         val off = noiseRemoved(t, levels)
         val ids = list.map { it.id }.toSet()
         return change(t, ids) { it.copy(denoise = if (off) 0f else maxOf(it.denoise, AudioFx.AUTO_DENOISE)) } to list.size
+    }
+
+    // ---- Isolate voice (the whole main timeline, like the iPhone's) -------------------------
+
+    /** Clips with sound on the main track, also inside compound clips there (their own main track). */
+    fun mainVoices(t: Timeline): List<Clip> = mainVoices(t.clips)
+
+    private fun mainVoices(clips: List<Clip>): List<Clip> = clips.filter { it.track == Track.MAIN }.flatMap {
+        if (it.isCompound) mainVoices(it.children) else if (it.isAudible) listOf(it) else emptyList()
+    }
+
+    /** True when every voice of the main timeline is isolated. */
+    fun isolatedAll(t: Timeline): Boolean = mainVoices(t).let { it.isNotEmpty() && it.all { c -> c.audio.isolate } }
+
+    /** Isolate voice on (or off) for the whole main timeline. */
+    fun isolateMain(t: Timeline, on: Boolean): Timeline = Timeline(isolate(t.clips, on))
+
+    private fun isolate(clips: List<Clip>, on: Boolean): List<Clip> = clips.map {
+        when {
+            it.track != Track.MAIN -> it
+            it.isCompound -> it.copy(children = isolate(it.children, on))
+            it.isAudible -> it.copy(audio = it.audio.copy(isolate = on))
+            else -> it
+        }
     }
 
     /** "Auto adjust audio": every clip's voice to the same loudness. Returns how many clips changed. */

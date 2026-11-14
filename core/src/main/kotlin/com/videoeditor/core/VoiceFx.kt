@@ -22,15 +22,24 @@ data class AudioFx(
     val enhance: Float = 0f,
     val fadeInMs: Long = 0,
     val fadeOutMs: Long = 0,
+    /**
+     * Isolate voice (like the iPhone's): the clip plays the voice separated from everything
+     * else by a neural network (DeepFilterNet3), worked out once per file.
+     */
+    val isolate: Boolean = false,
 ) {
     val isDefault: Boolean
-        get() = volume == 1f && denoise == 0f && enhance == 0f && fadeInMs == 0L && fadeOutMs == 0L
+        get() = volume == 1f && denoise == 0f && enhance == 0f && fadeInMs == 0L && fadeOutMs == 0L && !isolate
+
+    /** Volume, fades, noise or voice settings that the player's sound processing has to do. */
+    val needsProcessing: Boolean
+        get() = volume != 1f || denoise != 0f || enhance != 0f || fadeInMs != 0L || fadeOutMs != 0L
 
     /** Only the sound processing (noise / voice), without volume and fades. */
-    val hasEnhancement: Boolean get() = denoise > 0f || enhance > 0f
+    val hasEnhancement: Boolean get() = denoise > 0f || enhance > 0f || isolate
 
     /** Compact text form for the database ("" = defaults). */
-    fun encode(): String = if (isDefault) "" else "$volume,$denoise,$enhance,$fadeInMs,$fadeOutMs"
+    fun encode(): String = if (isDefault) "" else "$volume,$denoise,$enhance,$fadeInMs,$fadeOutMs,${if (isolate) 1 else 0}"
 
     companion object {
         val NONE = AudioFx()
@@ -48,6 +57,7 @@ data class AudioFx(
                     enhance = p[2].toFloat().coerceIn(0f, 1f),
                     fadeInMs = p[3].toLong().coerceAtLeast(0),
                     fadeOutMs = p[4].toLong().coerceAtLeast(0),
+                    isolate = p.getOrNull(5) == "1",
                 )
             } catch (e: RuntimeException) {
                 NONE
@@ -101,7 +111,7 @@ class VoiceFx(val sampleRate: Int, val channels: Int, private val compensate: Bo
     var plan: List<FxSegment> = emptyList()
 
     /** True when nothing in [plan] changes the sound (the processor can be skipped). */
-    val isNeutral: Boolean get() = plan.all { it.fx.isDefault }
+    val isNeutral: Boolean get() = plan.none { it.fx.needsProcessing }
 
     // ---- positions: markers (input frame index -> position in µs) ----
     private var inputFrames = 0L
@@ -323,7 +333,7 @@ class VoiceFx(val sampleRate: Int, val channels: Int, private val compensate: Bo
             outputFrames++
             val seg = segmentAt(pos) ?: continue
             val fx = seg.fx
-            if (fx.isDefault) continue
+            if (!fx.needsProcessing) continue
             val at = f * channels
             if (fx.enhance > 0f) {
                 if (fx.enhance != eqAmount) setEq(fx.enhance)

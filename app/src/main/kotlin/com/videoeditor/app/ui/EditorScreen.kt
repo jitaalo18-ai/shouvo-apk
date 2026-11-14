@@ -12,6 +12,9 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.material3.LocalContentColor
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -74,6 +77,7 @@ import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.RecordVoiceOver
+import androidx.compose.material.icons.filled.KeyboardVoice
 import androidx.compose.material.icons.filled.TextFields
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -306,6 +310,7 @@ fun EditorScreen(app: App, projectId: Long, onBack: () -> Unit) {
                     horizontalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
                     if (clipboard != null) ToolButton(Icons.Filled.ContentPaste, "Paste") { ctl.paste() }
+                    ToolButton(Icons.Filled.KeyboardVoice, "Isolate voice", on = ctl.isolateOn) { ctl.toggleIsolateVoice() }
                     ToolButton(Icons.Filled.GraphicEq, "Sound FX") { ctl.library = LibraryKind.SOUND_FX }
                     ToolButton(Icons.Filled.MusicNote, "BG MUSIC") { ctl.library = LibraryKind.MUSIC }
                     ToolButton(Icons.Filled.Movie, "Video FX") { ctl.library = LibraryKind.VIDEO_FX }
@@ -330,6 +335,7 @@ fun EditorScreen(app: App, projectId: Long, onBack: () -> Unit) {
                                 ToolButton(Icons.Filled.AutoFixHigh, "AutoCut") { ctl.autoCut() }
                             }
                             if (selected.isAudible) ToolButton(Icons.Filled.RecordVoiceOver, "Voice enhance") { ctl.openVoice() }
+                            ToolButton(Icons.Filled.KeyboardVoice, "Isolate voice", on = ctl.isolateOn) { ctl.toggleIsolateVoice() }
                             ToolButton(Icons.Filled.ContentCopy, "Copy") { ctl.copySelected() }
                             if (clipboard != null) ToolButton(Icons.Filled.ContentPaste, "Paste") { ctl.paste() }
                             ToolButton(Icons.Filled.FileCopy, "Duplicate") { ctl.duplicateSelected() }
@@ -580,12 +586,15 @@ private fun AutoCutSheet(ctl: EditorController, review: AutoCutOutcome.Ready) {
 }
 
 @Composable
-private fun ToolButton(icon: ImageVector, label: String, onClick: () -> Unit) {
+private fun ToolButton(icon: ImageVector, label: String, on: Boolean = false, onClick: () -> Unit) {
     Column(
-        Modifier.width(72.dp).clip(RoundedCornerShape(8.dp)).clickable(onClick = onClick).padding(horizontal = 4.dp, vertical = 4.dp),
+        Modifier.width(72.dp).clip(RoundedCornerShape(8.dp))
+            .background(if (on) Accent.copy(alpha = 0.22f) else Color.Transparent)
+            .clickable(onClick = onClick).padding(horizontal = 4.dp, vertical = 4.dp)
+            .semantics { if (on) stateDescription = "On" },
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Icon(icon, contentDescription = null, modifier = Modifier.size(22.dp))
+        Icon(icon, contentDescription = null, modifier = Modifier.size(22.dp), tint = if (on) Accent else LocalContentColor.current)
         Spacer(Modifier.height(2.dp))
         // long labels ("Uncompound", "Green screen") get a slightly smaller font so they fit
         val size = when {
@@ -593,7 +602,7 @@ private fun ToolButton(icon: ImageVector, label: String, onClick: () -> Unit) {
             label.length > 9 -> 10.sp
             else -> 11.sp
         }
-        Text(label, fontSize = size, lineHeight = 13.sp, textAlign = TextAlign.Center, maxLines = 1, softWrap = false, color = Color.LightGray)
+        Text(label, fontSize = size, lineHeight = 13.sp, textAlign = TextAlign.Center, maxLines = 1, softWrap = false, color = if (on) Accent else Color.LightGray)
     }
 }
 

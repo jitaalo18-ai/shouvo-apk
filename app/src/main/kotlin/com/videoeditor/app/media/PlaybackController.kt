@@ -41,7 +41,9 @@ import kotlin.math.abs
 class PlaybackController(private val context: Context, private val scope: CoroutineScope) {
     /** Voice enhance of the main track (the plan follows the playlist, see [updateFx]). */
     val mainFx = FxState(sourceTime = false)
-    val main: ExoPlayer = ExoPlayer.Builder(context, FxRenderersFactory(context, mainFx)).build()
+    val main: ExoPlayer = ExoPlayer.Builder(context, FxRenderersFactory(context, mainFx))
+        .setMediaSourceFactory(VoiceMediaSourceFactory(context))
+        .build()
     val positionMs = MutableStateFlow(0L)
     val isPlaying = MutableStateFlow(false)
 
@@ -52,6 +54,8 @@ class PlaybackController(private val context: Context, private val scope: Corout
     private var auxClips: List<Clip> = emptyList()
     private val aux = HashMap<String, ExoPlayer>()
     private val auxFx = HashMap<String, FxState>()
+    /** The isolated voice file each overlay / sound player plays ("" = its own sound). */
+    private val auxVoice = HashMap<String, String>()
     /** Sound settings as the timeline says (by piece id), applied to whatever is playing. */
     private var wantedFx: Map<String, AudioFx> = emptyMap()
     private val overlayViews = HashMap<String, TextureView>()
@@ -102,7 +106,26 @@ class PlaybackController(private val context: Context, private val scope: Corout
     private val recoveries = ArrayDeque<Long>()
 
     /** A file's noise was learned: the players use it from now on. */
-    private val fxWatcher: Job = scope.launch { VoiceProcessing.version.collect { if (!released) updateFx() } }
+    private val fxWatcher: Job = scope.launch {
+        VoiceProcessing.version.collect {
+            if (released) return@collect
+            updateFx()
+            // a voice was isolated: the clips that wait for it switch to it now
+            if (pendingApply == null) applyMain()
+            refreshAuxVoices()
+        }
+    }
+
+    private fun refreshAuxVoices() {
+        for (c in auxClips) {
+            val p = aux[c.id] ?: continue
+            val (item, voice) = auxItem(c)
+            if (auxVoice[c.id] == voice) continue
+            auxVoice[c.id] = voice
+            p.setMediaItem(item)
+            p.prepare()
+        }
+    }
 
     private val ticker: Job = scope.launch {
         while (isActive) {
@@ -125,6 +148,7 @@ class PlaybackController(private val context: Context, private val scope: Corout
         wantedClips = flat.main
         wantedFx = flat.clips.filter { !it.audio.isDefault }.associate { it.id to it.audio }
         syncAuxPlayers(flat)
+        refreshAuxVoices()
         updateFx()
         pendingApply?.cancel()
         if (interactive) {
@@ -145,7 +169,18 @@ class PlaybackController(private val context: Context, private val scope: Corout
         applyMain()
     }
 
-    private fun signatureOf(c: Clip) = "${c.kind}|${c.sourceUri}|${c.sourceStartMs}|${c.sourceEndMs}"
+    private fun signatureOf(c: Clip) = "${c.kind}|${c.sourceUri}|${c.sourceStartMs}|${c.sourceEndMs}|${voiceOf(c) ?: ""}"
+
+    /** The isolated voice file a clip plays, when Isolate voice is on and the voice is ready. */
+    private fun voiceOf(c: Clip): String? =
+        if (c.audio.isolate && c.isAudible) VoiceProcessing.isolatedVoice(c.sourceUri)?.absolutePath else null
+
+    private fun auxItem(c: Clip): Pair<MediaItem, String> {
+        val voice = voiceOf(c)
+        val b = MediaItem.Builder().setUri(c.sourceUri)
+        if (voice != null) b.setTag(IsolatedAudio(voice)).setCustomCacheKey(IsolatedAudio.key(voice))
+        return b.build() to (voice ?: "")
+    }
 
     private fun applyMain() {
         val newMain = wantedClips
@@ -216,6 +251,7 @@ class PlaybackController(private val context: Context, private val scope: Corout
 
     private fun mainItem(c: Clip): MediaItem {
         val b = MediaItem.Builder().setUri(c.sourceUri).setMediaId(c.id)
+        voiceOf(c)?.let { b.setTag(IsolatedAudio(it)).setCustomCacheKey(IsolatedAudio.key(it)) }
         if (c.kind == MediaKind.IMAGE) {
             b.setMimeType(c.mimeType ?: "image/jpeg").setImageDurationMs(c.durationMs)
         } else {
@@ -236,14 +272,19 @@ class PlaybackController(private val context: Context, private val scope: Corout
         for (id in aux.keys.filter { it !in ids }) {
             aux.remove(id)?.release()
             auxFx.remove(id)
+            auxVoice.remove(id)
             overlayViews.remove(id)
         }
         for (c in wanted) {
             if (c.id !in aux) {
                 val fx = FxState(sourceTime = true)
                 auxFx[c.id] = fx
-                val p = ExoPlayer.Builder(context, FxRenderersFactory(context, fx)).build()
-                p.setMediaItem(MediaItem.fromUri(c.sourceUri))
+                val p = ExoPlayer.Builder(context, FxRenderersFactory(context, fx))
+                    .setMediaSourceFactory(VoiceMediaSourceFactory(context))
+                    .build()
+                val item = auxItem(c)
+                auxVoice[c.id] = item.second
+                p.setMediaItem(item.first)
                 p.playWhenReady = false
                 p.prepare()
                 overlayViews[c.id]?.let { p.setVideoTextureView(it) }

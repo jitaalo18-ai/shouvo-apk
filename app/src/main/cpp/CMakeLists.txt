@@ -28,7 +28,7 @@ endif()
 
 add_subdirectory(${W}/ggml ggml)
 
-add_library(nockwhisper SHARED ${W}/src/whisper.cpp whisper_jni.cpp)
+add_library(nockwhisper SHARED ${W}/src/whisper.cpp whisper_jni.cpp isolate_jni.cpp)
 target_include_directories(nockwhisper PRIVATE ${W}/include ${W}/src ${W}/ggml/include)
 target_compile_definitions(nockwhisper PRIVATE WHISPER_VERSION="1.8.7")
 target_link_libraries(nockwhisper ggml log android)
@@ -41,3 +41,18 @@ foreach(t ggml ggml-base ggml-cpu)
         target_compile_options(${t} PRIVATE -O3)
     endif()
 endforeach()
+
+# Isolate voice: DeepFilterNet3 (third_party/deepfilternet, MIT/Apache-2.0). cargo-ndk builds it
+# into third_party/deepfilternet/android-libs/<abi>/libdf.so before Gradle runs (see
+# build-android.sh and .github/workflows/build.yml); Gradle packages it because it is linked here.
+# Without it the app still builds and Isolate voice says it is not available.
+set(DF_SO ${CMAKE_CURRENT_SOURCE_DIR}/../../../../third_party/deepfilternet/android-libs/${ANDROID_ABI}/libdf.so)
+if (EXISTS ${DF_SO})
+    add_library(deepfilter SHARED IMPORTED)
+    set_target_properties(deepfilter PROPERTIES IMPORTED_LOCATION ${DF_SO})
+    target_link_libraries(nockwhisper deepfilter)
+    target_compile_definitions(nockwhisper PRIVATE NOCK_HAVE_DF=1)
+    message(STATUS "Isolate voice: DeepFilterNet found at ${DF_SO}")
+else()
+    message(WARNING "Isolate voice: ${DF_SO} missing - built without it")
+endif()
