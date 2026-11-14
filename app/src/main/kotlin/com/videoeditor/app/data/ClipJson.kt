@@ -1,5 +1,6 @@
 package com.videoeditor.app.data
 
+import com.videoeditor.core.AudioFx
 import com.videoeditor.core.Clip
 import com.videoeditor.core.MediaKind
 import com.videoeditor.core.Track
@@ -51,6 +52,7 @@ object ClipJson {
         put("stretchY", c.stretchY.toDouble())
         if (c.text.isNotEmpty()) put("text", c.text)
         if (c.style.isNotEmpty()) put("style", c.style)
+        if (!c.audio.isDefault) put("audio", c.audio.encode())
         if (c.children.isNotEmpty()) {
             val arr = JSONArray()
             for (child in c.children) arr.put(toJson(child))
@@ -84,6 +86,7 @@ object ClipJson {
             children = children ?: emptyList(),
             text = o.optString("text", ""),
             style = o.optString("style", ""),
+            audio = AudioFx.decode(o.optString("audio", "")),
         )
     }
 }

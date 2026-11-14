@@ -73,6 +73,7 @@ import androidx.compose.material.icons.filled.Movie
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.RecordVoiceOver
 import androidx.compose.material.icons.filled.TextFields
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -328,6 +329,7 @@ fun EditorScreen(app: App, projectId: Long, onBack: () -> Unit) {
                             } else {
                                 ToolButton(Icons.Filled.AutoFixHigh, "AutoCut") { ctl.autoCut() }
                             }
+                            if (selected.isAudible) ToolButton(Icons.Filled.RecordVoiceOver, "Voice enhance") { ctl.openVoice() }
                             ToolButton(Icons.Filled.ContentCopy, "Copy") { ctl.copySelected() }
                             if (clipboard != null) ToolButton(Icons.Filled.ContentPaste, "Paste") { ctl.paste() }
                             ToolButton(Icons.Filled.FileCopy, "Duplicate") { ctl.duplicateSelected() }
@@ -352,6 +354,7 @@ fun EditorScreen(app: App, projectId: Long, onBack: () -> Unit) {
                             ToolButton(Icons.Filled.Wallpaper, "Green screen") { ctl.comingSoon("Green screen") }
                         } else if (selected.track == Track.OVERLAY) {
                             ToolButton(Icons.Filled.ContentCut, "Split") { ctl.split() }
+                            if (selected.isAudible) ToolButton(Icons.Filled.RecordVoiceOver, "Voice enhance") { ctl.openVoice() }
                             if (selected.isCompound) ToolButton(Icons.Filled.CallSplit, "Uncompound") { ctl.uncompoundSelected() }
                             ToolButton(Icons.Filled.ContentCopy, "Copy") { ctl.copySelected() }
                             if (clipboard != null) ToolButton(Icons.Filled.ContentPaste, "Paste") { ctl.paste() }
@@ -385,6 +388,7 @@ fun EditorScreen(app: App, projectId: Long, onBack: () -> Unit) {
                             }
                         } else {
                             ToolButton(Icons.Filled.ContentCut, "Split") { ctl.split() }
+                            if (selected.isAudible) ToolButton(Icons.Filled.RecordVoiceOver, "Voice enhance") { ctl.openVoice() }
                             if (selected.isCompound) ToolButton(Icons.Filled.CallSplit, "Uncompound") { ctl.uncompoundSelected() }
                             ToolButton(Icons.Filled.ContentCopy, "Copy") { ctl.copySelected() }
                             if (clipboard != null) ToolButton(Icons.Filled.ContentPaste, "Paste") { ctl.paste() }
@@ -396,6 +400,8 @@ fun EditorScreen(app: App, projectId: Long, onBack: () -> Unit) {
                 }
             }
         }
+
+        if (ctl.voiceOpen) VoicePanel(ctl, Modifier.align(Alignment.BottomCenter))
 
         shownMessage?.let { text ->
             Box(

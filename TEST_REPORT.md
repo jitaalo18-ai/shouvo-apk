@@ -1,3 +1,37 @@
+# V0.18 validation (2026-11-14)
+
+Executed (GitHub Actions):
+- core JVM tests: 102 passed (20 new): with nothing set the sound comes back sample-exact
+  (also in uneven blocks, also after a reset); volume, fade in / out ramps; volume 200 % and
+  Enhance never pass full scale; noise reduction on a voice + hiss test signal: hiss -20.9 dB at
+  100 %, -17.8 dB at 70 %, voice changed by only -0.17 dB; Enhance: +11 dB at 3 kHz vs +4 dB at
+  150 Hz, 30 Hz rumble cut; settings per clip follow the positions to the sample; live mode
+  delay; noisy / clean / steady-tone detection; auto volume; the preview's clip finder (also
+  after an image, for two clips cut from the same part of a file, and a queue it was not told
+  about); Voice enhance timeline edits (only clips with sound, ranges, apply to all, remove-noise
+  toggle, auto adjust, split keeps the fades at the outer ends); database text form.
+- Android 12 emulator, 22/22 instrumented tests passed (4 new in VoiceEnhanceTest; DB upgrade
+  test now 3 -> 6):
+  - Export of a noisy 8 s clip (hiss -41 dB): Reduce noise 100 % -> pauses at -61.7 dB (-20.5 dB),
+    70 % -> -58.9 dB, voice -24.8 -> -27.2 dB. Volume 50 % -> -6.2 dB; during a 3 s fade in -14 dB.
+  - Sound on another track (video overlay, main muted): its noise reduction works in the export
+    (-41.5 -> -62.1 dB).
+  - Preview player: after seeks to 2.0 / 9.0 / 6.0 s the processed sound was mapped to 2.020 /
+    9.002 / 6.013 s; playing across a cut, the clip at 50 % measured -6.0 dB and the clip at
+    100 % 0.0 dB; muting a clip while the project is open -> -149 dB (heard right away).
+  - Panel through real touch: Voice enhance button -> panel; Auto finds exactly 1 noisy clip
+    (the steady tone clip is not called noise) -> "Remove noise on 1 clip" -> 70 % on that clip
+    -> "Noise removed on 1 clip"; Auto adjust audio sets both volumes, undo takes it back;
+    sliders (Reduce noise, Enhance voice, Volume, Fade in, Fade out) change the clip, "Apply
+    enhancement to all clips" copies to the other clip; one drag = one undo step; ✓ closes and
+    everything is in the database; the panel closes when the clip is deselected. Screenshots
+    70-74 checked.
+
+Not executed / needs a real phone: listening. The emulator has no speaker, so the sound was
+judged by measurements only. How natural the noise reduction sounds on real recordings (wind,
+street, music under the voice) should be checked by ear on the S25 Ultra.
+
+---
 # V0.17 validation (2026-11-14)
 
 Executed (GitHub Actions):

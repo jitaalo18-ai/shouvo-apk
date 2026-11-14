@@ -4,6 +4,7 @@ import android.content.Context
 import android.net.Uri
 import com.videoeditor.app.media.MediaInfo
 import com.videoeditor.app.media.MediaProbe
+import com.videoeditor.core.AudioFx
 import com.videoeditor.core.Clip
 import com.videoeditor.core.Compound
 import com.videoeditor.core.MediaKind
@@ -27,6 +28,7 @@ fun ClipEntity.toClip() = Clip(
     children = ClipJson.decode(childrenJson),
     text = text,
     style = style,
+    audio = AudioFx.decode(audioFx),
     id = id,
     track = Track.valueOf(track),
     kind = MediaKind.valueOf(kind),
@@ -77,6 +79,7 @@ fun Clip.toEntity(projectId: Long) = ClipEntity(
     childLibraryIds = Compound.libraryIds(this).takeIf { it.isNotEmpty() }?.joinToString(",", ",", ","),
     text = text,
     style = style,
+    audioFx = audio.encode(),
 )
 
 /** Builds a clip that plays the whole of [info]. */

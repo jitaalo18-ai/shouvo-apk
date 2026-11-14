@@ -48,6 +48,19 @@ object SpeechAudio {
             out
         }
 
+    /** The sound of one clip ([Clip.sourceStartMs]..[Clip.sourceEndMs]) as 16 kHz mono (for analysis). */
+    suspend fun clip(context: Context, c: Clip): FloatArray = withContext(Dispatchers.Default) {
+        val out = FloatArray((c.durationMs * RATE / 1000).toInt())
+        try {
+            decodeInto(context, Uri.parse(c.sourceUri), c.sourceStartMs, c.sourceEndMs, out, 0, out.size) {}
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            // unreadable: silent
+        }
+        out
+    }
+
     /**
      * Decodes [startMs]..[endMs] of the first audio track of [uri], mixes it to mono, resamples
      * it to 16 kHz (averaging, which also filters out what is too high to keep) and writes it

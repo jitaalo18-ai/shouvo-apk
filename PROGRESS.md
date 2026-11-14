@@ -1,6 +1,37 @@
+# V0.18 — Voice enhance (like Instagram Edits) (2026-11-14)
+
+Current version: 0.18 (versionCode 18), label V0.18. Branch v0.18-voice merged to main.
+
+- Toolbar button "Voice enhance" for every selected clip with sound (main video, overlay video,
+  sound effect, music). Opens a panel over the bottom of the editor (preview stays visible, play
+  button and ✓ in the panel, Back closes it) with the Edits tabs:
+  - Auto: analyses every clip's sound (16 kHz decode; noise floor = quietest 10 % of 20 ms
+    frames, spectral flatness so a steady tone / music is not called noise). "Remove noise on N
+    clips" turns noise reduction (70 %, like Edits) on for the noisy clips, tap again = off.
+    "Auto adjust audio" sets every clip's volume so the voice is at about -20 dBFS.
+  - Volume: 0-200 % for the clip (soft limiter above full scale, never crackles).
+  - Enhance: "Apply enhancement to all clips", "Reduce noise" 0-100 %, "Enhance voice" 0-100 %.
+  - Fade: fade in / fade out, up to 5 s (at most half the clip). Split keeps the fade in on the
+    left part and the fade out on the right part.
+  A slider drag is one undo step; everything is saved (DB version 6, column clips.audioFx;
+  inside compounds in the children JSON).
+- Sound processing (core/VoiceFx.kt, pure Kotlin, same code for preview and export):
+  short-time spectrum noise reduction (1024-point FFT, minimum-statistics noise estimate per
+  clip, decision-directed Wiener gain, max 28 dB), voice EQ (high-pass 80 Hz, -3 dB at 250 Hz,
+  +5 dB presence at 3 kHz, air shelf) with a compressor and make-up gain, volume, fades, soft
+  limiter. About 70x real time on a desktop JVM.
+- Export: one VoiceFxProcessor (Media3 AudioProcessor) per clip, delay compensated (output
+  sample i = input sample i).
+- Preview: each player's audio sink is wrapped (VoiceFxSink via FxRenderersFactory). The main
+  player finds which clip a piece of sound belongs to from the renderer time and the stream
+  offset (PlayMap: renderer time - timeline time is constant for one playing queue, learned again
+  after every seek; split clips of the same file are told apart by the seek target). Changes are
+  heard while playing. Constant ~20 ms extra audio delay in the preview only.
+
+---
 # V0.17 — smart alignment guides and auto-snapping (2026-11-14)
 
-Current version: 0.17 (versionCode 17), label V0.17. Branch v0.17-align merged to main.
+Version 0.17 (versionCode 17), label V0.17. Branch v0.17-align merged to main.
 
 - core/Align.kt: snapping of an element's centre to the frame centre and of its on-screen
   bounding box (turned elements included) to the frame edges; tolerance in screen pixels
