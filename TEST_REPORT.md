@@ -1,3 +1,33 @@
+# V0.19 validation (2026-11-15)
+
+Executed (GitHub Actions):
+- core JVM tests: 104 passed. New: the learned noise of steady hiss is right to 0.1 dB (also
+  with a voice 80 % of the time, stereo, other sample rates); noise reduction with the learned
+  noise from the very first second: -27 dB at 100 %, -20 dB at 70 %, voice -0.3 dB; without a
+  profile nothing is changed; profile file format; silence gives no profile.
+- Android 12 emulator, 24/24 instrumented tests passed, zero player errors in the whole run:
+  - VoiceProcessingUiTest (720x1280, 48 kHz phone-like video with hiss, the same file twice):
+    noise reduction switched on WHILE PLAYING (20 small slider steps like a finger) -> the
+    Processing popup and the dots appear, the video keeps playing; volume and voice changed while
+    it processes; Minimize -> popup gone, dots and progress line stay; 33 position checks while
+    processing: the video always moved on (smallest step 360 ms per ~450 ms); when done the dots
+    and "Processing…" are gone from the screen, 70 % shown; the preview takes the learned noise
+    (-18 dB in a pause); the second clip of the same file and a restart (memory cleared, read
+    from disk) need no processing again (file decoded exactly once).
+  - VoiceSinkContractTest: 3,000 sound pieces, effects switched on/off 7,782 times at random
+    moments (also half way through a piece): no error, 15,223,204 of 15,223,204 bytes passed on.
+    The 0.18 code fails this (it is the "video pauses" crash, also seen in a 0.19 test run's log
+    before the fix: IllegalArgumentException at DefaultAudioSink.handleBuffer).
+  - Export of the noisy clip: hiss -41.2 -> -68.5 dB (100 %), -61.0 dB (70 %); the first second
+    -42.4 -> -70.2 dB (no learning time); voice -24.8 -> -25.1 dB; overlay sound -41.5 -> -68.6 dB.
+  - Preview: Reduce noise 100 % -26.9 dB in a pause; CPU for the sound 1.1 %.
+  - All earlier tests (V0.18 panel, captions, compound, alignment...) pass.
+
+Not executed / needs a real phone: listening by ear; a long real phone video (minutes) to see how
+long the one-time processing takes on the S25 Ultra (on the emulator about 1-2 s per 20 s of
+sound at full speed).
+
+---
 # V0.18 validation (2026-11-14)
 
 Executed (GitHub Actions):

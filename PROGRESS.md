@@ -19,8 +19,14 @@ whole video, no popup, and the video paused):
 - Noise reduction now uses the learned noise from the first sample (no learning while playing,
   no "easing in"): fixture with hiss -39 dB: 100 % -> -27 dB less hiss (was -20), voice -0.4 dB
   (was -2.6). Export waits for the processing if needed ("Processing audio…").
-- Preview player: on a player error it prepares again and carries on from the same place
-  (counted, for the tests); the sound processing CPU share is measured in the tests.
+- The "video pauses" bug of 0.18, found and fixed: when an effect was switched on while the
+  video played and the audio output was half way through a piece of sound, VoiceFxSink handed it
+  a different piece; Media3's DefaultAudioSink rejects that (IllegalArgumentException in
+  handleBuffer) and the player stopped. Now the "process or pass through" choice is made only
+  between pieces (VoiceSinkContractTest switches effects 7,700 times at random moments: no
+  error, every byte passed on).
+- Preview player: on any player error it prepares again and carries on from the same place
+  (counted; the tests require zero). Sound processing CPU in the preview: 1-4 % on the emulator.
 - Compressor gain is worked out every 16 samples (cheaper).
 
 ---
