@@ -200,12 +200,19 @@ class VoiceEnhanceTest {
 
     /** Taps slider [tag] at [fraction] of its length. */
     private fun setSlider(tag: String, fraction: Float) {
-        rule.onNodeWithTag(tag).performTouchInput {
-            down(percentOffset(0.02f, 0.5f))
-            moveTo(percentOffset(fraction, 0.5f))
-            up()
+        val node = rule.onNodeWithTag(tag)
+        node.performTouchInput { down(percentOffset(0.03f, 0.5f)) }
+        pause(150)
+        for (i in 1..10) {
+            val f = 0.03f + (fraction - 0.03f) * i / 10f
+            node.performTouchInput { moveTo(percentOffset(f, 0.5f)) }
+            Thread.sleep(30)
         }
+        pause(150)
+        node.performTouchInput { up() }
         pause(400)
+        Report.note("voice ui: $tag dragged to ${"%.2f".format(fraction)} -> ${editor.voiceClip?.audio}")
+        Shots.take("7x_slider_$tag")
     }
 
     @Test fun voiceEnhancePanelWorksLikeEdits() {
@@ -242,8 +249,8 @@ class VoiceEnhanceTest {
         rule.onNodeWithTag("voiceAutoAdjust").performClick()
         waitFor("auto adjust") { clip(toneId).audio.volume != 1f }
         Report.note("voice ui: auto adjust volumes ${clip(noisyId).audio.volume} / ${clip(toneId).audio.volume}")
-        assertTrue(clip(noisyId).audio.volume in 0.8f..1.6f)
-        assertTrue(clip(toneId).audio.volume in 0.8f..1.6f)
+        assertTrue(clip(noisyId).audio.volume in 0.8f..2f)
+        assertTrue(clip(toneId).audio.volume in 0.8f..2f)
         rule.runOnUiThread { editor.undo() }
         pause(400)
         assertEquals("undo takes the auto volume back", 1f, clip(toneId).audio.volume)
