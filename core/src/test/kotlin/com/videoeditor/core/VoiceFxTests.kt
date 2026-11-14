@@ -49,7 +49,20 @@ private fun db(x: FloatArray, from: Int, to: Int): Double {
     return 10 * log10(max(s / (to - from), 1e-20))
 }
 
-private fun whole(fx: AudioFx, durUs: Long) = listOf(FxSegment("c", 0, durUs, fx))
+private fun whole(fx: AudioFx, durUs: Long, profile: NoiseProfile? = null) = listOf(FxSegment("c", 0, durUs, fx, profile = profile))
+
+/** The one-time "Processing" step: the noise profile of the whole [input]. */
+private fun profileOf(input: FloatArray, rate: Int, channels: Int = 1): NoiseProfile {
+    val p = NoiseProfiler(rate, channels)
+    var at = 0
+    val frames = input.size / channels
+    while (at < frames) {
+        val take = minOf(4000, frames - at)
+        p.feed(input.copyOfRange(at * channels, (at + take) * channels), take)
+        at += take
+    }
+    return p.finish()!!
+}
 
 class VoiceFxTests {
     private val rate = 48_000
@@ -110,44 +123,85 @@ class VoiceFxTests {
         assertEquals(db(quiet, rate / 4, rate) + 6.02, db(out, rate / 4, rate), 0.1)
     }
 
-    @Test
-    fun noiseReductionRemovesSteadyNoiseAndKeepsTheVoice() {
-        val seconds = 6
+    /** A "voice" (harmonic bursts, half a second on, half off) plus hiss. */
+    private fun voiceAndHiss(seconds: Int, hissAmp: Float, onFraction: Double = 0.5): Pair<FloatArray, FloatArray> {
         val n = rate * seconds
         val voice = FloatArray(n)
-        // a "voice": harmonic bursts, half a second on, half a second off
         for (i in 0 until n) {
-            if ((i / (rate / 2)) % 2 == 0) {
+            val inCycle = (i % (rate)) / rate.toDouble()
+            if (inCycle < onFraction) {
                 var s = 0.0
                 for (h in 1..6) s += sin(2 * PI * 180.0 * h * i / rate) / h
                 voice[i] = (0.15 * s).toFloat()
             }
         }
-        val hiss = noise(n, 0.02f)
-        val input = FloatArray(n) { voice[it] + hiss[it] }
-        for ((strength, minDrop) in listOf(1f to 18.0, AudioFx.AUTO_DENOISE to 12.0)) {
-            val out = run(VoiceFx(rate, 1).apply { plan = whole(AudioFx(denoise = strength), seconds * 1_000_000L) }, input)
-            // the gaps from 2 s on: noise only
-            var noiseIn = 0.0
-            var noiseOut = 0.0
-            var voiceIn = 0.0
-            var voiceOut = 0.0
-            for (half in 4 until seconds * 2) {
-                val a = half * rate / 2 + rate / 20
-                val b = (half + 1) * rate / 2 - rate / 20
-                if (half % 2 == 1) {
-                    noiseIn += db(input, a, b); noiseOut += db(out, a, b)
-                } else {
-                    voiceIn += db(voice, a, b); voiceOut += db(out, a, b)
-                }
+        val hiss = noise(n, hissAmp)
+        return voice to FloatArray(n) { voice[it] + hiss[it] }
+    }
+
+    @Test
+    fun noiseReductionRemovesSteadyNoiseAndKeepsTheVoice() {
+        val seconds = 6
+        val (voice, input) = voiceAndHiss(seconds, 0.02f)
+        val profile = profileOf(input, rate)
+        for ((strength, minDrop) in listOf(1f to 20.0, AudioFx.AUTO_DENOISE to 15.0)) {
+            val out = run(VoiceFx(rate, 1).apply { plan = whole(AudioFx(denoise = strength), seconds * 1_000_000L, profile) }, input)
+            // every gap, from the very first one: the profile is known before playing
+            var drop = 0.0
+            var voiceChange = 0.0
+            for (sec in 0 until seconds) {
+                val g0 = sec * rate + rate / 2 + rate / 20
+                val g1 = (sec + 1) * rate - rate / 20
+                val v0 = sec * rate + rate / 20
+                val v1 = sec * rate + rate / 2 - rate / 20
+                val d = db(input, g0, g1) - db(out, g0, g1)
+                assertTrue("second $sec: noise only $d dB less", d >= minDrop - 2)
+                drop += d
+                voiceChange += db(out, v0, v1) - db(voice, v0, v1)
             }
-            val gaps = (seconds * 2 - 4) / 2
-            val drop = (noiseIn - noiseOut) / gaps
-            val voiceChange = (voiceOut - voiceIn) / gaps
+            drop /= seconds
+            voiceChange /= seconds
             println("denoise $strength: noise -%.1f dB, voice %+.2f dB".format(drop, voiceChange))
             assertTrue("noise only $drop dB less", drop >= minDrop)
-            assertTrue("voice changed $voiceChange dB", abs(voiceChange) < 1.5)
+            assertTrue("voice changed $voiceChange dB", abs(voiceChange) < 1.0)
         }
+    }
+
+    @Test
+    fun withoutAProfileThereIsNoNoiseReduction() {
+        val (_, input) = voiceAndHiss(2, 0.02f)
+        val out = run(VoiceFx(rate, 1).apply { plan = whole(AudioFx(denoise = 1f), 2_000_000) }, input)
+        for (i in input.indices) assertEquals(input[i], out[i], 1e-4f)
+    }
+
+    @Test
+    fun profileMeasuresTheNoiseEvenUnderMuchSpeech() {
+        val sigma = 0.02f
+        val expected = sigma * sigma * 1024 / 2           // per band, this window
+        for (on in listOf(0.0, 0.5, 0.8)) {
+            val (_, input) = voiceAndHiss(8, sigma, onFraction = on)
+            val p = profileOf(input, rate)
+            // bands away from the voice harmonics (above 3 kHz)
+            val bands = (3_500 * 1024 / rate until 20_000 * 1024 / rate)
+            val mean = bands.map { p.power[it].toDouble() }.average()
+            val err = 10 * log10(mean / expected)
+            println("profile with voice ${(on * 100).toInt()} %%: %+.2f dB".format(err))
+            assertEquals(0.0, err, 1.5)
+        }
+        // stereo, other rate: same level; encode / decode; other sizes interpolated
+        val st = noise(44_100 * 2 * 4, sigma, seed = 9)
+        val p = NoiseProfiler(44_100, 2).run {
+            feed(st, st.size / 2)
+            finish()!!
+        }
+        val back = NoiseProfile.decode(p.encode())!!
+        assertEquals(p.sampleRate, back.sampleRate)
+        assertTrue(p.power.contentEquals(back.power))
+        val at48 = p.binsFor(48_000, 1024)
+        assertEquals(10 * log10(p.power[200].toDouble()), 10 * log10(at48[184].toDouble()), 1.0)
+        assertNull(NoiseProfile.decode(ByteArray(7)))
+        // nothing but digital silence: nothing to learn
+        assertNull(NoiseProfiler(48_000, 1).run { feed(FloatArray(48_000), 48_000); finish() })
     }
 
     @Test

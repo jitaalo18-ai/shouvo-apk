@@ -1,6 +1,38 @@
+# V0.19 — Voice enhance processes once, like Edits (2026-11-15)
+
+Current version: 0.19 (versionCode 19), label V0.19. Branch v0.19-voice-processing merged to main.
+
+What changed and why (feedback on V0.18: noise reduction started at once without looking at the
+whole video, no popup, and the video paused):
+- One-time processing (media/VoiceProcessing.kt): when noise reduction is turned on for a clip
+  (Reduce noise slider, "Remove noise on N clips", "Apply enhancement to all clips"), the whole
+  sound of its file is decoded once on a low-priority background thread and its noise is learned
+  (core NoiseProfiler: band power per short frame, 10th percentile over the whole file, digital
+  silence left out; checked to 0.1 dB on known noise). The result is a few KB, kept in memory and
+  on disk (filesDir/voice_profiles, keyed by file + size), so a file is never processed twice -
+  also not after the app restarts or for other clips of the same file.
+- While it runs: the "Processing" popup (spinner, "This only needs to happen once. You can keep
+  editing while audio processes.", Minimize), twinkling dots and stars over the video with
+  "Enhancing audio" (preview only, never exported), a progress line in the panel after
+  Minimize, "Processing…" next to Reduce noise. The video is never paused; editing goes on.
+  When it is done the popup and dots go away and the noise reduction is heard right away.
+- Noise reduction now uses the learned noise from the first sample (no learning while playing,
+  no "easing in"): fixture with hiss -39 dB: 100 % -> -27 dB less hiss (was -20), voice -0.4 dB
+  (was -2.6). Export waits for the processing if needed ("Processing audio…").
+- The "video pauses" bug of 0.18, found and fixed: when an effect was switched on while the
+  video played and the audio output was half way through a piece of sound, VoiceFxSink handed it
+  a different piece; Media3's DefaultAudioSink rejects that (IllegalArgumentException in
+  handleBuffer) and the player stopped. Now the "process or pass through" choice is made only
+  between pieces (VoiceSinkContractTest switches effects 7,700 times at random moments: no
+  error, every byte passed on).
+- Preview player: on any player error it prepares again and carries on from the same place
+  (counted; the tests require zero). Sound processing CPU in the preview: 1-4 % on the emulator.
+- Compressor gain is worked out every 16 samples (cheaper).
+
+---
 # V0.18 — Voice enhance (like Instagram Edits) (2026-11-14)
 
-Current version: 0.18 (versionCode 18), label V0.18. Branch v0.18-voice merged to main.
+Version 0.18 (versionCode 18), label V0.18. Branch v0.18-voice merged to main.
 
 - Toolbar button "Voice enhance" for every selected clip with sound (main video, overlay video,
   sound effect, music). Opens a panel over the bottom of the editor (preview stays visible, play

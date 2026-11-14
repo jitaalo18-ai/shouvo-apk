@@ -11,6 +11,7 @@ import androidx.media3.exoplayer.audio.AudioSink
 import androidx.media3.exoplayer.audio.ForwardingAudioSink
 import com.videoeditor.core.AudioFx
 import com.videoeditor.core.FxSegment
+import com.videoeditor.core.NoiseProfile
 import com.videoeditor.core.PlayMap
 import com.videoeditor.core.VoiceFx
 import java.nio.ByteBuffer
@@ -50,7 +51,11 @@ internal object Pcm {
  * Export: applies one clip's Voice enhance settings to its sound. Positions count from the start
  * of the clip; fades end at [durationUs]. Inactive when the settings change nothing.
  */
-class VoiceFxProcessor(private val fx: AudioFx, private val durationUs: Long) : BaseAudioProcessor() {
+class VoiceFxProcessor(
+    private val fx: AudioFx,
+    private val durationUs: Long,
+    private val profile: NoiseProfile? = null,
+) : BaseAudioProcessor() {
     private var engine: VoiceFx? = null
     private var frames = 0L
     private var floats = FloatArray(0)
@@ -63,7 +68,7 @@ class VoiceFxProcessor(private val fx: AudioFx, private val durationUs: Long) : 
     override fun onFlush() {
         val f = inputAudioFormat
         engine = if (f == AudioFormat.NOT_SET) null else VoiceFx(f.sampleRate, f.channelCount, compensate = true).apply {
-            plan = listOf(FxSegment("clip", Long.MIN_VALUE / 4, Long.MAX_VALUE / 4, fx, 0, durationUs))
+            plan = listOf(FxSegment("clip", Long.MIN_VALUE / 4, Long.MAX_VALUE / 4, fx, 0, durationUs, profile))
         }
         frames = 0
     }
@@ -134,6 +139,12 @@ class FxState(
 
     @Volatile
     var flushes = 0
+
+    /** Time spent processing sound and how much sound that was (for the CPU share in reports). */
+    @Volatile
+    var processNanos = 0L
+    @Volatile
+    var processFrames = 0L
 }
 
 /**
@@ -153,6 +164,8 @@ class VoiceFxSink(sink: AudioSink, private val state: FxState) : ForwardingAudio
     private var fifo = FloatArray(0)
     private var fifoCount = 0
     private var processing = false
+    /** The sink below holds a part of an untouched buffer. */
+    private var passingThrough = false
     private var firstAfterFlush = true
 
     override fun configure(inputFormat: Format, specifiedBufferSize: Int, outputChannels: IntArray?) {
@@ -177,12 +190,23 @@ class VoiceFxSink(sink: AudioSink, private val state: FxState) : ForwardingAudio
     }
 
     override fun handleBuffer(buffer: ByteBuffer, presentationTimeUs: Long, encodedAccessUnitCount: Int): Boolean {
+        // The sink below takes a buffer in parts and must be handed the SAME buffer until it has
+        // all of it. So the choice "process or pass through" is made only between buffers: a
+        // buffer that started going through untouched finishes that way, even if an effect was
+        // switched on meanwhile (switching in the middle stopped the player in 0.18).
+        if (passingThrough) {
+            val done = super.handleBuffer(buffer, presentationTimeUs, encodedAccessUnitCount)
+            if (done) passingThrough = false
+            return done
+        }
         var out = pending
         if (out == null) {
             val e = engine
             if (e == null || !state.active || buffer.remaining() == 0) {
                 processing = false
-                return super.handleBuffer(buffer, presentationTimeUs, encodedAccessUnitCount)
+                val done = super.handleBuffer(buffer, presentationTimeUs, encodedAccessUnitCount)
+                if (!done) passingThrough = true
+                return done
             }
             if (!processing) {
                 processing = true
@@ -195,6 +219,7 @@ class VoiceFxSink(sink: AudioSink, private val state: FxState) : ForwardingAudio
                 firstAfterFlush = false
                 state.firstAfterFlushUs = posUs
             }
+            val t0 = System.nanoTime()
             if (floats.size < frames * channels) floats = FloatArray(frames * channels)
             Pcm.read(buffer, encoding, frames * channels, floats)
             e.plan = state.plan
@@ -216,6 +241,8 @@ class VoiceFxSink(sink: AudioSink, private val state: FxState) : ForwardingAudio
             fifoCount -= take
             out.flip()
             pending = out
+            state.processNanos += System.nanoTime() - t0
+            state.processFrames += frames
         }
         val done = super.handleBuffer(out, presentationTimeUs, encodedAccessUnitCount)
         if (done) {
@@ -227,6 +254,7 @@ class VoiceFxSink(sink: AudioSink, private val state: FxState) : ForwardingAudio
 
     override fun flush() {
         pending = null
+        passingThrough = false
         restart()
         state.map.forget()
         state.flushes++
@@ -236,6 +264,7 @@ class VoiceFxSink(sink: AudioSink, private val state: FxState) : ForwardingAudio
 
     override fun reset() {
         pending = null
+        passingThrough = false
         restart()
         state.map.forget()
         firstAfterFlush = true

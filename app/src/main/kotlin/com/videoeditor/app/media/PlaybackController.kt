@@ -3,7 +3,9 @@ package com.videoeditor.app.media
 import android.content.Context
 import android.view.TextureView
 import androidx.media3.common.MediaItem
+import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
+import android.util.Log
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.SeekParameters
 import com.videoeditor.core.AudioFx
@@ -71,8 +73,36 @@ class PlaybackController(private val context: Context, private val scope: Corout
             }
 
             override fun onRenderedFirstFrame() = seekDone()
+
+            override fun onPlayerError(error: PlaybackException) {
+                // never leave the preview stuck: note it, prepare again and carry on from here
+                errors++
+                lastError = "${error.errorCodeName}: ${error.cause?.message ?: error.message}"
+                Log.e("PlaybackController", "player error, recovering", error)
+                val now = System.currentTimeMillis()
+                recoveries.addLast(now)
+                while (recoveries.isNotEmpty() && now - recoveries.first() > 10_000) recoveries.removeFirst()
+                if (released || recoveries.size > 3) return
+                val wasPlaying = main.playWhenReady
+                val at = positionMs.value
+                main.prepare()
+                seekTo(at)
+                if (wasPlaying) main.play()
+            }
         })
     }
+
+    /** Player errors so far (tests check there are none) and the last one. */
+    @Volatile
+    var errors = 0
+        private set
+    @Volatile
+    var lastError: String? = null
+        private set
+    private val recoveries = ArrayDeque<Long>()
+
+    /** A file's noise was learned: the players use it from now on. */
+    private val fxWatcher: Job = scope.launch { VoiceProcessing.version.collect { if (!released) updateFx() } }
 
     private val ticker: Job = scope.launch {
         while (isActive) {
@@ -165,11 +195,19 @@ class PlaybackController(private val context: Context, private val scope: Corout
             PlayMap.Item(it.id, it.timelineStartMs * 1000, it.sourceStartMs * 1000, it.durationMs * 1000, it.isAudible)
         }
         mainFx.plan = mainClips.filter { it.isAudible }.map {
-            FxSegment(it.id, it.timelineStartMs * 1000, it.timelineEndMs * 1000, fx[it.id] ?: AudioFx.NONE)
+            FxSegment(
+                it.id, it.timelineStartMs * 1000, it.timelineEndMs * 1000, fx[it.id] ?: AudioFx.NONE,
+                profile = VoiceProcessing.profile(it.sourceUri),
+            )
         }
         for (c in auxClips) {
             val state = auxFx[c.id] ?: continue
-            state.plan = listOf(FxSegment(c.id, c.sourceStartMs * 1000, c.sourceEndMs * 1000, fx[c.id] ?: AudioFx.NONE))
+            state.plan = listOf(
+                FxSegment(
+                    c.id, c.sourceStartMs * 1000, c.sourceEndMs * 1000, fx[c.id] ?: AudioFx.NONE,
+                    profile = VoiceProcessing.profile(c.sourceUri),
+                ),
+            )
         }
     }
 
@@ -334,6 +372,7 @@ class PlaybackController(private val context: Context, private val scope: Corout
         if (released) return
         released = true
         ticker.cancel()
+        fxWatcher.cancel()
         pendingApply?.cancel()
         main.release()
         aux.values.forEach { it.release() }

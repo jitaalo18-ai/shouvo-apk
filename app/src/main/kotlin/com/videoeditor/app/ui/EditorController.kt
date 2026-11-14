@@ -16,6 +16,7 @@ import com.videoeditor.app.media.Exporter
 import com.videoeditor.app.media.LiveFrames
 import com.videoeditor.app.media.MediaProbe
 import com.videoeditor.app.media.PlaybackController
+import com.videoeditor.app.media.VoiceProcessing
 import com.videoeditor.app.media.canvasSize
 import com.videoeditor.app.captions.SpeechAudio
 import com.videoeditor.core.AudioAnalysis
@@ -126,7 +127,9 @@ class EditorController(private val app: App, val projectId: Long, uiScope: Corou
             timeline = TimelineOps.normalize(app.projects.load(projectId))
             player.setTimeline(timeline)
             loaded = true
+            processVoices()
         }
+
     }
 
     companion object {
@@ -168,6 +171,7 @@ class EditorController(private val app: App, val projectId: Long, uiScope: Corou
         }
         timeline = t
         player.setTimeline(t, interactive = !saveNow)
+        processVoices()
         if (saveNow) save() else saveSoon()
     }
 
@@ -175,6 +179,7 @@ class EditorController(private val app: App, val projectId: Long, uiScope: Corou
         dragOpen = false
         timeline = t
         player.setTimeline(t)
+        processVoices()
         canUndo = undoStack.isNotEmpty()
         canRedo = redoStack.isNotEmpty()
         save()
@@ -826,7 +831,10 @@ class EditorController(private val app: App, val projectId: Long, uiScope: Corou
     }
 
     fun setVoiceVolume(v: Float, live: Boolean = true) = voiceChange(false, live) { it.copy(volume = v) }
-    fun setVoiceDenoise(v: Float, live: Boolean = true) = voiceChange(voiceApplyAll, live) { it.copy(denoise = v) }
+    fun setVoiceDenoise(v: Float, live: Boolean = true) {
+        voiceChange(voiceApplyAll, live) { it.copy(denoise = v) }
+        if (v > 0f) askToShowProcessing()
+    }
     fun setVoiceEnhance(v: Float, live: Boolean = true) = voiceChange(voiceApplyAll, live) { it.copy(enhance = v) }
     fun setVoiceFadeIn(ms: Long, live: Boolean = true) = voiceChange(false, live) { it.copy(fadeInMs = ms) }
     fun setVoiceFadeOut(ms: Long, live: Boolean = true) = voiceChange(false, live) { it.copy(fadeOutMs = ms) }
@@ -845,6 +853,7 @@ class EditorController(private val app: App, val projectId: Long, uiScope: Corou
         if (voiceApplyAll) {
             commitEdit(VoiceEdits.enhanceAll(timeline, c.audio))
             message = "Enhancement applies to all clips"
+            if (c.audio.denoise > 0f) askToShowProcessing()
         }
     }
 
@@ -883,6 +892,7 @@ class EditorController(private val app: App, val projectId: Long, uiScope: Corou
         }
         commitEdit(t)
         message = if (wasOn) "Noise reduction off on $n ${clips(n)}" else "Noise removed on $n ${clips(n)}"
+        if (!wasOn) askToShowProcessing()
     }
 
     fun autoAdjustAudio() {
@@ -900,6 +910,65 @@ class EditorController(private val app: App, val projectId: Long, uiScope: Corou
     }
 
     private fun clips(n: Int) = if (n == 1) "clip" else "clips"
+
+    // ---- One-time processing (like Edits: "This only needs to happen once") -----------------
+
+    /** Files being processed now -> progress (all files, from [VoiceProcessing]). */
+    var voiceDecoding by mutableStateOf<Map<String, Float>>(emptyMap())
+        private set
+
+    /** The user turned noise reduction on: show the Processing popup while it runs. */
+    var processingWanted by mutableStateOf(false)
+        private set
+
+    /** Sound files of this project (compounds included) with sound. */
+    private val projectSources: Set<String>
+        get() = flat.clips.filter { it.isAudible }.map { it.sourceUri }.toSet()
+
+    /** Progress of the processing of this project's files (null: nothing being processed). */
+    val processingProgress: Float?
+        get() {
+            val mine = voiceDecoding.filterKeys { it in projectSources }
+            return if (mine.isEmpty()) null else mine.values.average().toFloat()
+        }
+
+    /** Whether the clip's file is being processed now. */
+    fun isProcessing(c: Clip): Boolean = c.sourceUri in voiceDecoding
+
+    val processingDialogShown: Boolean get() = processingWanted && processingProgress != null
+
+    fun minimizeProcessing() {
+        processingWanted = false
+    }
+
+    fun showProcessing() {
+        if (processingProgress != null) processingWanted = true
+    }
+
+    private fun askToShowProcessing() {
+        if (voiceSourcesNeeding().isNotEmpty()) processingWanted = true
+    }
+
+    /** Files with noise reduction on whose noise is not learned yet. */
+    private fun voiceSourcesNeeding(): List<String> =
+        flat.clips.filter { it.isAudible && it.audio.denoise > 0f }.map { it.sourceUri }.distinct()
+            .filter { VoiceProcessing.needs(it) }
+
+    /** Starts the processing of every file that needs it (in the background, never pausing). */
+    private fun processVoices() {
+        for (uri in voiceSourcesNeeding()) VoiceProcessing.request(app, uri)
+    }
+
+    // (after the state above exists: these collectors run at once)
+    init {
+        scope.launch { VoiceProcessing.decoding.collect { voiceDecoding = it } }
+        scope.launch {
+            VoiceProcessing.version.collect {
+                // a file finished: if nothing of this project is still being processed, the popup goes
+                if (processingProgress == null) processingWanted = false
+            }
+        }
+    }
 
     private fun levelKey(c: Clip) = "${c.sourceUri}|${c.sourceStartMs}|${c.sourceEndMs}"
 
@@ -919,6 +988,12 @@ class EditorController(private val app: App, val projectId: Long, uiScope: Corou
         busy = Busy("Rendering video…", 0f)
         scope.launch {
             try {
+                val missing = voiceSourcesNeeding()
+                if (missing.isNotEmpty()) {
+                    busy = Busy("Processing audio…", null)
+                    for (uri in missing) VoiceProcessing.ensure(app, uri)
+                    busy = Busy("Rendering video…", 0f)
+                }
                 Exporter(app).export(timeline, targetAspect) { p -> busy = Busy("Rendering video…", p) }
                 message = "Saved to Movies/VideoEditor in your Gallery."
             } catch (e: kotlinx.coroutines.CancellationException) {

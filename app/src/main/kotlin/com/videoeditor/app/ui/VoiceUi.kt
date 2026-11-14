@@ -2,6 +2,18 @@ package com.videoeditor.app.ui
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Canvas
+import androidx.compose.material3.Surface
+import androidx.compose.material3.TextButton
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.window.Dialog
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -123,7 +135,7 @@ fun VoicePanel(ctl: EditorController, modifier: Modifier = Modifier) {
                     }
                     LevelSlider(
                         label = "Reduce noise", tag = "voiceDenoise", value = fx.denoise, max = 1f,
-                        text = "${(fx.denoise * 100).roundToInt()}%",
+                        text = if (fx.denoise > 0f && ctl.isProcessing(clip)) "Processing…" else "${(fx.denoise * 100).roundToInt()}%",
                         onChange = { ctl.setVoiceDenoise(snap(it, 0.01f)) }, onDone = { ctl.voiceDone() },
                     )
                     LevelSlider(
@@ -147,6 +159,7 @@ fun VoicePanel(ctl: EditorController, modifier: Modifier = Modifier) {
                 }
             }
         }
+        if (!ctl.processingDialogShown) ProcessingLine(ctl)
     }
 }
 
@@ -210,3 +223,107 @@ private fun Hint(text: String) {
 private fun snap(v: Float, step: Float) = (v / step).roundToInt() * step
 
 private fun seconds(ms: Long) = if (ms == 0L) "Off" else String.format(Locale.US, "%.1fs", ms / 1000f)
+
+/**
+ * The one-time processing popup (like Edits): spinner, "Processing", it only happens once, keep
+ * editing; Minimize (or tapping outside / Back) hides it, the work goes on.
+ */
+@Composable
+fun ProcessingDialog(ctl: EditorController) {
+    val progress = ctl.processingProgress ?: return
+    Dialog(onDismissRequest = { ctl.minimizeProcessing() }) {
+        Surface(
+            shape = RoundedCornerShape(28.dp),
+            color = Color(0xFF262628),
+            modifier = Modifier.width(300.dp).testTag("voiceProcessing"),
+        ) {
+            Column(Modifier.padding(top = 28.dp, start = 24.dp, end = 24.dp, bottom = 8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                CircularProgressIndicator(Modifier.size(44.dp), color = Color.White, strokeWidth = 3.5.dp, trackColor = Color(0xFF3A3A3D))
+                Spacer(Modifier.height(18.dp))
+                Text("Processing", fontSize = 19.sp, fontWeight = FontWeight.SemiBold, color = Color.White)
+                Spacer(Modifier.height(10.dp))
+                Text(
+                    "This only needs to happen once. You can keep editing while audio processes.",
+                    fontSize = 15.sp, color = Color.White, textAlign = TextAlign.Center, lineHeight = 21.sp,
+                )
+                Spacer(Modifier.height(6.dp))
+                Text("${(progress * 100).roundToInt()}%", fontSize = 12.sp, color = Color.Gray, modifier = Modifier.testTag("voiceProcessingPercent"))
+                Spacer(Modifier.height(14.dp))
+                TextButton(onClick = { ctl.minimizeProcessing() }, modifier = Modifier.fillMaxWidth().testTag("voiceMinimize")) {
+                    Text("Minimize", fontSize = 16.sp, color = Color.White)
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Twinkling dots and little four-point stars over the video while its sound is being processed
+ * (like Edits). Drawn over the preview only, never exported, never catches a touch.
+ */
+@Composable
+fun VoiceSparkles(modifier: Modifier = Modifier) {
+    val transition = rememberInfiniteTransition(label = "sparkles")
+    val t by transition.animateFloat(
+        initialValue = 0f, targetValue = 1f,
+        animationSpec = infiniteRepeatable(tween(1800, easing = LinearEasing)), label = "twinkle",
+    )
+    Box(modifier.testTag("voiceSparkles")) {
+        Canvas(Modifier.matchParentSize()) {
+            drawRect(Color.Black.copy(alpha = 0.28f))
+            val step = 22.dp.toPx()
+            val cols = (size.width / step).toInt().coerceAtLeast(1)
+            val rows = (size.height / step).toInt().coerceAtLeast(1)
+            val padX = (size.width - (cols - 1) * step) / 2f
+            val padY = (size.height - (rows - 1) * step) / 2f
+            val dot = 1.6.dp.toPx()
+            val star = 4.5.dp.toPx()
+            for (r in 0 until rows) for (c in 0 until cols) {
+                val h = (r * 73856093) xor (c * 19349663)
+                val phase = ((h ushr 3) and 1023) / 1024f
+                val wave = 0.5f + 0.5f * kotlin.math.sin(2f * Math.PI.toFloat() * (t + phase))
+                val alpha = 0.18f + 0.72f * wave
+                val center = Offset(padX + c * step, padY + r * step)
+                if ((h ushr 11) % 3 == 0) {
+                    // four-point star: two thin diamonds
+                    val s = star * (0.7f + 0.3f * wave)
+                    val k = s * 0.22f
+                    val path = Path().apply {
+                        moveTo(center.x, center.y - s)
+                        lineTo(center.x + k, center.y - k)
+                        lineTo(center.x + s, center.y)
+                        lineTo(center.x + k, center.y + k)
+                        lineTo(center.x, center.y + s)
+                        lineTo(center.x - k, center.y + k)
+                        lineTo(center.x - s, center.y)
+                        lineTo(center.x - k, center.y - k)
+                        close()
+                    }
+                    drawPath(path, Color.White.copy(alpha = alpha))
+                } else {
+                    drawCircle(Color.White.copy(alpha = alpha * 0.8f), dot * (0.8f + 0.5f * wave), center)
+                }
+            }
+        }
+        Text(
+            "Enhancing audio",
+            fontSize = 11.sp, color = Color.White.copy(alpha = 0.85f),
+            modifier = Modifier.align(Alignment.TopCenter).padding(top = 10.dp),
+        )
+    }
+}
+
+/** A line in the panel while processing runs in the background (tap: show the popup again). */
+@Composable
+fun ProcessingLine(ctl: EditorController) {
+    val progress = ctl.processingProgress ?: return
+    Row(
+        Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp).clip(RoundedCornerShape(8.dp))
+            .clickable { ctl.showProcessing() }.background(Color(0xFF26282E)).padding(10.dp).testTag("voiceProcessingLine"),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        CircularProgressIndicator(Modifier.size(16.dp), color = Color.White, strokeWidth = 2.dp)
+        Spacer(Modifier.width(10.dp))
+        Text("Processing audio… ${(progress * 100).roundToInt()}% · you can keep editing", fontSize = 12.sp, color = Color.LightGray)
+    }
+}
