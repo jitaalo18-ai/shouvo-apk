@@ -164,6 +164,8 @@ class VoiceFxSink(sink: AudioSink, private val state: FxState) : ForwardingAudio
     private var fifo = FloatArray(0)
     private var fifoCount = 0
     private var processing = false
+    /** The sink below holds a part of an untouched buffer. */
+    private var passingThrough = false
     private var firstAfterFlush = true
 
     override fun configure(inputFormat: Format, specifiedBufferSize: Int, outputChannels: IntArray?) {
@@ -188,12 +190,23 @@ class VoiceFxSink(sink: AudioSink, private val state: FxState) : ForwardingAudio
     }
 
     override fun handleBuffer(buffer: ByteBuffer, presentationTimeUs: Long, encodedAccessUnitCount: Int): Boolean {
+        // The sink below takes a buffer in parts and must be handed the SAME buffer until it has
+        // all of it. So the choice "process or pass through" is made only between buffers: a
+        // buffer that started going through untouched finishes that way, even if an effect was
+        // switched on meanwhile (switching in the middle stopped the player in 0.18).
+        if (passingThrough) {
+            val done = super.handleBuffer(buffer, presentationTimeUs, encodedAccessUnitCount)
+            if (done) passingThrough = false
+            return done
+        }
         var out = pending
         if (out == null) {
             val e = engine
             if (e == null || !state.active || buffer.remaining() == 0) {
                 processing = false
-                return super.handleBuffer(buffer, presentationTimeUs, encodedAccessUnitCount)
+                val done = super.handleBuffer(buffer, presentationTimeUs, encodedAccessUnitCount)
+                if (!done) passingThrough = true
+                return done
             }
             if (!processing) {
                 processing = true
@@ -241,6 +254,7 @@ class VoiceFxSink(sink: AudioSink, private val state: FxState) : ForwardingAudio
 
     override fun flush() {
         pending = null
+        passingThrough = false
         restart()
         state.map.forget()
         state.flushes++
@@ -250,6 +264,7 @@ class VoiceFxSink(sink: AudioSink, private val state: FxState) : ForwardingAudio
 
     override fun reset() {
         pending = null
+        passingThrough = false
         restart()
         state.map.forget()
         firstAfterFlush = true
