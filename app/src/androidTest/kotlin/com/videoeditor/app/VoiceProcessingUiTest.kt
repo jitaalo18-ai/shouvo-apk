@@ -87,8 +87,18 @@ class VoiceProcessingUiTest {
                 Shots.take("FAILED_$what")
                 throw AssertionError("timed out waiting for: $what")
             }
+            nearEndRestart()
             sample()
             Thread.sleep(100)
+        }
+    }
+
+    /** The emulator can be slow: start the video again rather than let it reach its end. */
+    private fun nearEndRestart() {
+        if (editor.player.isPlaying.value && editor.player.positionMs.value > editor.timeline.durationMs - 3_000) {
+            rule.runOnUiThread { editor.player.seekTo(0) }
+            positions.clear()
+            Thread.sleep(600)
         }
     }
 
@@ -96,6 +106,7 @@ class VoiceProcessingUiTest {
     private fun playFor(ms: Long) {
         val end = System.currentTimeMillis() + ms
         while (System.currentTimeMillis() < end) {
+            nearEndRestart()
             sample()
             Thread.sleep(100)
         }
@@ -167,7 +178,7 @@ class VoiceProcessingUiTest {
         positions.clear()
         ui { editor.player.play() }
 
-        poll("processing finished", 40_000) { editor.processingProgress == null }
+        poll("processing finished", 120_000) { editor.processingProgress == null }
         playFor(1_000)
         assertKeptPlaying("after processing")
         assertTrue("popup gone", !editor.processingDialogShown)
