@@ -771,8 +771,14 @@ private fun PreviewCanvas(ctl: EditorController, position: Long) {
                     val dots = PathEffect.dashPathEffect(floatArrayOf(4.dp.toPx(), 4.dp.toPx()))
                     val stroke = 1.5.dp.toPx()
                     val inset = stroke / 2f
-                    fun vertical(x: Float) = drawLine(GuideYellow, Offset(x, 0f), Offset(x, size.height), stroke, pathEffect = dots)
-                    fun horizontal(y: Float) = drawLine(GuideYellow, Offset(0f, y), Offset(size.width, y), stroke, pathEffect = dots)
+                    // a soft dark line under the yellow dots keeps them visible on bright / yellow video
+                    val shade = Color.Black.copy(alpha = 0.45f)
+                    fun line(a: Offset, b: Offset) {
+                        drawLine(shade, a, b, stroke * 2.2f, pathEffect = dots)
+                        drawLine(GuideYellow, a, b, stroke, pathEffect = dots)
+                    }
+                    fun vertical(x: Float) = line(Offset(x, 0f), Offset(x, size.height))
+                    fun horizontal(y: Float) = line(Offset(0f, y), Offset(size.width, y))
                     if (guides and Align.CENTER_X != 0) vertical(size.width / 2f)
                     if (guides and Align.CENTER_Y != 0) horizontal(size.height / 2f)
                     if (guides and Align.LEFT != 0) vertical(inset)

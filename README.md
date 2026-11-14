@@ -1,7 +1,7 @@
-# Nock Nock (Android video editor) - v0.16 source
+# Nock Nock (Android video editor) - v0.17 source
 
 Native Android video editor: Kotlin, Jetpack Compose, Media3 (ExoPlayer + Transformer), Room.
-Read PROGRESS.md first - it is the current checkpoint. V0.16: Auto Captions with on-device speech recognition (Bangla-trained Whisper Turbo, Whisper Small), text, caption styles; Video FX go on the overlay layer. Device tests run in CI (see TEST_REPORT.md).
+Read PROGRESS.md first - it is the current checkpoint. V0.17: smart alignment guides and auto-snapping (video, overlays, texts) in 9:16, 16:9, 1:1 and 4:5; V0.16: Auto Captions. Device tests run in CI (see TEST_REPORT.md).
 
 ## Get an APK
 

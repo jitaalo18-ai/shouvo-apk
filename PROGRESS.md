@@ -1,3 +1,22 @@
+# V0.17 — smart alignment guides and auto-snapping (2026-11-14)
+
+Current version: 0.17 (versionCode 17), label V0.17. Branch v0.17-align merged to main.
+
+- core/Align.kt: snapping of an element's centre to the frame centre and of its on-screen
+  bounding box (turned elements included) to the frame edges; tolerance in screen pixels
+  (ALIGN_TOLERANCE = 8 dp), so it feels the same in every frame shape. Guides as a bit mask
+  (CENTER_X = vertical centre line, CENTER_Y = horizontal centre line, LEFT/RIGHT/TOP/BOTTOM).
+- Used for: the main video (Framing.snap now takes per-axis tolerances from the same 8 dp),
+  image / video overlays (one finger drag and two-finger resize / turn) and captions / texts.
+  Gestures keep the unsnapped position, so an element leaves a guide by simply moving on (no
+  sticking). Haptic tick when a guide switches on.
+- Guides: thin yellow dotted lines (with a faint dark shade so they show on bright video), only
+  while dragging; hidden as soon as the finger lifts (Modifier.onGestureEnd). Drawn over the
+  preview only - never in the export.
+- Selection frame in the preview is yellow (like Edits).
+- New frame format 4:5 (1080 x 1350) next to Original, 16:9, 9:16, 1:1.
+
+---
 # V0.16 — Auto Captions (speech recognition on the phone), Text, Video FX on the overlay layer (2026-11-14)
 
 Current version: 0.16 (versionCode 16), label V0.16. Branch v0.16-captions merged to main.

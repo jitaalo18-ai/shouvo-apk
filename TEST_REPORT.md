@@ -1,3 +1,21 @@
+# V0.17 validation (2026-11-14)
+
+Executed (GitHub Actions):
+- core JVM tests: 82 passed, incl. 8 new alignment tests: close to the centre -> exactly centred
+  with both guides; only the close axis snaps; outside the tolerance it moves freely; edges snap
+  to the frame edges; the same pixel tolerance in 9:16, 16:9, 1:1 and 4:5; bounding box of turned
+  elements; video framing with the given tolerance.
+- Android 12 emulator, 18/18 instrumented tests passed, incl. AlignmentUiTest through real touch
+  input, in 9:16 (643x1143 preview), 16:9 (1080x607), 1:1 (1080x1080) and 4:5 (914x1143):
+  overlay dragged to 6 / 5 px from the centre -> exactly 0.5 / 0.5, both guides drawn while the
+  finger is down, gone after it lifts; dragged 70 / 90 px away -> follows the finger, no guide;
+  only left-right close -> only the vertical guide; a text and the main video snap the same way.
+  Screenshots checked (yellow dotted guides, yellow selection frame).
+
+Not executed / needs a real phone: the feel of the haptic tick and the snap distance on the S25
+Ultra (8 dp; easy to change in ALIGN_TOLERANCE).
+
+---
 # V0.16 validation (2026-11-14)
 
 Executed (GitHub Actions on the merged code):
