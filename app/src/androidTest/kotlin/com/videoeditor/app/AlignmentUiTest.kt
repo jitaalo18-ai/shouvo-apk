@@ -68,16 +68,31 @@ class AlignmentUiTest {
 
     private fun guidesShown() = rule.onAllNodesWithTag("alignGuides", useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty()
 
+    /** Centre of clip [id] on screen (root px), from its stored position. */
+    private fun centreOf(id: String): Offset {
+        val canvas = bounds("previewCanvas")
+        val c = editor.timeline.byId(id)!!
+        return Offset(canvas.left + c.posX * canvas.width, canvas.top + c.posY * canvas.height)
+    }
+
     /**
-     * Drags [node] so its centre ends [miss] px away from [target] (root coordinates), checks
-     * the state while the finger is still down with [whileDown], then lifts the finger.
+     * Drags clip [id] (its [node]) so its centre ends [miss] px away from [target] (root px),
+     * checks the state with [whileDown] while the finger is still down, then lifts the finger.
+     * First a short move gets past the touch slop (which a drag does not count), then the rest
+     * is measured from where the clip really is, in small steps like a finger.
      */
-    private fun drag(node: SemanticsNodeInteraction, from: Offset, target: Offset, miss: Offset, whileDown: () -> Unit) {
-        val delta = target + miss - from
+    private fun drag(node: SemanticsNodeInteraction, id: String, target: Offset, miss: Offset, whileDown: () -> Unit) {
+        val goal = target + miss
+        val start = centreOf(id)
+        val dir = (goal - start).let { if (it.getDistance() < 1f) Offset(1f, 0f) else it / it.getDistance() }
         node.performTouchInput {
             down(center)
-            // past the touch slop first, then in small steps like a finger
-            for (i in 1..12) moveTo(center + delta * (i / 12f))
+            for (i in 1..4) moveBy(dir * 15f)
+        }
+        pause(200)
+        val rest = goal - centreOf(id)
+        node.performTouchInput {
+            for (i in 1..12) moveBy(rest / 12f)
         }
         pause(300)
         whileDown()
@@ -120,7 +135,7 @@ class AlignmentUiTest {
 
             // ---- overlay: brought within a few px of the centre -> exactly centred, both guides
             val ov = rule.onNodeWithTag("overlay_$overlayId", useUnmergedTree = true)
-            drag(ov, bounds("overlay_$overlayId").center, centre, Offset(6f, -5f)) {
+            drag(ov, overlayId, centre, Offset(6f, -5f)) {
                 assertEquals("both guides while dragging", both, editor.alignGuides)
                 assertTrue("guides drawn", guidesShown())
                 Shots.take("60_align_${format.name}")
@@ -132,7 +147,7 @@ class AlignmentUiTest {
             assertTrue(!guidesShown())
 
             // ---- further away it moves freely, no guide
-            drag(ov, bounds("overlay_$overlayId").center, centre, Offset(70f, 90f)) {
+            drag(ov, overlayId, centre, Offset(70f, 90f)) {
                 assertEquals(0, editor.alignGuides)
             }
             val free = editor.timeline.byId(overlayId)!!
@@ -140,7 +155,7 @@ class AlignmentUiTest {
             assertTrue("followed the finger", abs(free.posX - (0.5f + 70f / canvas.width)) < 0.02f)
 
             // ---- only one axis close: one guide
-            drag(ov, bounds("overlay_$overlayId").center, centre, Offset(-4f, 120f)) {
+            drag(ov, overlayId, centre, Offset(-4f, 120f)) {
                 assertEquals(Align.CENTER_X, editor.alignGuides)
             }
             assertEquals(0.5f, editor.timeline.byId(overlayId)!!.posX, 0f)
@@ -154,7 +169,7 @@ class AlignmentUiTest {
         pause(1_000)
         val canvas = bounds("previewCanvas")
         val text = rule.onNodeWithTag("caption_Hello", useUnmergedTree = true)
-        drag(text, bounds("caption_Hello").center, Offset(canvas.center.x, bounds("caption_Hello").center.y), Offset(7f, 0f)) {
+        drag(text, textId, Offset(canvas.center.x, centreOf(textId).y), Offset(7f, 0f)) {
             assertTrue("text centre guide", editor.alignGuides and Align.CENTER_X != 0)
             Shots.take("61_align_text")
         }
