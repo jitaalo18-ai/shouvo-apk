@@ -1,6 +1,31 @@
+# V0.20 — Isolate voice (like the iPhone's) (2026-11-15)
+
+Current version: 0.20 (versionCode 20), label V0.20. Branch v0.20-isolate-voice merged to main.
+
+- Button "Isolate voice" (toolbar, with nothing selected, and next to Voice enhance for a main
+  clip): turns it on for every voice of the main timeline (compound clips included); the button
+  lights up; tap again = off; undo works. In the Voice enhance panel (Enhance tab) a switch does
+  it per clip ("Apply enhancement to all clips" copies it).
+- How: DeepFilterNet3 (MIT/Apache-2.0, a neural network for speech: keeps the voice, removes
+  traffic, music, fans, clatter...), running on the phone through its C API (Rust library
+  libdf.so built for arm64-v8a and x86_64 from third_party/deepfilternet by cargo-ndk in CI;
+  JNI in app/src/main/cpp/isolate_jni.cpp; the network file is the asset df/DeepFilterNet3_onnx.dfn,
+  checked by SHA-256 before use).
+- Once per file, like the noise learning (same Processing popup, sparkles, Minimize, video keeps
+  playing): the whole sound is decoded, mixed to mono, converted to 48 kHz (core Resampler,
+  windowed sinc, no delay), run through the network, its 30 ms delay taken out, and written as a
+  48 kHz mono WAV (filesDir/isolated_voice, about 5.8 MB per minute) whose sample 0 is time 0 of
+  the file and that is as long as the video - so the voice stays exactly with the lips.
+- Preview and export: an isolated clip plays its own picture (its own sound left out,
+  FilteringMediaSource) together with the voice file, cut to the same part (MergingMediaSource,
+  through VoiceMediaSourceFactory for ExoPlayer and Transformer). Volume, fades, noise and voice
+  settings still apply on top.
+- Not removed: other people talking (to the network that is also a voice).
+
+---
 # V0.19 — Voice enhance processes once, like Edits (2026-11-15)
 
-Current version: 0.19 (versionCode 19), label V0.19. Branch v0.19-voice-processing merged to main.
+Version 0.19 (versionCode 19), label V0.19. Branch v0.19-voice-processing merged to main.
 
 What changed and why (feedback on V0.18: noise reduction started at once without looking at the
 whole video, no popup, and the video paused):
