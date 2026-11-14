@@ -1042,3 +1042,78 @@ class CaptionTests {
         assertTrue(textOnly.track(Track.TEXT).single().isCompound)
     }
 }
+
+class AlignTests {
+    // a 9:16 preview of 600 x 1067 px, 8 dp tolerance at density 2.625 = 21 px
+    private val fw = 600f
+    private val fh = 1067f
+    private val tol = 21f
+
+    @Test
+    fun closeToTheCentreLocksOnAndShowsBothGuides() {
+        val a = Align.snap(0.5f + 15f / fw, 0.5f - 18f / fh, 200f, 100f, fw, fh, tol)
+        assertEquals(0.5f, a.x, 0f)
+        assertEquals(0.5f, a.y, 0f)
+        assertEquals(Align.CENTER_X or Align.CENTER_Y, a.guides)
+    }
+
+    @Test
+    fun onlyTheAxisThatIsCloseSnaps() {
+        val a = Align.snap(0.5f + 10f / fw, 0.3f, 200f, 100f, fw, fh, tol)
+        assertEquals(0.5f, a.x, 0f)
+        assertEquals(0.3f, a.y, 0f)
+        assertEquals(Align.CENTER_X, a.guides)
+    }
+
+    @Test
+    fun outsideTheToleranceItMovesFreely() {
+        val x = 0.5f + 30f / fw
+        val a = Align.snap(x, 0.27f, 200f, 100f, fw, fh, tol)
+        assertEquals(x, a.x, 0f)
+        assertEquals(0.27f, a.y, 0f)
+        assertEquals(0, a.guides)
+    }
+
+    @Test
+    fun edgesSnapToTheFrameEdges() {
+        // 200 px wide element whose left edge is 12 px from the frame's left edge
+        val a = Align.snap((100f + 12f) / fw, 0.3f, 200f, 100f, fw, fh, tol)
+        assertEquals(100f / fw, a.x, 1e-6f)
+        assertEquals(Align.LEFT, a.guides)
+        val b = Align.snap(0.3f, (fh - 50f - 10f) / fh, 200f, 100f, fw, fh, tol)
+        assertEquals((fh - 50f) / fh, b.y, 1e-6f)
+        assertEquals(Align.BOTTOM, b.guides)
+    }
+
+    @Test
+    fun theToleranceIsTheSameNumberOfPixelsInEveryFrameShape() {
+        for ((w, h) in listOf(600f to 1067f, 1067f to 600f, 600f to 600f, 600f to 750f)) {
+            val near = Align.snap(0.5f + 20f / w, 0.5f + 20f / h, 50f, 50f, w, h, tol)
+            assertEquals("${w}x$h", Align.CENTER_X or Align.CENTER_Y, near.guides)
+            val far = Align.snap(0.5f + 25f / w, 0.5f + 25f / h, 50f, 50f, w, h, tol)
+            assertEquals("${w}x$h", 0, far.guides)
+        }
+    }
+
+    @Test
+    fun turnedElementsUseTheirBoundingBox() {
+        val (bw, bh) = Align.boundingBox(200f, 100f, 90f)
+        assertEquals(100f, bw, 1e-3f)
+        assertEquals(200f, bh, 1e-3f)
+        val (dw, _) = Align.boundingBox(100f, 100f, 45f)
+        assertEquals(141.42f, dw, 0.01f)
+    }
+
+    @Test
+    fun newGuidesAreNoticed() {
+        assertTrue(Align.newlyOn(0, Align.CENTER_X))
+        assertFalse(Align.newlyOn(Align.CENTER_X or Align.CENTER_Y, Align.CENTER_X))
+    }
+
+    @Test
+    fun videoFramingUsesTheGivenTolerance() {
+        val raw = FrameState(0.5f + 0.02f, 0.5f, 1f, 0f)
+        assertEquals(0.52f, Framing.snap(raw, 16f / 9f, 9f / 16f).state.x, 1e-6f)
+        assertEquals(0.5f, Framing.snap(raw, 16f / 9f, 9f / 16f, toleranceX = 0.035f).state.x, 0f)
+    }
+}

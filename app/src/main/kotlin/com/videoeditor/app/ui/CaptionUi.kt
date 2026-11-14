@@ -51,6 +51,7 @@ import androidx.compose.ui.window.Dialog
 import com.videoeditor.app.captions.CaptionLanguage
 import com.videoeditor.app.captions.CaptionRenderer
 import com.videoeditor.app.captions.CaptionStyle
+import com.videoeditor.core.Align
 import com.videoeditor.core.Captions
 import com.videoeditor.core.Compound
 import com.videoeditor.core.MediaKind
@@ -254,16 +255,39 @@ fun TextLayer(ctl: EditorController, position: Long, canvasW: Dp, canvasH: Dp, c
                     ) { ctl.select(owner) }
                 }
             if (clip.selected && !isPiece) {
+                val state = remember(owner) { floatArrayOf(0.5f, 0.5f, 0f) }   // unsnapped x, y, guides
                 m = m.pointerInput(owner, canvasWPx, canvasHPx) {
-                    detectDragGestures(onDragEnd = { ctl.endGesture() }, onDragCancel = { ctl.endGesture() }) { change, drag ->
+                    val tolerancePx = ALIGN_TOLERANCE.toPx()
+                    fun end() {
+                        ctl.alignGuides = 0
+                        state[2] = 0f
+                        ctl.endGesture()
+                    }
+                    detectDragGestures(
+                        onDragStart = {
+                            val c = ctl.timeline.byId(owner) ?: latest
+                            state[0] = c.posX
+                            state[1] = c.posY
+                            state[2] = 0f
+                        },
+                        onDragEnd = { end() },
+                        onDragCancel = { end() },
+                    ) { change, drag ->
                         change.consume()
-                        val c = ctl.timeline.byId(owner) ?: latest
-                        ctl.moveText(owner, c.posX + drag.x / canvasWPx, c.posY + drag.y / canvasHPx)
+                        // the unsnapped position follows the finger; the text locks onto the guides
+                        state[0] += drag.x / canvasWPx
+                        state[1] += drag.y / canvasHPx
+                        val (boxW, boxH) = Align.boundingBox(bmp.width.toFloat(), bmp.height.toFloat(), latest.rotation)
+                        val snapped = Align.snap(state[0], state[1], boxW, boxH, canvasWPx, canvasHPx, tolerancePx)
+                        if (Align.newlyOn(state[2].toInt(), snapped.guides)) haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                        state[2] = snapped.guides.toFloat()
+                        ctl.alignGuides = snapped.guides
+                        ctl.moveText(owner, snapped.x, snapped.y)
                     }
                 }
             }
             m = m.rotate(clip.rotation)
-            if (clip.selected || picked) m = m.border(1.5.dp, Accent, RoundedCornerShape(4.dp))
+            if (clip.selected || picked) m = m.border(1.5.dp, GuideYellow, RoundedCornerShape(4.dp))
             Image(bitmap = bmp.asImageBitmap(), contentDescription = clip.text, modifier = m)
         }
     }

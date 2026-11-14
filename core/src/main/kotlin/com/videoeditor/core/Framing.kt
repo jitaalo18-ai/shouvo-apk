@@ -45,6 +45,9 @@ object Framing {
         canvasAspect: Float,
         stretchX: Float = 1f,
         stretchY: Float = 1f,
+        /** position tolerance as fractions of the frame width / height (the UI uses 8 dp) */
+        toleranceX: Float = POSITION_TOLERANCE,
+        toleranceY: Float = POSITION_TOLERANCE,
     ): SnapResult {
         val (fitW, fitH) = fitFractions(clipAspect.coerceAtLeast(0.01f), canvasAspect.coerceAtLeast(0.01f))
         val baseW = fitW * stretchX
@@ -76,14 +79,14 @@ object Framing {
         val w = unitW * zoom
         val h = unitH * zoom
 
-        fun axis(value: Float, size: Float): Float = when {
-            abs(value - 0.5f) <= POSITION_TOLERANCE -> 0.5f
-            angleSnap && abs(value - size / 2f) <= POSITION_TOLERANCE -> size / 2f               // near edge
-            angleSnap && abs(value + size / 2f - 1f) <= POSITION_TOLERANCE -> 1f - size / 2f     // far edge
+        fun axis(value: Float, size: Float, tol: Float): Float = when {
+            abs(value - 0.5f) <= tol -> 0.5f
+            angleSnap && abs(value - size / 2f) <= tol -> size / 2f               // near edge
+            angleSnap && abs(value + size / 2f - 1f) <= tol -> 1f - size / 2f     // far edge
             else -> value
         }
-        val x = axis(raw.x, w)
-        val y = axis(raw.y, h)
+        val x = axis(raw.x, w, toleranceX)
+        val y = axis(raw.y, h, toleranceY)
         val eps = 1e-4f
         return SnapResult(
             state = FrameState(x, y, zoom, rotation),

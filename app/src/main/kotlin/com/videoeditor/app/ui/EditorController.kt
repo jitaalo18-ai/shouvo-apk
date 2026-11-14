@@ -397,6 +397,12 @@ class EditorController(private val app: App, val projectId: Long, uiScope: Corou
         private set
     private var trimEdgeTimelineMs: Long? = null
 
+    /**
+     * Alignment guides to draw over the preview while something is dragged in the frame (bit
+     * mask, see core Align). Only on screen - never part of the exported video.
+     */
+    var alignGuides by mutableStateOf(0)
+
     /** The playable clip whose frame the preview shows while a trim handle is dragged. */
     var liveTrimPiece by mutableStateOf<Clip?>(null)
         private set
@@ -662,7 +668,7 @@ class EditorController(private val app: App, val projectId: Long, uiScope: Corou
         commitEdit(
             Timeline(timeline.clips.map {
                 if (it.id == id || (group && it.track == Track.TEXT && it.name == Captions.AUTO_NAME)) {
-                    it.copy(posX = (it.posX + dx).coerceIn(0.05f, 0.95f), posY = (it.posY + dy).coerceIn(0.05f, 0.95f))
+                    it.copy(posX = (it.posX + dx).coerceIn(0f, 1f), posY = (it.posY + dy).coerceIn(0f, 1f))
                 } else it
             }),
             saveNow = false,

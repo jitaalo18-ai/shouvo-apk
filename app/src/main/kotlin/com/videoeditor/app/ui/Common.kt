@@ -43,6 +43,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -53,6 +54,27 @@ import java.util.Locale
 val Bg = Color(0xFF0E0F12)
 val Panel = Color(0xFF1B1D23)
 val Accent = Color(0xFF4F7CFF)
+
+/** Selection frame and alignment guides in the preview (yellow, like Instagram Edits). */
+val GuideYellow = Color(0xFFFFD60A)
+
+/**
+ * Calls [onEnd] when every finger has left the element after a touch (also after a drag or a
+ * pinch). Watches only - it consumes nothing, so the other gesture handlers work as before.
+ */
+fun androidx.compose.ui.Modifier.onGestureEnd(key: Any?, onEnd: () -> Unit): androidx.compose.ui.Modifier =
+    this.then(
+        androidx.compose.ui.Modifier.pointerInput(key) {
+            androidx.compose.foundation.gestures.awaitEachGesture {
+                androidx.compose.foundation.gestures.awaitFirstDown(requireUnconsumed = false)
+                while (true) {
+                    val event = awaitPointerEvent(androidx.compose.ui.input.pointer.PointerEventPass.Final)
+                    if (event.changes.none { it.pressed }) break
+                }
+                onEnd()
+            }
+        },
+    )
 val OverlayColor = Color(0xFF8E5BD9)
 val SfxColor = Color(0xFF2E9E7A)
 val MusicColor = Color(0xFFC77A2B)

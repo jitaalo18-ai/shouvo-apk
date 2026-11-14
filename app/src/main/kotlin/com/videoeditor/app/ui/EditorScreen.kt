@@ -129,6 +129,7 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.videoeditor.app.App
 import com.videoeditor.app.data.LibraryKind
 import com.videoeditor.app.media.CanvasFormat
+import com.videoeditor.core.Align
 import com.videoeditor.core.Clip
 import androidx.compose.foundation.layout.PaddingValues
 import com.videoeditor.core.Compound
@@ -616,7 +617,6 @@ private fun PreviewCanvas(ctl: EditorController, position: Long) {
         // running state of the current framing gesture (unsnapped values) and the active guides
         val haptics = LocalHapticFeedback.current
         val gesture = remember { FramingGesture() }
-        var guides by remember { mutableStateOf(0) }
 
         // small read-out (position, angle, zoom) shown while the video is being framed
         var readoutTick by remember { mutableStateOf(0L) }
@@ -688,6 +688,7 @@ private fun PreviewCanvas(ctl: EditorController, position: Long) {
                 Box(
                     Modifier
                         .matchParentSize()
+                        .testTag("previewCanvas")
                         .pointerInput(Unit) {
                             detectTapGestures(
                                 onLongPress = {
@@ -698,7 +699,14 @@ private fun PreviewCanvas(ctl: EditorController, position: Long) {
                                 },
                             ) { ctl.select(latest?.id) }
                         }
+                        // finger(s) lifted: the guides go away
+                        .onGestureEnd(Unit) {
+                            ctl.alignGuides = 0
+                            gesture.snapKey = 0
+                            gesture.clipId = null     // the next gesture starts from where the clip is
+                        }
                         .pointerInput(canvasWPx, canvasHPx, aspect) {
+                            val tolerancePx = ALIGN_TOLERANCE.toPx()
                             detectTransformGestures { _, pan, zoom, rotation ->
                                 val c = latest ?: return@detectTransformGestures
                                 val twoFingers = zoom != 1f || rotation != 0f
@@ -723,12 +731,14 @@ private fun PreviewCanvas(ctl: EditorController, position: Long) {
                                     val snapped = Framing.snap(
                                         FrameState(gesture.x, gesture.y, gesture.zoom, gesture.rotation),
                                         c.aspect, aspect, c.stretchX, c.stretchY,
+                                        toleranceX = tolerancePx / canvasWPx, toleranceY = tolerancePx / canvasHPx,
                                     )
                                     if (snapped.key and gesture.snapKey.inv() != 0) {
                                         haptics.performHapticFeedback(HapticFeedbackType.LongPress)
                                     }
                                     gesture.snapKey = snapped.key
-                                    guides = snapped.key
+                                    // centre / edge bits are the same as Align's
+                                    ctl.alignGuides = snapped.key and 63
                                     ctl.transformMain(
                                         c.id, snapped.state.x, snapped.state.y, snapped.state.zoom, snapped.state.rotation,
                                     )
@@ -751,21 +761,24 @@ private fun PreviewCanvas(ctl: EditorController, position: Long) {
                 TextLayer(ctl, position, canvasW, canvasH, canvasWPx, canvasHPx)
             }
 
-            if (top != null && (top.selected || ctl.multiPick?.contains(top.id) == true)) Box(placeFor(top).border(2.dp, Accent))
+            if (top != null && (top.selected || ctl.multiPick?.contains(top.id) == true)) Box(placeFor(top).border(2.dp, GuideYellow))
 
-            // alignment guides: dashed lines at the frame centre / edges the video is locked onto
-            if (showReadout && guides != 0) {
-                Canvas(Modifier.matchParentSize()) {
-                    val dash = PathEffect.dashPathEffect(floatArrayOf(14f, 10f))
-                    val stroke = 2.dp.toPx()
-                    fun vertical(x: Float) = drawLine(Accent, Offset(x, 0f), Offset(x, size.height), stroke, pathEffect = dash)
-                    fun horizontal(y: Float) = drawLine(Accent, Offset(0f, y), Offset(size.width, y), stroke, pathEffect = dash)
-                    if (guides and 1 != 0) vertical(size.width / 2f)
-                    if (guides and 2 != 0) horizontal(size.height / 2f)
-                    if (guides and 4 != 0) vertical(0f)
-                    if (guides and 8 != 0) vertical(size.width)
-                    if (guides and 16 != 0) horizontal(0f)
-                    if (guides and 32 != 0) horizontal(size.height)
+            // Smart alignment guides: thin yellow dotted lines through the frame centre / along the
+            // frame edges the element is locked onto - only while it is being moved (never exported)
+            val guides = ctl.alignGuides
+            if (guides != 0) {
+                Canvas(Modifier.matchParentSize().testTag("alignGuides")) {
+                    val dots = PathEffect.dashPathEffect(floatArrayOf(4.dp.toPx(), 4.dp.toPx()))
+                    val stroke = 1.5.dp.toPx()
+                    val inset = stroke / 2f
+                    fun vertical(x: Float) = drawLine(GuideYellow, Offset(x, 0f), Offset(x, size.height), stroke, pathEffect = dots)
+                    fun horizontal(y: Float) = drawLine(GuideYellow, Offset(0f, y), Offset(size.width, y), stroke, pathEffect = dots)
+                    if (guides and Align.CENTER_X != 0) vertical(size.width / 2f)
+                    if (guides and Align.CENTER_Y != 0) horizontal(size.height / 2f)
+                    if (guides and Align.LEFT != 0) vertical(inset)
+                    if (guides and Align.RIGHT != 0) vertical(size.width - inset)
+                    if (guides and Align.TOP != 0) horizontal(inset)
+                    if (guides and Align.BOTTOM != 0) horizontal(size.height - inset)
                 }
             }
 
@@ -807,6 +820,7 @@ private fun OverlayView(ctl: EditorController, clip: Clip, canvasW: Dp, canvasH:
     var modifier = Modifier
         .offset(x = canvasW * clip.posX - w / 2, y = canvasH * clip.posY - h / 2)
         .size(w, h)
+        .testTag("overlay_${clip.id}")
         .pointerInput(clip.id) {
             detectTapGestures(
                 onLongPress = {
@@ -816,22 +830,41 @@ private fun OverlayView(ctl: EditorController, clip: Clip, canvasW: Dp, canvasH:
             ) { ctl.select(owner) }
         }
     if (clip.selected && !isPiece) {
-        modifier = modifier.pointerInput(clip.id, canvasWPx, canvasHPx) {
-            // one finger drags; two fingers resize and rotate
-            detectTransformGestures { _, pan, zoom, rotation ->
-                val c = current
-                ctl.transform(
-                    c.id,
-                    c.posX + pan.x / canvasWPx,
-                    c.posY + pan.y / canvasHPx,
-                    c.scale * zoom,
-                    c.rotation + rotation,
-                )
+        val drag = remember(clip.id) { OverlayDrag() }
+        modifier = modifier
+            .onGestureEnd(clip.id) {
+                drag.active = false
+                drag.guides = 0
+                ctl.alignGuides = 0
             }
-        }
+            .pointerInput(clip.id, canvasWPx, canvasHPx) {
+                val tolerancePx = ALIGN_TOLERANCE.toPx()
+                // one finger drags; two fingers resize and rotate
+                detectTransformGestures { _, pan, zoom, rotation ->
+                    val c = current
+                    if (!drag.active) {
+                        drag.active = true
+                        drag.x = c.posX
+                        drag.y = c.posY
+                    }
+                    // the unsnapped position follows the finger, so the overlay can leave a guide again
+                    drag.x += pan.x / canvasWPx
+                    drag.y += pan.y / canvasHPx
+                    val scale = c.scale * zoom
+                    val turn = c.rotation + rotation
+                    val wPx = canvasWPx * scale * c.stretchX
+                    val hPx = canvasWPx * scale / c.aspect.coerceAtLeast(0.01f) * c.stretchY
+                    val (boxW, boxH) = Align.boundingBox(wPx, hPx, turn)
+                    val snapped = Align.snap(drag.x, drag.y, boxW, boxH, canvasWPx, canvasHPx, tolerancePx)
+                    if (Align.newlyOn(drag.guides, snapped.guides)) haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                    drag.guides = snapped.guides
+                    ctl.alignGuides = snapped.guides
+                    ctl.transform(c.id, snapped.x, snapped.y, scale, turn)
+                }
+            }
     }
     modifier = modifier.rotate(clip.rotation)
-    if (clip.selected || picked) modifier = modifier.border(2.dp, Accent)
+    if (clip.selected || picked) modifier = modifier.border(2.dp, GuideYellow)
     Box(modifier) {
         if (clip.kind == MediaKind.IMAGE) {
             Thumb(
@@ -848,6 +881,17 @@ private fun OverlayView(ctl: EditorController, clip: Clip, canvasW: Dp, canvasH:
             )
         }
     }
+}
+
+/** How close (on screen) an element has to come to a guide to lock onto it. */
+val ALIGN_TOLERANCE = 8.dp
+
+/** Unsnapped centre of an overlay while it is dragged, and the guides shown. */
+private class OverlayDrag {
+    var active = false
+    var x = 0.5f
+    var y = 0.5f
+    var guides = 0
 }
 
 /** Unsnapped values of the framing gesture in progress. */

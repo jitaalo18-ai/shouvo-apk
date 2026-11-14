@@ -54,6 +54,7 @@ enum class CanvasFormat(val label: String, val ratio: Float?) {
     WIDE("16:9", 16f / 9f),
     TALL("9:16", 9f / 16f),
     SQUARE("1:1", 1f),
+    PORTRAIT("4:5", 4f / 5f),
 }
 
 /** Output frame size for a project: short side 1080, long side at most 1920, even numbers. */
