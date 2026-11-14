@@ -23,9 +23,9 @@ Executed (GitHub Actions):
   - Preview: Reduce noise 100 % -26.9 dB in a pause; CPU for the sound 1.1 %.
   - All earlier tests (V0.18 panel, captions, compound, alignment...) pass.
 
-Not executed / needs a real phone: listening by ear; a long real phone video (minutes) to see how
-long the one-time processing takes on the S25 Ultra (on the emulator about 1-2 s per 20 s of
-sound at full speed).
+Not executed / needs a real phone: listening by ear; how long the one-time processing takes for
+a long real phone video (minutes) on the S25 Ultra - not measured (in the tests it was slowed down
+on purpose so the popup could be checked).
 
 ---
 # V0.18 validation (2026-11-14)
