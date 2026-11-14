@@ -1,0 +1,36 @@
+align 9:16: preview 643 x 1143 px (aspect 0.563)
+align 16:9: preview 1080 x 607 px (aspect 1.779)
+align 1:1: preview 1080 x 1080 px (aspect 1.000)
+align 4:5: preview 914 x 1143 px (aspect 0.800)
+align: overlay, text and video snap to the centre in 9:16, 16:9, 1:1 and 4:5; guides hide on release
+ui: 4 captions: 1360: Hello, everyone. Today I will show you | 4050: how to make a video. | 5500: First open the editor, then add your | 8300: clips, and press export.
+captions: long Bangla 43420 ms in 254089 ms (emulator CPU), 8 pieces, CER 9.4%, length 102% of the truth
+captions: long Bangla heard: গুরুত্বপূর্ণ সামরিক এবং অসামরিক যোগান বিচ্ছিন্ন করার কৌশলটি সফল হয়েছে, যদিও  গত দুই শতকে বিভিন্ন আন্তর্জাতিক চুক্তির মাধ্যমে আরোপিত হওয়া সাধারণভাবে, গ্রহণযোগ্য আন্তর্জাতিক নিয়মকে এই অবরধটি লঙ্ঘন করছে। যেমন, প্রত্যেক বছরই উত্তর ক্যারলিনার ব্যানেট স্কুলে ছাত্রছাত্রীরা স্টেট ক্যাপিটালে  নিজেদের টিপ নিয়ে একটি ওয়েবসাইট ডিজাইন করে, প্রত্যেক বছরই, একটি তেতে ডিজাইন  করে।। ওয়েবসাইট নতুন করে আবার ডিজাইন করা হয় কিন্তু পুরোনো ভাষণটি স্কেপ-বুকে রেখে  দেয়া হয়।
+captions: export difference where the caption is 106.1, elsewhere 0.1, before it shows 0.0
+captions: Bangla 7020 ms in 62612 ms (emulator CPU), CER 9.1%
+captions: Bangla heard: দ্বীপপুঞ্জ এবং লেগগুলোতে আবস্থিকভাবে আপনার কোনো নৌকাটির দরকার নেই।
+captions: Bangla truth: দ্বীপপুঞ্জ এবং লেকগুলোতে আবশ্যকভাবে আপনার কোন নৌকাটির দরকার নেই
+whisper: WHISPER : COREML = 0 | OPENVINO = 0 | CPU : SSE3 = 1 | SSSE3 = 1 | AVX = 1 | AVX2 = 1 | F16C = 1 | FMA = 1 | REPACK = 1 | 
+captions: English 13167 ms of audio in 10180 ms -> 4 pieces:  hello, everyone. today i will show you  how to make a video.  first open the editor, then add your  clips, and press export.
+captions: first piece 1360-4050 ms " Hello, everyone. Today I will show you"
+db: version 3 -> 5 upgrade kept the old project
+export of a compound timeline (13023 ms, 4 pieces): 18322 ms
+ui: compound made from 4 clips, 39069 ms
+ui: playing inside the compound went from 23500 to 39069 ms
+ui: multi-track compound {MAIN=2, SFX=1, MUSIC=1, OVERLAY=1}
+ui: 0 thumbnails decoded in the first 4 s after opening
+ui: position after scrub 18380 ms
+ui: main track after AutoCut has 7 clips, 22773 ms
+ui: pinch changed first clip width from 101.0 px to 303.0 px
+ui: trimEnd handle bounds Rect.fromLTRB(843.0, 1837.0, 890.0, 2037.0), clip Rect.fromLTRB(540.0, 1837.0, 843.0, 2037.0)
+ui: trim changed first clip from 3210 ms to 2480 ms; guide=null, live=null, playhead=2440
+ui: played 4930 ms of timeline in 5623 ms of real time
+ui: playing reached 7370 ms
+ui: after reopen, handles Rect.fromLTRB(493.0, 1837.0, 540.0, 2037.0) and Rect.fromLTRB(618.0, 1837.0, 665.0, 2037.0)
+thumbnails: 12 frames decoded in 632 ms
+thumbnails: 12 frames from disk cache in 8 ms
+waveform: 0 ms
+scrub: 40 moves in 2107 ms, landed at 23900
+export of 14160 ms timeline (4 pieces): 22155 ms
+autocut analysis of 24 s: 621 ms
+autocut NORMAL keep=[MsRange(startMs=873, endMs=4163), MsRange(startMs=6373, endMs=11163), MsRange(startMs=14873, endMs=19163), MsRange(startMs=21373, endMs=23163)]
