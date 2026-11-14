@@ -7,5 +7,6 @@ license MIT OR Apache-2.0 (LICENSE-MIT, LICENSE-APACHE).
 - `Cargo.toml` (workspace) and `libDF/Cargo.toml` trimmed: only the C API is built (`cdylib`),
   the dataset / HDF5 / binaries / wasm dependencies are left out, and the `capi` feature no
   longer embeds the model in the library (the app ships `DeepFilterNet3_onnx.tar.gz`, from the
-  same commit's `models/`, as an asset: `app/src/main/assets/df/`).
+  same commit's `models/`, as the asset `app/src/main/assets/df/DeepFilterNet3_onnx.dfn` - renamed
+  so the APK packager keeps it byte for byte).
 - No source code changes.

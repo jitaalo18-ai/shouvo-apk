@@ -40,7 +40,9 @@ object VoiceIsolationNative {
     external fun process(handle: Long, input: FloatArray, output: FloatArray, frames: Int): Boolean
     external fun free(handle: Long)
 
-    const val MODEL_ASSET = "df/DeepFilterNet3_onnx.tar.gz"
+    /** The network (DeepFilterNet3_onnx.tar.gz; stored without ".gz" so the APK keeps it as it is). */
+    const val MODEL_ASSET = "df/DeepFilterNet3_onnx.dfn"
+    private const val MODEL_FILE = "df/DeepFilterNet3_onnx.tar.gz"
     private const val MODEL_SIZE = 7_983_136L
     private const val MODEL_SHA256 = "c94d91f70911001c946e0fabb4aa9adc37045f45a03b56008cb0c8244cb63616"
 
@@ -57,7 +59,7 @@ object VoiceIsolationNative {
     @Synchronized
     fun model(context: Context): File {
         checkedModel?.let { if (it.length() == MODEL_SIZE) return it }
-        val f = File(context.filesDir, MODEL_ASSET)
+        val f = File(context.filesDir, MODEL_FILE)
         if (!(f.length() == MODEL_SIZE && sha256(f) == MODEL_SHA256)) {
             f.parentFile?.mkdirs()
             val tmp = File(f.parentFile, f.name + ".tmp")
