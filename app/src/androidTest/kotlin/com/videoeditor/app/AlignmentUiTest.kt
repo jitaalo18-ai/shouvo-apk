@@ -124,7 +124,7 @@ class AlignmentUiTest {
 
         for (format in listOf(CanvasFormat.TALL, CanvasFormat.WIDE, CanvasFormat.SQUARE, CanvasFormat.PORTRAIT)) {
             rule.runOnUiThread {
-                editor.format = format
+                editor.chooseFormat(format)
                 editor.select(overlayId)
             }
             pause(1_000)
@@ -163,7 +163,7 @@ class AlignmentUiTest {
 
         // ---- text: snaps the same way
         rule.runOnUiThread {
-            editor.format = CanvasFormat.TALL
+            editor.chooseFormat(CanvasFormat.TALL)
             editor.select(textId)
         }
         pause(1_000)
