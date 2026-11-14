@@ -61,7 +61,7 @@ class VoiceProcessingUiTest {
     /** Records the playback position; checks the video keeps moving forward. */
     private fun sample() {
         val now = System.currentTimeMillis()
-        if (positions.isNotEmpty() && now - positions.last().first < 450) return
+        if (positions.isNotEmpty() && positions.last().first > 0 && now - positions.last().first < 450) return
         if (!editor.player.isPlaying.value) return
         positions += now to editor.player.positionMs.value
     }
@@ -97,7 +97,7 @@ class VoiceProcessingUiTest {
     private fun nearEndRestart() {
         if (editor.player.isPlaying.value && editor.player.positionMs.value > editor.timeline.durationMs - 3_000) {
             rule.runOnUiThread { editor.player.seekTo(0) }
-            positions.clear()
+            positions += -1L to -1L          // a break: no step is counted across the jump
             Thread.sleep(600)
         }
     }
@@ -175,7 +175,7 @@ class VoiceProcessingUiTest {
         assertTrue("progress line in the panel", shown("voiceProcessingLine"))
         shot("76_voice_processing_minimized")
         assertTrue("still processing after Minimize", editor.processingProgress != null)
-        positions.clear()
+        positions += -1L to -1L
         ui { editor.player.play() }
 
         poll("processing finished", 120_000) { editor.processingProgress == null }
@@ -188,8 +188,9 @@ class VoiceProcessingUiTest {
         Report.note("voice processing: noise of the phone video %.1f dBFS".format(VoiceProcessing.profile(uri)!!.levelDb))
 
         // the video moved on all the time while it was processed (never paused, never stuck)
-        val moves = positions.zipWithNext { a, b -> (b.first - a.first) to (b.second - a.second) }
-        Report.note("voice processing: ${moves.size} position checks while processing, smallest step ${moves.minOfOrNull { it.second }} ms")
+        val moves = positions.zipWithNext().filter { (a, b) -> a.first > 0 && b.first > 0 }
+            .map { (a, b) -> (b.first - a.first) to (b.second - a.second) }
+        Report.note("voice processing: ${moves.size} position checks while playing (processing included), smallest step ${moves.minOfOrNull { it.second }} ms")
         assertTrue(moves.size > 5)
         for ((wall, pos) in moves) assertTrue("playback moved on ($pos ms in $wall ms)", pos > wall / 3)
 
