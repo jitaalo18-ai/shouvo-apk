@@ -6,7 +6,10 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.SeekParameters
+import com.videoeditor.core.AudioFx
 import com.videoeditor.core.Clip
+import com.videoeditor.core.FxSegment
+import com.videoeditor.core.PlayMap
 import com.videoeditor.core.Compound
 import com.videoeditor.core.MediaKind
 import com.videoeditor.core.Timeline
@@ -34,7 +37,9 @@ import kotlin.math.abs
  *   and re-synchronised against the main timeline position ~30 times per second.
  */
 class PlaybackController(private val context: Context, private val scope: CoroutineScope) {
-    val main: ExoPlayer = ExoPlayer.Builder(context).build()
+    /** Voice enhance of the main track (the plan follows the playlist, see [updateFx]). */
+    val mainFx = FxState(sourceTime = false)
+    val main: ExoPlayer = ExoPlayer.Builder(context, FxRenderersFactory(context, mainFx)).build()
     val positionMs = MutableStateFlow(0L)
     val isPlaying = MutableStateFlow(false)
 
@@ -44,6 +49,9 @@ class PlaybackController(private val context: Context, private val scope: Corout
     private var pendingApply: Job? = null
     private var auxClips: List<Clip> = emptyList()
     private val aux = HashMap<String, ExoPlayer>()
+    private val auxFx = HashMap<String, FxState>()
+    /** Sound settings as the timeline says (by piece id), applied to whatever is playing. */
+    private var wantedFx: Map<String, AudioFx> = emptyMap()
     private val overlayViews = HashMap<String, TextureView>()
     private var released = false
 
@@ -85,7 +93,9 @@ class PlaybackController(private val context: Context, private val scope: Corout
         // matter to the player)
         val flat = Compound.flatten(timeline, 1f)
         wantedClips = flat.main
+        wantedFx = flat.clips.filter { !it.audio.isDefault }.associate { it.id to it.audio }
         syncAuxPlayers(flat)
+        updateFx()
         pendingApply?.cancel()
         if (interactive) {
             pendingApply = scope.launch {
@@ -112,6 +122,7 @@ class PlaybackController(private val context: Context, private val scope: Corout
         val signature = newMain.map { signatureOf(it) }
         if (signature == mainSignature) {
             mainClips = newMain
+            updateFx()
             return
         }
         val keep = positionMs.value
@@ -138,10 +149,32 @@ class PlaybackController(private val context: Context, private val scope: Corout
         }
         mainSignature = signature
         mainClips = newMain
+        updateFx()
         playlistUpdates++
         if (main.playbackState == Player.STATE_IDLE) main.prepare()
         seekTo(keep)
     }
+
+    /**
+     * Hands the sound settings to the players: the main player's per clip in timeline time (for
+     * the playlist that is really playing), each sound effect / overlay player's in source time.
+     */
+    private fun updateFx() {
+        val fx = wantedFx
+        mainFx.map.items = mainClips.map {
+            PlayMap.Item(it.id, it.timelineStartMs * 1000, it.sourceStartMs * 1000, it.durationMs * 1000, it.isAudible)
+        }
+        mainFx.plan = mainClips.filter { it.isAudible }.map {
+            FxSegment(it.id, it.timelineStartMs * 1000, it.timelineEndMs * 1000, fx[it.id] ?: AudioFx.NONE)
+        }
+        for (c in auxClips) {
+            val state = auxFx[c.id] ?: continue
+            state.plan = listOf(FxSegment(c.id, c.sourceStartMs * 1000, c.sourceEndMs * 1000, fx[c.id] ?: AudioFx.NONE))
+        }
+    }
+
+    /** The sound processing state of the overlay / sound player of [clipId] (for tests). */
+    fun auxFx(clipId: String): FxState? = auxFx[clipId]
 
     private fun mainItem(c: Clip): MediaItem {
         val b = MediaItem.Builder().setUri(c.sourceUri).setMediaId(c.id)
@@ -164,11 +197,14 @@ class PlaybackController(private val context: Context, private val scope: Corout
         val ids = wanted.map { it.id }.toSet()
         for (id in aux.keys.filter { it !in ids }) {
             aux.remove(id)?.release()
+            auxFx.remove(id)
             overlayViews.remove(id)
         }
         for (c in wanted) {
             if (c.id !in aux) {
-                val p = ExoPlayer.Builder(context).build()
+                val fx = FxState(sourceTime = true)
+                auxFx[c.id] = fx
+                val p = ExoPlayer.Builder(context, FxRenderersFactory(context, fx)).build()
                 p.setMediaItem(MediaItem.fromUri(c.sourceUri))
                 p.playWhenReady = false
                 p.prepare()
@@ -213,6 +249,7 @@ class PlaybackController(private val context: Context, private val scope: Corout
         val ms = timelineMs.coerceIn(0, mainClips.sumOf { it.durationMs })
         val pos = TimelineOps.locate(Timeline(mainClips), ms) ?: return
         val inClip = (ms - pos.clip.timelineStartMs).coerceIn(0, (pos.clip.durationMs - 1).coerceAtLeast(0))
+        mainFx.map.hintUs = ms * 1000
         main.seekTo(pos.index, inClip)
         seekInFlightSince = System.currentTimeMillis()
         positionMs.value = ms
@@ -272,6 +309,7 @@ class PlaybackController(private val context: Context, private val scope: Corout
         val playing = main.playWhenReady && !ended
         positionMs.value = pos
         isPlaying.value = playing
+        mainFx.map.hintUs = pos * 1000
         val total = durationMs
         for (c in auxClips) {
             val p = aux[c.id] ?: continue

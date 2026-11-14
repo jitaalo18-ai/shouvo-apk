@@ -167,7 +167,7 @@ class Exporter(private val context: Context) {
                 videoEffects.add(MatrixTransformation { matrix })
             }
             val item = EditedMediaItem.Builder(mediaItem(c, c.sourceStartMs, c.sourceEndMs))
-                .setEffects(Effects(noAudio, videoEffects))
+                .setEffects(Effects(voice(c), videoEffects))
             if (c.kind == MediaKind.IMAGE) {
                 item.setDurationUs(c.durationMs * 1000).setFrameRate(30)
             }
@@ -184,7 +184,10 @@ class Exporter(private val context: Context) {
         for (c in audioClips) {
             val end = minOf(c.sourceEndMs, c.sourceStartMs + (durationMs - c.timelineStartMs))
             if (end - c.sourceStartMs < 50) continue
-            val item = EditedMediaItem.Builder(mediaItem(c, c.sourceStartMs, end)).setRemoveVideo(true).build()
+            val item = EditedMediaItem.Builder(mediaItem(c, c.sourceStartMs, end))
+                .setRemoveVideo(true)
+                .setEffects(Effects(voice(c), emptyList()))
+                .build()
             val seq = EditedMediaItemSequence.Builder()
             if (c.timelineStartMs > 0) seq.addGap(c.timelineStartMs * 1000)
             seq.addItem(item)
@@ -202,6 +205,10 @@ class Exporter(private val context: Context) {
         }
         return builder.build()
     }
+
+    /** The clip's Voice enhance settings as an audio processor (none when they change nothing). */
+    private fun voice(c: Clip): List<AudioProcessor> =
+        if (c.audio.isDefault || !c.isAudible) emptyList() else listOf(VoiceFxProcessor(c.audio, c.durationMs * 1000))
 
     private fun mediaItem(c: Clip, startMs: Long, endMs: Long): MediaItem {
         val b = MediaItem.Builder().setUri(c.sourceUri)

@@ -17,7 +17,12 @@ import com.videoeditor.app.media.LiveFrames
 import com.videoeditor.app.media.MediaProbe
 import com.videoeditor.app.media.PlaybackController
 import com.videoeditor.app.media.canvasSize
+import com.videoeditor.app.captions.SpeechAudio
+import com.videoeditor.core.AudioAnalysis
+import com.videoeditor.core.AudioFx
+import com.videoeditor.core.AudioLevel
 import com.videoeditor.core.AutoCutStrength
+import com.videoeditor.core.VoiceEdits
 import com.videoeditor.core.Clip
 import com.videoeditor.app.captions.CaptionModel
 import com.videoeditor.app.captions.CaptionModels
@@ -32,7 +37,9 @@ import com.videoeditor.core.TimelineOps
 import com.videoeditor.core.Track
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
@@ -123,6 +130,9 @@ class EditorController(private val app: App, val projectId: Long, uiScope: Corou
     }
 
     companion object {
+        /** Sound analysis results, by source file and range (kept while the app runs). */
+        private val levelCache = java.util.concurrent.ConcurrentHashMap<String, AudioLevel>()
+
         /**
          * Copied clip (Copy button). Kept for as long as the app runs, so a clip can be copied in
          * one project and pasted into another.
@@ -776,6 +786,122 @@ class EditorController(private val app: App, val projectId: Long, uiScope: Corou
             message = result.reason
         }
     }
+
+    // ---- Voice enhance (like Edits: Auto / Volume / Enhance / Fade) ----------------------------
+
+    enum class VoiceTab(val label: String) { AUTO("Auto"), VOLUME("Volume"), ENHANCE("Enhance"), FADE("Fade") }
+
+    /** The Voice enhance panel is open; it works on the selected clip. */
+    var voiceOpen by mutableStateOf(false)
+        private set
+    var voiceTab by mutableStateOf(VoiceTab.ENHANCE)
+    /** "Apply enhancement to all clips". */
+    var voiceApplyAll by mutableStateOf(false)
+        private set
+    /** Sound analysis of the clips (noise floor, loudness), by clip id; null while it runs. */
+    var voiceLevels by mutableStateOf<Map<String, AudioLevel>?>(null)
+        private set
+    private var analysis: Deferred<Map<String, AudioLevel>>? = null
+
+    /** The clip the panel works on (null: panel closed, or the selection has no sound). */
+    val voiceClip: Clip? get() = if (voiceOpen) timeline.selected?.takeIf { it.isAudible } else null
+
+    fun openVoice() {
+        val c = timeline.selected?.takeIf { it.isAudible } ?: return
+        voiceOpen = true
+        voiceApplyAll = VoiceEdits.allEnhancedLike(timeline, c.audio) && c.audio.hasEnhancement
+        startAnalysis()
+    }
+
+    fun closeVoice() {
+        voiceDone()
+        voiceOpen = false
+    }
+
+    /** Live change of the panel's clip (or of all clips for noise / voice with "apply to all"). */
+    private fun voiceChange(all: Boolean, live: Boolean, edit: (AudioFx) -> AudioFx) {
+        val c = voiceClip ?: return
+        val ids = if (all) VoiceEdits.audible(timeline).map { it.id }.toSet() else setOf(c.id)
+        commitEdit(VoiceEdits.change(timeline, ids, edit), saveNow = !live)
+    }
+
+    fun setVoiceVolume(v: Float, live: Boolean = true) = voiceChange(false, live) { it.copy(volume = v) }
+    fun setVoiceDenoise(v: Float, live: Boolean = true) = voiceChange(voiceApplyAll, live) { it.copy(denoise = v) }
+    fun setVoiceEnhance(v: Float, live: Boolean = true) = voiceChange(voiceApplyAll, live) { it.copy(enhance = v) }
+    fun setVoiceFadeIn(ms: Long, live: Boolean = true) = voiceChange(false, live) { it.copy(fadeInMs = ms) }
+    fun setVoiceFadeOut(ms: Long, live: Boolean = true) = voiceChange(false, live) { it.copy(fadeOutMs = ms) }
+
+    /** A slider was let go: the drag is one undo step, saved now. */
+    fun voiceDone() {
+        if (!dragOpen) return
+        dragOpen = false
+        player.flush()
+        save()
+    }
+
+    fun toggleVoiceApplyAll() {
+        val c = voiceClip ?: return
+        voiceApplyAll = !voiceApplyAll
+        if (voiceApplyAll) {
+            commitEdit(VoiceEdits.enhanceAll(timeline, c.audio))
+            message = "Enhancement applies to all clips"
+        }
+    }
+
+    private fun startAnalysis() {
+        val list = VoiceEdits.audible(timeline)
+        val known = levelCache
+        if (list.all { levelKey(it) in known }) {
+            voiceLevels = list.associate { it.id to known.getValue(levelKey(it)) }
+            return
+        }
+        if (analysis?.isActive == true) return
+        voiceLevels = null
+        analysis = scope.async {
+            val out = HashMap<String, AudioLevel>()
+            for (c in list) {
+                val key = levelKey(c)
+                val level = known[key] ?: AudioAnalysis.measure(SpeechAudio.clip(app, c), SpeechAudio.RATE).also { known[key] = it }
+                out[c.id] = level
+            }
+            voiceLevels = out
+            out
+        }
+    }
+
+    /** Clips the analysis found noisy (null while the analysis runs). */
+    val noisyClipCount: Int? get() = voiceLevels?.let { VoiceEdits.noisy(timeline, it).size }
+    val noiseRemoved: Boolean get() = voiceLevels?.let { VoiceEdits.noiseRemoved(timeline, it) } == true
+
+    fun toggleRemoveNoise() {
+        val levels = voiceLevels ?: return
+        val wasOn = VoiceEdits.noiseRemoved(timeline, levels)
+        val (t, n) = VoiceEdits.toggleRemoveNoise(timeline, levels)
+        if (n == 0) {
+            message = "No noisy clips found"
+            return
+        }
+        commitEdit(t)
+        message = if (wasOn) "Noise reduction off on $n ${clips(n)}" else "Noise removed on $n ${clips(n)}"
+    }
+
+    fun autoAdjustAudio() {
+        scope.launch {
+            startAnalysis()
+            val levels = voiceLevels ?: analysis?.await() ?: return@launch
+            val (t, n) = VoiceEdits.autoAdjust(timeline, levels)
+            if (n == 0) {
+                message = "No clips with sound to adjust"
+                return@launch
+            }
+            commitEdit(t)
+            message = "Audio adjusted on $n ${clips(n)}"
+        }
+    }
+
+    private fun clips(n: Int) = if (n == 1) "clip" else "clips"
+
+    private fun levelKey(c: Clip) = "${c.sourceUri}|${c.sourceStartMs}|${c.sourceEndMs}"
 
     fun comingSoon(feature: String) {
         message = "$feature is not available yet. It is planned for a later version."

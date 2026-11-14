@@ -64,7 +64,7 @@ class CompoundDataTest {
         val name = "migration_test.db"
         createVersion3(name)
         val db = Room.databaseBuilder(ctx, AppDatabase::class.java, name)
-            .addMigrations(AppDatabase.MIGRATION_1_2, AppDatabase.MIGRATION_2_3, AppDatabase.MIGRATION_3_4, AppDatabase.MIGRATION_4_5)
+            .addMigrations(AppDatabase.MIGRATION_1_2, AppDatabase.MIGRATION_2_3, AppDatabase.MIGRATION_3_4, AppDatabase.MIGRATION_4_5, AppDatabase.MIGRATION_5_6)
             .build()
         try {
             val repo = ProjectRepository(db)
@@ -75,8 +75,9 @@ class CompoundDataTest {
             assertEquals(15f, c.rotation, 0.001f)
             assertEquals(1.2f, c.stretchX, 0.001f)
             assertTrue(c.children.isEmpty())
-            Report.note("db: version 3 -> 5 upgrade kept the old project")
+            Report.note("db: version 3 -> 6 upgrade kept the old project")
             assertEquals("", c.text)
+            assertEquals(com.videoeditor.core.AudioFx.NONE, c.audio)
 
             // captions / texts (version 5) are stored, also inside compounds
             val caption = com.videoeditor.core.Captions.textClip("cap", 500, 1_000, "আমি বাংলায় বলছি", name = "Caption", style = "BOX", posY = 0.8f)
@@ -84,8 +85,13 @@ class CompoundDataTest {
             val reloaded = repo.load(1).byId("cap")
             assertEquals(caption, reloaded)
 
+            // Voice enhance settings (version 6) are stored
+            val voiced = c.copy(audio = com.videoeditor.core.AudioFx(volume = 1.5f, denoise = 0.7f, enhance = 0.2f, fadeInMs = 500, fadeOutMs = 800))
+            repo.save(1, Timeline(listOf(voiced, caption)))
+            assertEquals(voiced.audio, repo.load(1).byId("old")!!.audio)
+
             // a nested compound with a library clip deep inside is stored and read back exactly
-            val fx = c.copy(id = "fx", libraryItemId = 7, sourceUri = "file:///fx.mp4")
+            val fx = c.copy(id = "fx", libraryItemId = 7, sourceUri = "file:///fx.mp4", audio = voiced.audio)
             var t = TimelineOps.normalize(Timeline(listOf(c, fx, c.copy(id = "third"), caption)))
             t = Compound.create(t, listOf("old", "fx", "cap"), ::id, 9f / 16f).timeline
             t = Compound.create(t, t.main.map { it.id }, ::id, 9f / 16f).timeline

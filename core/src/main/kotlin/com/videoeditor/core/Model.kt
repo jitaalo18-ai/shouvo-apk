@@ -52,6 +52,8 @@ data class Clip(
     /** TEXT clips: the words shown, and the look (a style name the app knows, e.g. "CLASSIC"). */
     val text: String = "",
     val style: String = "",
+    /** Sound settings from the Voice enhance panel (volume, noise, voice, fades). */
+    val audio: AudioFx = AudioFx.NONE,
 ) {
     val isCompound: Boolean get() = kind == MediaKind.COMPOUND
 
@@ -66,6 +68,9 @@ data class Clip(
         (sourceStartMs + (timelineMs - timelineStartMs)).coerceIn(sourceStartMs, sourceEndMs)
 
     fun contains(timelineMs: Long): Boolean = timelineMs in timelineStartMs until timelineEndMs
+
+    /** Has sound the Voice enhance panel can work on. */
+    val isAudible: Boolean get() = hasAudio && (kind == MediaKind.VIDEO || kind == MediaKind.AUDIO)
 }
 
 data class Timeline(val clips: List<Clip> = emptyList()) {

@@ -51,12 +51,14 @@ object TimelineOps {
             return EditResult(t, false, "Move the playhead inside the selected clip to split it")
         }
         val cutSource = clip.sourceStartMs + (timelineMs - clip.timelineStartMs)
-        val left = clip.copy(sourceEndMs = cutSource)
+        // a fade in stays at the start, a fade out at the end
+        val left = clip.copy(sourceEndMs = cutSource, audio = clip.audio.copy(fadeOutMs = 0))
         val right = clip.copy(
             id = newId(),
             sourceStartMs = cutSource,
             timelineStartMs = timelineMs,
             selected = false,
+            audio = clip.audio.copy(fadeInMs = 0),
         )
         val out = t.clips.flatMap { if (it.id == clipId) listOf(left, right) else listOf(it) }
         val result = Timeline(out)
