@@ -56,4 +56,50 @@ subprocess.run(cmd, check=True)
 open(os.path.join(out, 'bn_long.txt'), 'w', encoding='utf8').write(' '.join(texts))
 print('bangla long:', len(parts), 'sentences,', os.path.getsize(os.path.join(out, 'bn_long.wav')) // 32000, 's')
 PY
+# Isolate voice: real Bangla speech (first 14 s of bn_long) with traffic noise and laptop-like
+# music mixed in, as videos at 48 kHz and 44.1 kHz, plus the clean speech to compare with
+if [ -f "$OUT/bn_long.wav" ]; then
+  python3 -c "import numpy" 2> /dev/null || pip3 install --quiet numpy
+  ffmpeg -loglevel error -y -i "$OUT/bn_long.wav" -t 14 -ar 48000 -ac 1 -c:a pcm_s16le /tmp/iso_speech48.wav
+  python3 - "$OUT" <<'PY'
+import numpy as np, wave, sys, os
+out = sys.argv[1]
+sr = 48000
+w = wave.open('/tmp/iso_speech48.wav'); speech = np.frombuffer(w.readframes(w.getnframes()), dtype=np.int16).astype(np.float64) / 32768
+n = len(speech); t = np.arange(n) / sr
+rng = np.random.RandomState(42)
+# traffic: brown rumble, passing-car swell, two horn beeps
+brown = np.cumsum(rng.randn(n)); brown -= np.convolve(brown, np.ones(4801) / 4801, 'same'); brown /= np.abs(brown).max()
+swell = 0.6 + 0.4 * np.sin(2 * np.pi * t / 7.0)
+horn = np.zeros(n)
+for s0 in (3.2, 9.1):
+    m = (t >= s0) & (t < s0 + 0.45)
+    horn[m] = 0.5 * (np.sin(2 * np.pi * 440 * t[m]) + np.sin(2 * np.pi * 554 * t[m]))
+traffic = brown * swell + horn
+# laptop: chords that change every second and a beat
+music = np.zeros(n)
+for k, f in enumerate([220.0, 277.18, 329.63, 440.0]):
+    music += 0.25 * np.sin(2 * np.pi * f * t * (1 + 0.25 * ((t // 1) % 3)))
+music += ((t * 2) % 1 < 0.04) * rng.randn(n) * 0.8
+def rms(x): return np.sqrt(np.mean(x ** 2))
+def at_snr(noise, snr): return noise * (rms(speech) / rms(noise)) / (10 ** (snr / 20))
+mix = speech + at_snr(traffic, 3) + at_snr(music, 6)
+peak = np.abs(mix).max()
+if peak > 0.95:
+    mix *= 0.95 / peak; speech_out = speech * 0.95 / peak
+else:
+    speech_out = speech
+def save(name, x):
+    x = np.clip(x, -1, 1)
+    w = wave.open(name, 'wb'); w.setnchannels(1); w.setsampwidth(2); w.setframerate(sr)
+    w.writeframes((x * 32767).astype(np.int16).tobytes()); w.close()
+save(os.path.join(out, 'iso_clean.wav'), speech_out)
+save('/tmp/iso_mix48.wav', mix)
+print('isolate voice material: %.1f s, speech %.1f dBFS' % (n / sr, 20 * np.log10(rms(speech_out))))
+PY
+  for r in 48000 44100; do
+    ffmpeg -loglevel error -y -f lavfi -i testsrc=size=640x360:rate=30 -i /tmp/iso_mix48.wav -map 0:v -map 1:a -shortest \
+      -c:v libx264 -pix_fmt yuv420p -c:a aac -b:a 192k -ar $r -ac 2 "$OUT/iso_noisy_$r.mp4"
+  done
+fi
 ls -la "$OUT"

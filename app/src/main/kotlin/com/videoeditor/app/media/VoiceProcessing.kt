@@ -10,6 +10,7 @@ import android.os.Process
 import android.util.Log
 import com.videoeditor.core.NoiseProfile
 import com.videoeditor.core.NoiseProfiler
+import com.videoeditor.core.Resampler
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
@@ -107,12 +108,125 @@ object VoiceProcessing {
     fun clearMemory() {
         profiles.clear()
         nothing.clear()
+        isolated.clear()
+        noVoice.clear()
+    }
+
+    // ---- Isolate voice ------------------------------------------------------------------------
+
+    private val isolated = ConcurrentHashMap<String, File>()
+    /** Files whose voice cannot be isolated (no sound, or this build has no isolation engine). */
+    private val noVoice = ConcurrentHashMap.newKeySet<String>()
+    private val isoJobs = HashMap<String, CompletableDeferred<File?>>()
+
+    /** The isolated voice of [uri] (48 kHz mono WAV, aligned to the file's own time), if ready. */
+    fun isolatedVoice(uri: String): File? = isolated[uri]
+
+    fun needsIsolation(uri: String): Boolean = isolated[uri] == null && uri !in noVoice
+
+    /** Whether this build can isolate voices at all (the neural network is in the APK). */
+    val isolationAvailable: Boolean get() = VoiceIsolationNative.loaded
+
+    /** For tests: files really run through the network (not taken from disk). */
+    @Volatile
+    var isolatedFiles = 0
+        private set
+
+    /** Makes sure [uri]'s voice gets isolated (from memory, else disk, else worked out). */
+    fun requestIsolation(context: Context, uri: String): Deferred<File?> {
+        isolated[uri]?.let { return CompletableDeferred(it) }
+        if (uri in noVoice) return CompletableDeferred(null)
+        synchronized(isoJobs) {
+            isoJobs[uri]?.let { return it }
+            val job = CompletableDeferred<File?>()
+            isoJobs[uri] = job
+            val app = context.applicationContext
+            scope.launch {
+                val result = try {
+                    isolatedFromDisk(app, uri) ?: isolate(app, uri)
+                } catch (e: Throwable) {
+                    Log.w(TAG, "isolating $uri failed", e)
+                    null
+                }
+                if (result != null) isolated[uri] = result else noVoice += uri
+                synchronized(isoJobs) { isoJobs.remove(uri) }
+                _decoding.value = _decoding.value - uri
+                _version.value = _version.value + 1
+                job.complete(result)
+            }
+            return job
+        }
+    }
+
+    suspend fun ensureIsolation(context: Context, uri: String): File? = requestIsolation(context, uri).await()
+
+    private fun isolatedFile(context: Context, uri: String): File? {
+        val f = cacheFile(context, uri) ?: return null
+        return File(File(context.filesDir, "isolated_voice"), f.name.removeSuffix(".nnp") + "_dfn3.wav")
+    }
+
+    private fun isolatedFromDisk(context: Context, uri: String): File? {
+        val f = isolatedFile(context, uri) ?: return null
+        return if (f.exists() && f.length() > 44) f else null
+    }
+
+    private suspend fun isolate(context: Context, uri: String): File? {
+        if (!VoiceIsolationNative.loaded) return null
+        val out = isolatedFile(context, uri) ?: return null
+        out.parentFile?.mkdirs()
+        _decoding.value = _decoding.value + (uri to 0f)
+        isolatedFiles++
+        val writer = IsolationWriter(VoiceIsolationNative.model(context), File(out.parentFile, out.name + ".tmp"))
+        try {
+            var resampler: Resampler? = null
+            var channels = 1
+            var mono = FloatArray(0)
+            var containerUs = 0L
+            var started = false
+            val ok = decodeAudio(context, Uri.parse(uri), onFormat = { rate, ch ->
+                if (resampler == null) {
+                    resampler = Resampler(rate, IsolationWriter.RATE)
+                    channels = ch
+                    true
+                } else resampler!!.inRate == rate && channels == ch
+            }, onPcm = { pcm, frames, ptsUs ->
+                if (!started) {
+                    started = true
+                    // sample 0 of the result is time 0 of the file: silence before the first sound
+                    writer.start(ptsUs)
+                }
+                if (mono.size < frames) mono = FloatArray(frames)
+                for (f in 0 until frames) {
+                    var sum = 0f
+                    for (c in 0 until channels) sum += pcm[f * channels + c]
+                    mono[f] = sum / channels
+                }
+                writer.write(resampler!!.feed(mono, frames))
+            }, onProgress = { p -> _decoding.value = _decoding.value + (uri to p) }, onDuration = { containerUs = it })
+            if (!ok || !started) {
+                writer.abandon()
+                return null
+            }
+            writer.write(resampler!!.finish())
+            writer.finish(containerUs)
+            writer.close()
+            out.delete()
+            if (!writer.target.renameTo(out)) return null
+            Log.i(TAG, "isolated voice of $uri: ${out.length() / 96_000} s")
+            return out
+        } catch (e: Throwable) {
+            writer.abandon()
+            throw e
+        } finally {
+            writer.close()
+        }
     }
 
     /** Removes the disk cache as well (tests). */
     fun clearAll(context: Context) {
         clearMemory()
         dir(context).deleteRecursively()
+        File(context.filesDir, "isolated_voice").deleteRecursively()
     }
 
     // ---- disk cache ---------------------------------------------------------------------------
@@ -153,9 +267,9 @@ object VoiceProcessing {
         val ok = decodeAudio(context, Uri.parse(uri), onFormat = { rate, channels ->
             if (profiler == null) profiler = NoiseProfiler(rate, channels)
             profiler!!.sampleRate == rate && profiler!!.channels == channels
-        }, onPcm = { pcm, frames -> profiler?.feed(pcm, frames) }) { p ->
+        }, onPcm = { pcm, frames, _ -> profiler?.feed(pcm, frames) }, onProgress = { p ->
             _decoding.value = _decoding.value + (uri to p)
-        }
+        })
         val profile = if (ok) profiler?.finish() else null
         if (profile != null) toDisk(context, uri, profile)
         Log.i(TAG, "processed $uri: ${profile?.let { "noise %.1f dBFS".format(it.levelDb) } ?: "no usable sound"}")
@@ -171,8 +285,9 @@ object VoiceProcessing {
         context: Context,
         uri: Uri,
         onFormat: (rate: Int, channels: Int) -> Boolean,
-        onPcm: (FloatArray, Int) -> Unit,
+        onPcm: (pcm: FloatArray, frames: Int, ptsUs: Long) -> Unit,
         onProgress: (Float) -> Unit,
+        onDuration: (containerUs: Long) -> Unit = {},
     ): Boolean {
         val extractor = MediaExtractor()
         var codec: MediaCodec? = null
@@ -183,6 +298,11 @@ object VoiceProcessing {
             } ?: return false
             val format = extractor.getTrackFormat(track)
             val durationUs = if (format.containsKey(MediaFormat.KEY_DURATION)) format.getLong(MediaFormat.KEY_DURATION) else 0L
+            // the longest track (the video may run a little longer than its sound)
+            onDuration((0 until extractor.trackCount).maxOf {
+                val f = extractor.getTrackFormat(it)
+                if (f.containsKey(MediaFormat.KEY_DURATION)) f.getLong(MediaFormat.KEY_DURATION) else 0L
+            })
             extractor.selectTrack(track)
             val decoder = MediaCodec.createDecoderByType(format.getString(MediaFormat.KEY_MIME)!!)
             codec = decoder
@@ -240,7 +360,7 @@ object VoiceProcessing {
                             val sb = buf.asShortBuffer()
                             for (k in 0 until frames * channels) floats[k] = sb.get(k) / 32768f
                         }
-                        onPcm(floats, frames)
+                        onPcm(floats, frames, info.presentationTimeUs)
                         if (testSlowdown > 0f) kotlinx.coroutines.delay((frames * 1000L * testSlowdown / rate).toLong())
                         if (durationUs > 0) {
                             val p = (info.presentationTimeUs.toFloat() / durationUs).coerceIn(0f, 1f)

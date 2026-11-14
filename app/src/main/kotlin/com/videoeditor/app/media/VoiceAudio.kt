@@ -61,7 +61,7 @@ class VoiceFxProcessor(
     private var floats = FloatArray(0)
 
     override fun onConfigure(inputAudioFormat: AudioFormat): AudioFormat {
-        if (fx.isDefault || !Pcm.supported(inputAudioFormat.encoding)) return AudioFormat.NOT_SET
+        if (!fx.needsProcessing || !Pcm.supported(inputAudioFormat.encoding)) return AudioFormat.NOT_SET
         return inputAudioFormat
     }
 
@@ -121,7 +121,7 @@ class FxState(
     var plan: List<FxSegment> = emptyList()
         set(value) {
             field = value
-            active = value.any { !it.fx.isDefault }
+            active = value.any { it.fx.needsProcessing }
         }
 
     @Volatile

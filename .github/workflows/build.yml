@@ -17,8 +17,32 @@ jobs:
       - run: chmod +x gradlew
       - name: Core unit tests (JVM)
         run: ./gradlew :core:test
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android,x86_64-linux-android
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            ~/.cargo/bin/cargo-ndk
+            third_party/deepfilternet/target
+          key: deepfilter-${{ runner.os }}-${{ hashFiles('third_party/deepfilternet/Cargo.lock', 'third_party/deepfilternet/**/Cargo.toml', 'third_party/deepfilternet/libDF/src/**') }}
+      - name: Isolate voice engine (DeepFilterNet3, Rust) for arm64-v8a and x86_64
+        run: |
+          command -v cargo-ndk || cargo install cargo-ndk --locked
+          export ANDROID_NDK_HOME="$ANDROID_HOME/ndk/27.2.12479018"
+          [ -d "$ANDROID_NDK_HOME" ] || "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "ndk;27.2.12479018" > /dev/null
+          [ -d "$ANDROID_NDK_HOME" ] || { echo "NDK missing"; exit 1; }
+          third_party/deepfilternet/build-android.sh
+          RE="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-readelf"
+          for abi in arm64-v8a x86_64; do
+            "$RE" -d third_party/deepfilternet/android-libs/$abi/libdf.so | grep -q 'SONAME.*libdf.so' || { echo "libdf.so ($abi) has no SONAME"; exit 1; }
+          done
       - name: Build debug APK and on-device test APK
         run: ./gradlew :app:assembleDebug :app:assembleDebugAndroidTest
+      - name: Isolate voice engine is in the APK
+        run: unzip -l app/build/outputs/apk/debug/app-debug.apk | grep -E "lib/(arm64-v8a|x86_64)/libdf.so|assets/df/DeepFilterNet3_onnx.tar.gz" | tee /dev/stderr | wc -l | grep -qx 3
       - uses: actions/upload-artifact@v4
         with:
           name: apks

@@ -446,3 +446,36 @@ class VoiceEditTests {
         assertEquals(0.5f, right.audio.denoise)
     }
 }
+
+class IsolateVoiceTests {
+    private fun clip(id: String, start: Long, dur: Long, track: Track = Track.MAIN, kind: MediaKind = MediaKind.VIDEO, audio: Boolean = true) = Clip(
+        id = id, track = track, kind = kind, sourceUri = "file:///$id.mp4", sourceDurationMs = dur,
+        sourceStartMs = 0, sourceEndMs = dur, timelineStartMs = start, hasAudio = audio,
+    )
+
+    @Test fun isolateCoversTheWholeMainTimelineAlsoInsideCompounds() {
+        var n = 0
+        val ids: () -> String = { "k${n++}" }
+        var t = TimelineOps.normalize(Timeline(listOf(
+            clip("a", 0, 3000), clip("b", 3000, 2000), clip("img", 5000, 2000, kind = MediaKind.IMAGE, audio = false),
+            clip("c", 7000, 2000), clip("music", 0, 4000, track = Track.MUSIC, kind = MediaKind.AUDIO),
+        )))
+        t = Compound.create(t, listOf("b", "img"), ids, 16f / 9f).timeline
+        assertEquals(listOf("a", "b", "c"), VoiceEdits.mainVoices(t).map { it.id })
+        assertFalse(VoiceEdits.isolatedAll(t))
+        val on = VoiceEdits.isolateMain(t, true)
+        assertTrue(VoiceEdits.isolatedAll(on))
+        assertTrue(Compound.flatten(on, 1f).main.filter { it.isAudible }.all { it.audio.isolate })
+        assertFalse("music is not a voice of the main timeline", on.byId("music")!!.audio.isolate)
+        assertFalse(VoiceEdits.isolatedAll(VoiceEdits.isolateMain(on, false)))
+        assertEquals(t, VoiceEdits.isolateMain(on, false))
+    }
+
+    @Test fun isolateIsStoredAndOldValuesStillRead() {
+        val fx = AudioFx(isolate = true)
+        assertFalse(fx.isDefault)
+        assertFalse(fx.needsProcessing)
+        assertEquals(fx, AudioFx.decode(fx.encode()))
+        assertEquals(AudioFx(volume = 0.5f), AudioFx.decode("0.5,0.0,0.0,0,0"))      // 0.18 / 0.19 format
+    }
+}

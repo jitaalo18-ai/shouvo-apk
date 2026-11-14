@@ -13,6 +13,15 @@ import android.provider.MediaStore
 import androidx.media3.common.Effect
 import androidx.media3.common.MediaItem
 import androidx.media3.common.audio.AudioProcessor
+import android.graphics.BitmapFactory
+import android.graphics.ColorSpace
+import androidx.media3.common.util.Clock
+import androidx.media3.datasource.DataSourceBitmapLoader
+import androidx.media3.datasource.DefaultDataSource
+import androidx.media3.transformer.DefaultAssetLoaderFactory
+import androidx.media3.transformer.DefaultDecoderFactory
+import com.google.common.util.concurrent.MoreExecutors
+import java.util.concurrent.Executors
 import androidx.media3.effect.BitmapOverlay
 import androidx.media3.effect.MatrixTransformation
 import androidx.media3.effect.OverlayEffect
@@ -95,6 +104,9 @@ class Exporter(private val context: Context) {
         for (uri in timeline.clips.filter { it.isAudible && it.audio.denoise > 0f }.map { it.sourceUri }.distinct()) {
             VoiceProcessing.ensure(context, uri)
         }
+        // Isolate voice: the voice of every such file worked out (usually done already in the editor)
+        val isolating = timeline.clips.filter { it.isAudible && it.audio.isolate }.map { it.sourceUri }.distinct()
+        for (uri in isolating) VoiceProcessing.ensureIsolation(context, uri)
         // pictures / videos first, captions and texts on top of everything
         val overlays: List<TextureOverlay> = timeline.track(Track.OVERLAY).sortedBy { it.layer }
             .map { TimedOverlay(context, it, canvasW, canvasH) } +
@@ -102,7 +114,10 @@ class Exporter(private val context: Context) {
                 .map { TimedText(it, canvasW, canvasH) }
         val composition = buildComposition(timeline, canvasW, canvasH, overlays)
         val outFile = File(context.cacheDir, "export_${System.currentTimeMillis()}.mp4")
-        val transformer = Transformer.Builder(context).build()
+        val transformer = Transformer.Builder(context).apply {
+            // isolated voices: the picture of the file with the voice file as its sound
+            if (timeline.clips.any { voiceOf(it) != null }) setAssetLoaderFactory(voiceAssetLoader())
+        }.build()
         val progressJob = launch {
             val holder = ProgressHolder()
             while (isActive) {
@@ -212,11 +227,29 @@ class Exporter(private val context: Context) {
 
     /** The clip's Voice enhance settings as an audio processor (none when they change nothing). */
     private fun voice(c: Clip): List<AudioProcessor> =
-        if (c.audio.isDefault || !c.isAudible) emptyList()
+        if (!c.audio.needsProcessing || !c.isAudible) emptyList()
         else listOf(VoiceFxProcessor(c.audio, c.durationMs * 1000, VoiceProcessing.profile(c.sourceUri)))
+
+    private fun voiceOf(c: Clip): String? =
+        if (c.audio.isolate && c.isAudible) VoiceProcessing.isolatedVoice(c.sourceUri)?.absolutePath else null
+
+    /** Transformer's standard loader, with sources that know isolated voices. */
+    private fun voiceAssetLoader(): DefaultAssetLoaderFactory {
+        val options = BitmapFactory.Options().apply { inPreferredColorSpace = ColorSpace.get(ColorSpace.Named.SRGB) }
+        val bitmaps = DataSourceBitmapLoader(
+            MoreExecutors.listeningDecorator(Executors.newSingleThreadExecutor()),
+            DefaultDataSource.Factory(context),
+            options,
+            4096,
+        )
+        return DefaultAssetLoaderFactory(
+            context, DefaultDecoderFactory.Builder(context).build(), Clock.DEFAULT, VoiceMediaSourceFactory(context, forExport = true), bitmaps,
+        )
+    }
 
     private fun mediaItem(c: Clip, startMs: Long, endMs: Long): MediaItem {
         val b = MediaItem.Builder().setUri(c.sourceUri)
+        voiceOf(c)?.let { b.setTag(IsolatedAudio(it)) }
         if (c.kind == MediaKind.IMAGE) {
             b.setMimeType(c.mimeType ?: "image/jpeg").setImageDurationMs(endMs - startMs)
         } else {

@@ -853,7 +853,7 @@ class EditorController(private val app: App, val projectId: Long, uiScope: Corou
         if (voiceApplyAll) {
             commitEdit(VoiceEdits.enhanceAll(timeline, c.audio))
             message = "Enhancement applies to all clips"
-            if (c.audio.denoise > 0f) askToShowProcessing()
+            if (c.audio.denoise > 0f || c.audio.isolate) askToShowProcessing()
         }
     }
 
@@ -946,7 +946,45 @@ class EditorController(private val app: App, val projectId: Long, uiScope: Corou
     }
 
     private fun askToShowProcessing() {
-        if (voiceSourcesNeeding().isNotEmpty()) processingWanted = true
+        if (voiceSourcesNeeding().isNotEmpty() || isolationSourcesNeeding().isNotEmpty()) processingWanted = true
+    }
+
+    /** Files with Isolate voice on whose voice is not worked out yet. */
+    private fun isolationSourcesNeeding(): List<String> =
+        flat.clips.filter { it.isAudible && it.audio.isolate }.map { it.sourceUri }.distinct()
+            .filter { VoiceProcessing.needsIsolation(it) }
+
+    // ---- Isolate voice (whole main timeline, like the iPhone's) -----------------------------
+
+    /** Every voice of the main timeline is isolated. */
+    val isolateOn: Boolean get() = VoiceEdits.isolatedAll(timeline)
+
+    /** The "Isolate voice" button: only your voice stays, on the whole main timeline (tap again: off). */
+    fun toggleIsolateVoice() {
+        if (busy != null) return
+        if (!VoiceProcessing.isolationAvailable) {
+            message = "Isolate voice is not available in this build."
+            return
+        }
+        val voices = VoiceEdits.mainVoices(timeline)
+        if (voices.isEmpty()) {
+            message = "There is no sound on the main track."
+            return
+        }
+        val on = !VoiceEdits.isolatedAll(timeline)
+        commitEdit(VoiceEdits.isolateMain(timeline, on))
+        message = if (on) "Isolate voice on: only the voice stays" else "Isolate voice off"
+        if (on) askToShowProcessing()
+    }
+
+    /** Isolate voice for the clip in the Voice enhance panel (all clips with "apply to all"). */
+    fun setVoiceIsolate(on: Boolean) {
+        if (on && !VoiceProcessing.isolationAvailable) {
+            message = "Isolate voice is not available in this build."
+            return
+        }
+        voiceChange(voiceApplyAll, live = false) { it.copy(isolate = on) }
+        if (on) askToShowProcessing()
     }
 
     /** Files with noise reduction on whose noise is not learned yet. */
@@ -957,6 +995,7 @@ class EditorController(private val app: App, val projectId: Long, uiScope: Corou
     /** Starts the processing of every file that needs it (in the background, never pausing). */
     private fun processVoices() {
         for (uri in voiceSourcesNeeding()) VoiceProcessing.request(app, uri)
+        for (uri in isolationSourcesNeeding()) VoiceProcessing.requestIsolation(app, uri)
     }
 
     // (after the state above exists: these collectors run at once)
@@ -989,9 +1028,11 @@ class EditorController(private val app: App, val projectId: Long, uiScope: Corou
         scope.launch {
             try {
                 val missing = voiceSourcesNeeding()
-                if (missing.isNotEmpty()) {
+                val voices = isolationSourcesNeeding()
+                if (missing.isNotEmpty() || voices.isNotEmpty()) {
                     busy = Busy("Processing audio…", null)
                     for (uri in missing) VoiceProcessing.ensure(app, uri)
+                    for (uri in voices) VoiceProcessing.ensureIsolation(app, uri)
                     busy = Busy("Rendering video…", 0f)
                 }
                 Exporter(app).export(timeline, targetAspect) { p -> busy = Busy("Rendering video…", p) }
