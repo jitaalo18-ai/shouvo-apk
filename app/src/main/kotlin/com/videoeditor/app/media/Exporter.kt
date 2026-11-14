@@ -249,7 +249,7 @@ class Exporter(private val context: Context) {
 
     private fun mediaItem(c: Clip, startMs: Long, endMs: Long): MediaItem {
         val b = MediaItem.Builder().setUri(c.sourceUri)
-        voiceOf(c)?.let { b.setTag(IsolatedAudio(it)) }
+        voiceOf(c)?.let { b.setTag(IsolatedAudio(it)).setCustomCacheKey(IsolatedAudio.key(it)) }
         if (c.kind == MediaKind.IMAGE) {
             b.setMimeType(c.mimeType ?: "image/jpeg").setImageDurationMs(endMs - startMs)
         } else {

@@ -242,7 +242,15 @@ class IsolationWriter(model: File, val target: File) {
 }
 
 /** A playlist item whose sound comes from the isolated voice file instead of its own track. */
-data class IsolatedAudio(val file: String)
+data class IsolatedAudio(val file: String) {
+    companion object {
+        /**
+         * Media3 keeps a playlist item's source when only its tag changes (same address, same
+         * cache key): a cache key of its own makes switching Isolate voice on / off rebuild it.
+         */
+        fun key(file: String) = "nocknock-voice:$file"
+    }
+}
 
 /**
  * Builds the player's / exporter's sources: an item tagged [IsolatedAudio] plays its own video

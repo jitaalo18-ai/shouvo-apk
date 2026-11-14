@@ -178,7 +178,7 @@ class PlaybackController(private val context: Context, private val scope: Corout
     private fun auxItem(c: Clip): Pair<MediaItem, String> {
         val voice = voiceOf(c)
         val b = MediaItem.Builder().setUri(c.sourceUri)
-        if (voice != null) b.setTag(IsolatedAudio(voice))
+        if (voice != null) b.setTag(IsolatedAudio(voice)).setCustomCacheKey(IsolatedAudio.key(voice))
         return b.build() to (voice ?: "")
     }
 
@@ -251,7 +251,7 @@ class PlaybackController(private val context: Context, private val scope: Corout
 
     private fun mainItem(c: Clip): MediaItem {
         val b = MediaItem.Builder().setUri(c.sourceUri).setMediaId(c.id)
-        voiceOf(c)?.let { b.setTag(IsolatedAudio(it)) }
+        voiceOf(c)?.let { b.setTag(IsolatedAudio(it)).setCustomCacheKey(IsolatedAudio.key(it)) }
         if (c.kind == MediaKind.IMAGE) {
             b.setMimeType(c.mimeType ?: "image/jpeg").setImageDurationMs(c.durationMs)
         } else {

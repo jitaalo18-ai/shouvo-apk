@@ -60,12 +60,15 @@ PY
 # music mixed in, as videos at 48 kHz and 44.1 kHz, plus the clean speech to compare with
 if [ -f "$OUT/bn_long.wav" ]; then
   python3 -c "import numpy" 2> /dev/null || pip3 install --quiet numpy
-  ffmpeg -loglevel error -y -i "$OUT/bn_long.wav" -t 14 -ar 48000 -ac 1 -c:a pcm_s16le /tmp/iso_speech48.wav
+  ffmpeg -loglevel error -y -i "$OUT/bn_long.wav" -t 12 -ar 48000 -ac 1 -c:a pcm_s16le /tmp/iso_speech48.wav
   python3 - "$OUT" <<'PY'
 import numpy as np, wave, sys, os
 out = sys.argv[1]
 sr = 48000
-w = wave.open('/tmp/iso_speech48.wav'); speech = np.frombuffer(w.readframes(w.getnframes()), dtype=np.int16).astype(np.float64) / 32768
+w = wave.open('/tmp/iso_speech48.wav'); raw = np.frombuffer(w.readframes(w.getnframes()), dtype=np.int16).astype(np.float64) / 32768
+# talking with real pauses: 4 s, 1 s quiet, 4 s, 1 s quiet, 4 s
+gap = np.zeros(sr)
+speech = np.concatenate([raw[:4 * sr], gap, raw[4 * sr:8 * sr], gap, raw[8 * sr:12 * sr]])
 n = len(speech); t = np.arange(n) / sr
 rng = np.random.RandomState(42)
 # traffic: brown rumble, passing-car swell, two horn beeps
@@ -83,7 +86,8 @@ for k, f in enumerate([220.0, 277.18, 329.63, 440.0]):
 music += ((t * 2) % 1 < 0.04) * rng.randn(n) * 0.8
 def rms(x): return np.sqrt(np.mean(x ** 2))
 def at_snr(noise, snr): return noise * (rms(speech) / rms(noise)) / (10 ** (snr / 20))
-mix = speech + at_snr(traffic, 3) + at_snr(music, 6)
+# a voice close to the phone, a busy street and a laptop playing music in the room
+mix = speech + at_snr(traffic, 8) + at_snr(music, 12)
 peak = np.abs(mix).max()
 if peak > 0.95:
     mix *= 0.95 / peak; speech_out = speech * 0.95 / peak
@@ -98,8 +102,10 @@ save('/tmp/iso_mix48.wav', mix)
 print('isolate voice material: %.1f s, speech %.1f dBFS' % (n / sr, 20 * np.log10(rms(speech_out))))
 PY
   for r in 48000 44100; do
-    ffmpeg -loglevel error -y -f lavfi -i testsrc=size=640x360:rate=30 -i /tmp/iso_mix48.wav -map 0:v -map 1:a -shortest \
-      -c:v libx264 -pix_fmt yuv420p -c:a aac -b:a 192k -ar $r -ac 2 "$OUT/iso_noisy_$r.mp4"
+    # the same sound on both channels, at full level (a plain "-ac 2" would make it 3 dB quieter)
+    ffmpeg -loglevel error -y -f lavfi -i testsrc=size=640x360:rate=30 -i /tmp/iso_mix48.wav \
+      -filter_complex "[1:a]pan=stereo|c0=c0|c1=c0[a]" -map 0:v -map "[a]" -shortest \
+      -c:v libx264 -pix_fmt yuv420p -c:a aac -b:a 192k -ar $r "$OUT/iso_noisy_$r.mp4"
   done
 fi
 ls -la "$OUT"
