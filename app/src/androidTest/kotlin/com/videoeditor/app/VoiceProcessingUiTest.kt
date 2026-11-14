@@ -103,6 +103,13 @@ class VoiceProcessingUiTest {
 
     private fun ui(block: () -> Unit) = rule.runOnUiThread(block)
 
+    /** Screenshot of what is really on screen now (the test clock drives the drawing). */
+    private fun shot(name: String) {
+        rule.mainClock.advanceTimeBy(700)
+        Thread.sleep(400)
+        Shots.take(name)
+    }
+
     @Test fun processingRunsOnceWithPopupAndSparklesWhileTheVideoKeepsPlaying() {
         VoiceProcessing.clearAll(ctx)
         val app = ctx.applicationContext as App
@@ -135,7 +142,7 @@ class VoiceProcessingUiTest {
         assertKeptPlaying("noise reduction switched on while playing")
         assertTrue("processing runs", editor.processingProgress != null)
         assertTrue("popup shown", editor.processingDialogShown)
-        Shots.take("75_voice_processing_popup")
+        shot("75_voice_processing_popup")
         assertEquals(0.7f, editor.timeline.byId(first)!!.audio.denoise, 0.001f)
 
         // more changes while playing and processing: volume, voice
@@ -148,11 +155,14 @@ class VoiceProcessingUiTest {
         ui { editor.player.pause() }
         pause(400)
         assertTrue("popup text", rule.onAllNodes(hasText("This only needs to happen once", substring = true)).fetchSemanticsNodes().isNotEmpty())
-        assertTrue("dots over the video", editor.processingProgress != null)
+        assertTrue("dots over the video", shown("voiceSparkles"))
+        assertTrue("Processing… next to Reduce noise", rule.onAllNodes(hasText("Processing…")).fetchSemanticsNodes().isNotEmpty())
         rule.onNodeWithTag("voiceMinimize").performClick()
         Thread.sleep(500)
         assertTrue("popup minimized", !editor.processingDialogShown)
-        Shots.take("76_voice_processing_minimized")
+        assertTrue("popup gone from the screen", !shown("voiceProcessing"))
+        assertTrue("progress line in the panel", shown("voiceProcessingLine"))
+        shot("76_voice_processing_minimized")
         assertTrue("still processing after Minimize", editor.processingProgress != null)
         positions.clear()
         ui { editor.player.play() }
@@ -184,7 +194,11 @@ class VoiceProcessingUiTest {
         assertKeptPlaying("end")
         ui { editor.player.pause() }
         pause(400)
-        Shots.take("77_voice_processed")
+        shot("77_voice_processed")
+        // on screen: no dots, no "Processing…", the Reduce noise value is back
+        assertTrue("dots gone from the screen", !shown("voiceSparkles"))
+        assertTrue("no Processing… left", rule.onAllNodes(hasText("Processing", substring = true)).fetchSemanticsNodes().isEmpty())
+        assertTrue("value shown", rule.onAllNodes(hasText("70%")).fetchSemanticsNodes().isNotEmpty())
 
         // the same file again (the second clip, "apply to all"): no second processing, no popup
         rule.onNodeWithTag("voiceTab_ENHANCE").performClick()
