@@ -66,6 +66,11 @@ class AlignmentUiTest {
 
     private fun bounds(tag: String): Rect = rule.onNodeWithTag(tag, useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
 
+    /** Selects [id] (select() on an already selected clip would deselect it). */
+    private fun selectClip(id: String) {
+        rule.runOnUiThread { if (editor.timeline.selected?.id != id) editor.select(id) }
+    }
+
     private fun guidesShown() = rule.onAllNodesWithTag("alignGuides", useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty()
 
     /** Centre of clip [id] on screen (root px), from its stored position. */
@@ -123,10 +128,8 @@ class AlignmentUiTest {
         pause(800)
 
         for (format in listOf(CanvasFormat.TALL, CanvasFormat.WIDE, CanvasFormat.SQUARE, CanvasFormat.PORTRAIT)) {
-            rule.runOnUiThread {
-                editor.chooseFormat(format)
-                editor.select(overlayId)
-            }
+            rule.runOnUiThread { editor.chooseFormat(format) }
+            selectClip(overlayId)
             pause(1_000)
             val canvas = bounds("previewCanvas")
             Report.note("align ${format.label}: preview ${canvas.width.toInt()} x ${canvas.height.toInt()} px (aspect ${"%.3f".format(canvas.width / canvas.height)})")
@@ -162,10 +165,8 @@ class AlignmentUiTest {
         }
 
         // ---- text: snaps the same way
-        rule.runOnUiThread {
-            editor.chooseFormat(CanvasFormat.TALL)
-            editor.select(textId)
-        }
+        rule.runOnUiThread { editor.chooseFormat(CanvasFormat.TALL) }
+        selectClip(textId)
         pause(1_000)
         val canvas = bounds("previewCanvas")
         val text = rule.onNodeWithTag("caption_Hello", useUnmergedTree = true)
@@ -177,7 +178,7 @@ class AlignmentUiTest {
         assertEquals(0, editor.alignGuides)
 
         // ---- main video: a small move stays locked in the centre with both guides
-        rule.runOnUiThread { editor.select(editor.timeline.main[0].id) }
+        selectClip(editor.timeline.main[0].id)
         pause(800)
         val main = editor.timeline.main[0]
         assertEquals(0.5f, main.posX, 0f)
