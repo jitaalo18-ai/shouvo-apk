@@ -851,7 +851,7 @@ class EditorController(private val app: App, val projectId: Long, uiScope: Corou
     private fun startAnalysis() {
         val list = VoiceEdits.audible(timeline)
         val known = levelCache
-        if (list.all { levelKey(it) in known }) {
+        if (list.all { known.containsKey(levelKey(it)) }) {
             voiceLevels = list.associate { it.id to known.getValue(levelKey(it)) }
             return
         }
