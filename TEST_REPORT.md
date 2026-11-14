@@ -1,3 +1,33 @@
+# V0.20 validation (2026-11-15)
+
+Executed (GitHub Actions):
+- core JVM tests: 111 passed. New: sample-rate converter (44.1 -> 48 kHz error 93-125 dB below
+  the signal, 23.5 kHz alias -78 dB when going down, no delay, exact lengths, equal rates
+  untouched); Isolate voice covers the whole main timeline incl. compound clips, not music;
+  stored and old projects still read.
+- Before the app: the C API that the app calls was checked on a PC against DeepFilterNet's own
+  tool, sample for sample (difference 60 dB below the signal; delay 1440 samples taken out).
+- Android 12 emulator, 27/27 instrumented tests passed, zero player errors (IsolateVoiceTest new):
+  - Real Bangla speech (Google FLEURS) with 1 s pauses + traffic (rumble, passing car, horns,
+    8 dB below the voice) + laptop-like music (12 dB below), as 48 kHz and 44.1 kHz videos:
+    SI-SDR 6.3 -> 12.4 dB; pauses -40.3 -> -86.5 dBFS (noise gone); the voice -1.0 dB;
+    lined up with the input to the sample; WAV as long as the video; 14 s of sound in
+    3.5-4.0 s on the emulator CPU. Processed once (memory, then disk: never twice).
+  - Preview: the main player plays the isolated voice (48 kHz mono) with the video's picture;
+    switching off gives the clip's own sound again (this found a real bug: Media3 reused the
+    old source when only the item's tag changed - fixed with a cache key of its own).
+  - Export: pauses -40.3 -> -87.0 dBFS; the voice in step with the picture exactly like the
+    original sound (this found a 21 ms offset - the AAC encoder's start-up samples - fixed).
+  - Button: tap "Isolate voice" -> on for both clips, popup + dots on screen, button lit;
+    Minimize; the video keeps playing while both files are processed (41.9 s on the emulator
+    at test speed); afterwards no dots, the player plays the voices; tap again -> off; undo.
+  - All earlier tests pass (Voice enhance, processing, sink contract, captions, compound...).
+
+Not executed / needs a real phone: listening; how fast the network runs on the S25 Ultra
+(arm64 build is optimised and checked to load, but only the x86_64 emulator ran it). Not
+removed by design: other people speaking (also a voice to the network).
+
+---
 # V0.19 validation (2026-11-15)
 
 Executed (GitHub Actions):
