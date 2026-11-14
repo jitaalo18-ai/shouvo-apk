@@ -402,6 +402,7 @@ fun EditorScreen(app: App, projectId: Long, onBack: () -> Unit) {
         }
 
         if (ctl.voiceOpen) VoicePanel(ctl, Modifier.align(Alignment.BottomCenter))
+        if (ctl.processingDialogShown) ProcessingDialog(ctl)
 
         shownMessage?.let { text ->
             Box(
@@ -768,6 +769,9 @@ private fun PreviewCanvas(ctl: EditorController, position: Long) {
             }
 
             if (top != null && (top.selected || ctl.multiPick?.contains(top.id) == true)) Box(placeFor(top).border(2.dp, GuideYellow))
+
+            // sound being processed (Voice enhance): twinkling dots over the video, like Edits
+            if (ctl.processingProgress != null) VoiceSparkles(Modifier.matchParentSize())
 
             // Smart alignment guides: thin yellow dotted lines through the frame centre / along the
             // frame edges the element is locked onto - only while it is being moved (never exported)

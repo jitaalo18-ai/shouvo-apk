@@ -60,7 +60,7 @@ data class AudioFx(
  * Where a clip's sound settings apply: [startUs]..[endUs] in the time of the stream the processor
  * sees (timeline time for the main preview player, clip time for one exported clip, source time
  * for a sound effect's own player). Fades run from [clipStartUs] and up to [clipEndUs]. The noise
- * picture is learned per [key] (one per clip), so jumping between clips does not mix them up.
+ * reduction's short memory is kept per [key] (one per clip).
  */
 data class FxSegment(
     val key: String,
@@ -69,14 +69,20 @@ data class FxSegment(
     val fx: AudioFx,
     val clipStartUs: Long = startUs,
     val clipEndUs: Long = endUs,
+    /**
+     * The clip's noise, learned once from its whole sound ([NoiseProfiler]). Without it there is
+     * no noise reduction (the sound is still being processed).
+     */
+    val profile: NoiseProfile? = null,
 )
 
 /**
  * The Voice enhance sound processing in plain Kotlin, shared by the preview and the export and
  * tested on the JVM. Interleaved float samples in; the same samples out, later.
  *
- * Chain: noise reduction (short-time spectrum, minimum-statistics noise estimate, decision-
- * directed Wiener gain, at most [MAX_REDUCTION_DB] less noise) -> voice EQ (high-pass 80 Hz, less
+ * Chain: noise reduction (short-time spectrum; the noise is the clip's [NoiseProfile], learned
+ * beforehand from the whole clip, so it works fully from the first sample; decision-directed
+ * Wiener gain, at most [MAX_REDUCTION_DB] less noise) -> voice EQ (high-pass 80 Hz, less
  * 250 Hz mud, more 3 kHz presence and air) with a compressor -> volume x fades -> soft limiter
  * (only when something could go over full scale).
  *
@@ -85,7 +91,7 @@ data class FxSegment(
  * output sample i belongs to input sample i - [latency].
  */
 class VoiceFx(val sampleRate: Int, val channels: Int, private val compensate: Boolean = true) {
-    private val n = if (sampleRate >= 32_000) 1024 else 512
+    private val n = NoiseProfiler.fftSizeFor(sampleRate)
     private val hop = n / 2
     /** Delay of the noise reduction in frames (removed with [compensate]). */
     val latency = n - hop
@@ -118,37 +124,28 @@ class VoiceFx(val sampleRate: Int, val channels: Int, private val compensate: Bo
     private val gain = FloatArray(bins)
     private val fft = Fft(n)
     private val states = LinkedHashMap<String, NoiseState>(16, 0.75f, true)
+    private val noiseBins = java.util.IdentityHashMap<NoiseProfile, FloatArray>()
     private val pending = ArrayDeque<FloatArray>()
 
     // ---- EQ / dynamics ----
     private val eq = Array(channels) { Array(4) { Biquad() } }
     private var eqAmount = -1f
     private var env = 0f
+    private var compGain = 1f
+    private var compCount = 0
+    private var compAmount = -1f
     private val attack = exp(-1.0 / (0.005 * sampleRate)).toFloat()
     private val release = exp(-1.0 / (0.15 * sampleRate)).toFloat()
     private var segIndex = 0
 
-    /** The noise picture of one clip. */
+    /** The noise reduction's memory of the last frame, per clip. */
     private inner class NoiseState {
-        val smooth = FloatArray(bins)
-        val noise = FloatArray(bins)
-        val subMin = Array(SUBWINDOWS) { FloatArray(bins) { Float.MAX_VALUE } }
-        var subFrames = 0
-        var subIndex = 0
         val prevGain = FloatArray(bins) { 1f }
         val prevSnr = FloatArray(bins) { 1f }
-        var frames = 0
     }
 
-    /** Frames of the noise picture learned before the reduction is at full strength. */
-    private val warmupFrames = max(1, (WARMUP_SECONDS * sampleRate / hop).toInt())
-    private val framesPerSub = max(1, (SUBWINDOW_SECONDS * sampleRate / hop).toInt())
-
-    /**
-     * Forgets the sound in flight (after a seek). What was learned about each clip's noise is
-     * kept unless [forgetNoise].
-     */
-    fun reset(forgetNoise: Boolean = false) {
+    /** Forgets the sound in flight (after a seek). */
+    fun reset() {
         inputFrames = 0
         outputFrames = 0
         marks = 0
@@ -161,13 +158,10 @@ class VoiceFx(val sampleRate: Int, val channels: Int, private val compensate: Bo
         fill = 0
         pending.clear()
         env = 0f
+        compCount = 0
+        compAmount = -1f
         segIndex = 0
-        if (forgetNoise) states.clear()
-        for (s in states.values) {
-            // the reduction eases in again after a jump, but from what is already known
-            s.prevGain.fill(1f)
-            s.prevSnr.fill(1f)
-        }
+        states.clear()
     }
 
     /**
@@ -212,7 +206,8 @@ class VoiceFx(val sampleRate: Int, val channels: Int, private val compensate: Bo
     private fun runFrame() {
         val seg = segmentAt(positionOfInput(inputFrames - hop))
         val strength = seg?.fx?.denoise ?: 0f
-        if (strength <= 0f || seg == null) {
+        val profile = seg?.profile
+        if (strength <= 0f || seg == null || profile == null) {
             // no noise reduction here: window twice (= Hann), overlap-add gives the input back
             for (c in 0 until channels) {
                 val buf = frameIn[c]
@@ -220,7 +215,7 @@ class VoiceFx(val sampleRate: Int, val channels: Int, private val compensate: Bo
                 for (k in 0 until n) o[k] += buf[k] * window[k] * window[k]
             }
         } else {
-            reduceNoise(stateFor(seg.key), strength)
+            reduceNoise(stateFor(seg.key), binsOf(profile), strength)
         }
         val block = FloatArray(hop * channels)
         for (c in 0 until channels) {
@@ -240,7 +235,10 @@ class VoiceFx(val sampleRate: Int, val channels: Int, private val compensate: Bo
         return NoiseState().also { states[key] = it }
     }
 
-    private fun reduceNoise(s: NoiseState, strength: Float) {
+    private fun binsOf(p: NoiseProfile): FloatArray =
+        noiseBins.getOrPut(p) { p.binsFor(sampleRate, n).also { b -> for (i in b.indices) b[i] *= OVERSUBTRACT } }
+
+    private fun reduceNoise(s: NoiseState, noise: FloatArray, strength: Float) {
         for (c in 0 until channels) {
             val r = re[c]
             val m = im[c]
@@ -254,26 +252,11 @@ class VoiceFx(val sampleRate: Int, val channels: Int, private val compensate: Bo
         for (b in 0 until bins) {
             var p = 0f
             for (c in 0 until channels) p += re[c][b] * re[c][b] + im[c][b] * im[c][b]
-            p /= channels
-            power[b] = p
-            s.smooth[b] = if (s.frames == 0) p else SMOOTHING * s.smooth[b] + (1 - SMOOTHING) * p
-            val sm = s.subMin[s.subIndex]
-            if (s.smooth[b] < sm[b]) sm[b] = s.smooth[b]
-            var lowest = Float.MAX_VALUE
-            for (w in s.subMin) if (w[b] < lowest) lowest = w[b]
-            s.noise[b] = lowest * NOISE_BIAS
+            power[b] = p / channels
         }
-        s.frames++
-        if (++s.subFrames >= framesPerSub) {
-            s.subFrames = 0
-            s.subIndex = (s.subIndex + 1) % SUBWINDOWS
-            s.subMin[s.subIndex].fill(Float.MAX_VALUE)
-        }
-        // eases in while the noise picture is still young
-        val effective = strength * min(1f, s.frames.toFloat() / warmupFrames)
-        val floor = 10f.pow(-(MAX_REDUCTION_DB * effective) / 20f)
+        val floor = 10f.pow(-(MAX_REDUCTION_DB * strength) / 20f)
         for (b in 0 until bins) {
-            val nz = max(s.noise[b], 1e-12f)
+            val nz = max(noise[b], 1e-12f)
             val post = power[b] / nz
             // decision-directed a-priori SNR (Ephraim-Malah) -> Wiener gain
             val prio = DD_ALPHA * s.prevGain[b] * s.prevGain[b] * s.prevSnr[b] + (1 - DD_ALPHA) * max(post - 1f, 0f)
@@ -351,14 +334,18 @@ class VoiceFx(val sampleRate: Int, val channels: Int, private val compensate: Bo
                     block[at + c] = x
                     peak = max(peak, abs(x))
                 }
-                // compressor on the loudest channel, then make-up gain
+                // compressor on the loudest channel, then make-up gain (gain worked out every 16 samples)
                 env = if (peak > env) attack * env + (1 - attack) * peak else release * env + (1 - release) * peak
-                val levelDb = 20f * log10(max(env, 1e-6f))
-                val ratio = 1f + 3f * fx.enhance
-                val over = levelDb - COMP_THRESHOLD_DB
-                val reduce = if (over > 0) over * (1f - 1f / ratio) else 0f
-                val g = 10f.pow((MAKEUP_DB * fx.enhance - reduce) / 20f)
-                for (c in 0 until channels) block[at + c] *= g
+                if (compCount == 0 || fx.enhance != compAmount) {
+                    val levelDb = 20f * log10(max(env, 1e-6f))
+                    val ratio = 1f + 3f * fx.enhance
+                    val over = levelDb - COMP_THRESHOLD_DB
+                    val reduce = if (over > 0) over * (1f - 1f / ratio) else 0f
+                    compGain = 10f.pow((MAKEUP_DB * fx.enhance - reduce) / 20f)
+                    compAmount = fx.enhance
+                }
+                compCount = (compCount + 1) and 15
+                for (c in 0 until channels) block[at + c] *= compGain
             }
             var g = fx.volume
             if (fx.fadeInMs > 0) {
@@ -445,12 +432,9 @@ class VoiceFx(val sampleRate: Int, val channels: Int, private val compensate: Bo
 
     companion object {
         const val MAX_REDUCTION_DB = 28f
-        const val NOISE_BIAS = 2.2f
-        const val SMOOTHING = 0.7f
+        /** The noise is taken a little louder than measured (fewer leftover hiss bubbles). */
+        const val OVERSUBTRACT = 1.5f
         const val DD_ALPHA = 0.96f
-        const val SUBWINDOWS = 8
-        const val SUBWINDOW_SECONDS = 0.2f
-        const val WARMUP_SECONDS = 0.6f
         const val MAX_STATES = 48
         const val COMP_THRESHOLD_DB = -24f
         const val MAKEUP_DB = 6f
@@ -529,6 +513,160 @@ private class Biquad {
             2 * ((a - 1) - (a + 1) * c),
             (a + 1) - (a - 1) * c - sa,
         )
+    }
+}
+
+/**
+ * What a clip's steady background noise sounds like: its average power per frequency band,
+ * measured once over the clip's whole sound ([NoiseProfiler]).
+ */
+class NoiseProfile(val sampleRate: Int, val fftSize: Int, val power: FloatArray) {
+    /** Noise level of the profile in dBFS (for reports). */
+    val levelDb: Float
+        get() {
+            // white noise of variance s2 has power s2 * n / 2 in every band with this window
+            val total = power.sum().toDouble() / (fftSize * fftSize / 4.0)
+            return (10 * kotlin.math.log10(max(total, 1e-12))).toFloat()
+        }
+
+    /** Power per band for a spectrum of [n] points at [rate] (other sizes / rates interpolated). */
+    fun binsFor(rate: Int, n: Int): FloatArray {
+        val bins = n / 2 + 1
+        if (rate == sampleRate && n == fftSize) return power.copyOf()
+        val scale = n.toFloat() / fftSize
+        return FloatArray(bins) { b ->
+            val hz = b.toDouble() * rate / n
+            val x = hz * fftSize / sampleRate
+            val i = x.toInt()
+            if (i >= power.size - 1) power.last() * scale
+            else ((power[i] + (power[i + 1] - power[i]) * (x - i)) * scale).toFloat()
+        }
+    }
+
+    fun encode(): ByteArray {
+        val buf = java.nio.ByteBuffer.allocate(12 + 4 * power.size)
+        buf.putInt(MAGIC).putInt(sampleRate).putInt(fftSize)
+        for (p in power) buf.putFloat(p)
+        return buf.array()
+    }
+
+    companion object {
+        private const val MAGIC = 0x4e4e5031   // "NNP1"
+
+        fun decode(bytes: ByteArray): NoiseProfile? {
+            if (bytes.size < 12) return null
+            val buf = java.nio.ByteBuffer.wrap(bytes)
+            if (buf.int != MAGIC) return null
+            val rate = buf.int
+            val n = buf.int
+            if (rate <= 0 || n < 64 || bytes.size != 12 + 4 * (n / 2 + 1)) return null
+            return NoiseProfile(rate, n, FloatArray(n / 2 + 1) { buf.float })
+        }
+    }
+}
+
+/**
+ * Learns a clip's [NoiseProfile] from its whole sound (the one-time "Processing" step): in every
+ * short frame the power per band, smoothed a little; the noise of a band is its quiet level
+ * (10th percentile over the clip, digital silence left out), corrected to the average.
+ */
+class NoiseProfiler(val sampleRate: Int, val channels: Int) {
+    private val n = fftSizeFor(sampleRate)
+    private val hop = n / 2
+    private val bins = n / 2 + 1
+    private val window = FloatArray(n) { sqrt(0.5 - 0.5 * cos(2.0 * PI * it / n)).toFloat() }
+    private val frame = Array(channels) { FloatArray(n) }
+    private var fill = 0
+    private val re = FloatArray(n)
+    private val im = FloatArray(n)
+    private val power = FloatArray(bins)
+    private val smooth = FloatArray(bins)
+    private var frames = 0
+    private val histogram = IntArray(bins * BUCKETS)
+    private var counted = 0
+
+    /** Frames of sound taken in so far. */
+    var framesIn = 0L
+        private set
+
+    fun feed(input: FloatArray, count: Int) {
+        var i = 0
+        while (i < count) {
+            val take = min(hop - fill, count - i)
+            for (c in 0 until channels) {
+                val f = frame[c]
+                for (k in 0 until take) f[hop + fill + k] = input[(i + k) * channels + c]
+            }
+            fill += take
+            i += take
+            if (fill == hop) {
+                analyse()
+                fill = 0
+                for (c in 0 until channels) System.arraycopy(frame[c], hop, frame[c], 0, n - hop)
+            }
+        }
+        framesIn += count
+    }
+
+    private fun analyse() {
+        power.fill(0f)
+        for (c in 0 until channels) {
+            val f = frame[c]
+            for (k in 0 until n) {
+                re[k] = f[k] * window[k]
+                im[k] = 0f
+            }
+            fft.forward(re, im)
+            for (b in 0 until bins) power[b] += (re[b] * re[b] + im[b] * im[b]) / channels
+        }
+        var total = 0.0
+        for (b in 0 until bins) {
+            smooth[b] = if (frames == 0) power[b] else SMOOTHING * smooth[b] + (1 - SMOOTHING) * power[b]
+            total += power[b]
+        }
+        frames++
+        if (total < SILENCE_POWER) return          // digital silence says nothing about the noise
+        for (b in 0 until bins) {
+            val db = 10 * kotlin.math.log10(max(smooth[b], 1e-30f))
+            val bucket = ((db - LOW_DB) / STEP_DB).toInt().coerceIn(0, BUCKETS - 1)
+            histogram[b * BUCKETS + bucket]++
+        }
+        counted++
+    }
+
+    private val fft = Fft(n)
+
+    /** The profile, or null when there was (almost) no sound to learn from. */
+    fun finish(): NoiseProfile? {
+        if (counted < MIN_FRAMES) return null
+        val target = max(1, (counted * PERCENTILE).toInt())
+        val out = FloatArray(bins)
+        for (b in 0 until bins) {
+            var seen = 0
+            var bucket = 0
+            while (bucket < BUCKETS) {
+                seen += histogram[b * BUCKETS + bucket]
+                if (seen >= target) break
+                bucket++
+            }
+            val db = LOW_DB + (bucket + 0.5f) * STEP_DB
+            out[b] = 10f.pow(db / 10f) * PERCENTILE_TO_MEAN
+        }
+        return NoiseProfile(sampleRate, n, out)
+    }
+
+    companion object {
+        fun fftSizeFor(rate: Int) = if (rate >= 32_000) 1024 else 512
+
+        const val SMOOTHING = 0.7f
+        const val PERCENTILE = 0.1f
+        /** 10th percentile of the smoothed band power of steady noise -> its average (measured). */
+        const val PERCENTILE_TO_MEAN = 2.0f
+        const val LOW_DB = -160f
+        const val STEP_DB = 0.5f
+        const val BUCKETS = 440
+        const val SILENCE_POWER = 1e-9
+        const val MIN_FRAMES = 8
     }
 }
 

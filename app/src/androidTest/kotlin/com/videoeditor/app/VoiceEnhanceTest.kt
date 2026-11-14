@@ -15,6 +15,7 @@ import com.videoeditor.app.data.clipFrom
 import com.videoeditor.app.media.Exporter
 import com.videoeditor.app.media.MediaProbe
 import com.videoeditor.app.media.PlaybackController
+import com.videoeditor.app.media.VoiceProcessing
 import com.videoeditor.app.ui.EditorController
 import com.videoeditor.core.AudioFx
 import com.videoeditor.core.Clip
@@ -89,9 +90,12 @@ class VoiceEnhanceTest {
         Report.note("voice export: plain pause %.1f dB, voice %.1f dB".format(pausePlain, speechPlain))
         Report.note("voice export: reduce noise 100%%: pause %.1f dB, voice %.1f dB".format(level(clean, 4.4, 6.2), level(clean, 1.2, 3.8)))
         Report.note("voice export: reduce noise 70%%: pause %.1f dB".format(level(auto, 4.4, 6.2)))
-        assertTrue("noise reduced (100 %)", level(clean, 4.4, 6.2) < pausePlain - 12)
-        assertTrue("noise reduced (70 %)", level(auto, 4.4, 6.2) < pausePlain - 10)
-        assertTrue("voice kept", abs(level(clean, 1.2, 3.8) - speechPlain) < 4)
+        Report.note("voice export: first second (noise only): %.1f dB -> %.1f dB".format(level(plain, 0.1, 0.9), level(clean, 0.1, 0.9)))
+        assertTrue("noise reduced (100 %)", level(clean, 4.4, 6.2) < pausePlain - 18)
+        assertTrue("noise reduced (70 %)", level(auto, 4.4, 6.2) < pausePlain - 13)
+        // the noise was learned from the whole clip first: it is gone from the very start
+        assertTrue("noise reduced from the first moment", level(clean, 0.1, 0.9) < level(plain, 0.1, 0.9) - 18)
+        assertTrue("voice kept", abs(level(clean, 1.2, 3.8) - speechPlain) < 1.5)
 
         // volume 50 % = -6 dB once the fade is over; during the fade much quieter
         val after = level(quiet, 3.2, 3.9) - level(plain, 3.2, 3.9)
@@ -122,6 +126,7 @@ class VoiceEnhanceTest {
             val player = PlaybackController(ctx, scope)
             try {
                 val a = clipFrom(Fixtures.info("noisy_test.mp4"), Track.MAIN).copy(audio = AudioFx(volume = 0.5f))
+                VoiceProcessing.ensure(ctx, a.sourceUri)
                 val b = clipFrom(Fixtures.info("portrait_test.mp4"), Track.MAIN)
                 val t = TimelineOps.appendMain(Timeline(), listOf(a, b))
                 player.setTimeline(t)
@@ -160,6 +165,19 @@ class VoiceEnhanceTest {
                 assertTrue(fx.framesByKey.getOrDefault(b.id, 0) > 10_000)
                 assertEquals(-6.0, ga, 1.5)
                 assertEquals(0.0, gb, 1.0)
+
+                // noise reduction in the preview (profile learned before): a pause of clip a
+                fx.powerIn.clear(); fx.powerOut.clear()
+                player.setTimeline(Timeline(t.clips.map { if (it.id == a.id) it.copy(audio = AudioFx(denoise = 1f)) else it }))
+                player.seekTo(4_500)
+                player.play()
+                delay(1_500)
+                player.pause()
+                val gNoise = 10 * log10(fx.powerOut[a.id]!! / fx.powerIn[a.id]!!)
+                Report.note("voice preview: noise in a pause with Reduce noise 100%% %.1f dB; CPU for the sound %.1f%% (%d ms for %.1f s)".format(
+                    gNoise, 100.0 * fx.processNanos / 1e9 / (fx.processFrames / 44_100.0), fx.processNanos / 1_000_000, fx.processFrames / 44_100.0))
+                assertTrue("noise reduced in the preview: $gNoise", gNoise < -15)
+                assertEquals("no player errors: ${player.lastError}", 0, player.errors)
 
                 // a change while playing is heard: b muted
                 fx.powerIn.clear(); fx.powerOut.clear()
@@ -241,6 +259,8 @@ class VoiceEnhanceTest {
         assertTrue(rule.onAllNodes(hasText("Remove noise on 1 clip")).fetchSemanticsNodes().isNotEmpty())
         rule.onNodeWithTag("voiceRemoveNoise").performClick()
         pause(500)
+        waitFor("processing done") { editor.processingProgress == null }
+        pause(500)
         assertEquals(AudioFx.AUTO_DENOISE, clip(noisyId).audio.denoise)
         assertEquals(0f, clip(toneId).audio.denoise)
         assertTrue(rule.onAllNodes(hasText("Noise removed on 1 clip")).fetchSemanticsNodes().isNotEmpty())
@@ -260,11 +280,15 @@ class VoiceEnhanceTest {
         rule.onNodeWithTag("voiceTab_ENHANCE").performClick()
         pause(300)
         setSlider("voiceDenoise", 0.4f)
+        waitFor("processing done") { editor.processingProgress == null }
+        pause(500)
         val d = clip(noisyId).audio.denoise
         assertTrue("reduce noise $d", abs(d - 0.4f) < 0.06f)
         assertEquals("only this clip", 0f, clip(toneId).audio.denoise)
         rule.onNodeWithTag("voiceApplyAll").performClick()
         pause(400)
+        waitFor("processing done") { editor.processingProgress == null }
+        pause(500)
         assertEquals("applied to all", d, clip(toneId).audio.denoise)
         assertTrue(editor.voiceApplyAll)
         setSlider("voiceEnhance", 0.6f)

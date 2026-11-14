@@ -91,6 +91,10 @@ class Exporter(private val context: Context) {
         val main = timeline.main
         require(main.isNotEmpty()) { "Nothing to export" }
         val (canvasW, canvasH) = canvasSize(aspect)
+        // noise reduction needs each file's noise learned once (usually done already in the editor)
+        for (uri in timeline.clips.filter { it.isAudible && it.audio.denoise > 0f }.map { it.sourceUri }.distinct()) {
+            VoiceProcessing.ensure(context, uri)
+        }
         // pictures / videos first, captions and texts on top of everything
         val overlays: List<TextureOverlay> = timeline.track(Track.OVERLAY).sortedBy { it.layer }
             .map { TimedOverlay(context, it, canvasW, canvasH) } +
@@ -208,7 +212,8 @@ class Exporter(private val context: Context) {
 
     /** The clip's Voice enhance settings as an audio processor (none when they change nothing). */
     private fun voice(c: Clip): List<AudioProcessor> =
-        if (c.audio.isDefault || !c.isAudible) emptyList() else listOf(VoiceFxProcessor(c.audio, c.durationMs * 1000))
+        if (c.audio.isDefault || !c.isAudible) emptyList()
+        else listOf(VoiceFxProcessor(c.audio, c.durationMs * 1000, VoiceProcessing.profile(c.sourceUri)))
 
     private fun mediaItem(c: Clip, startMs: Long, endMs: Long): MediaItem {
         val b = MediaItem.Builder().setUri(c.sourceUri)

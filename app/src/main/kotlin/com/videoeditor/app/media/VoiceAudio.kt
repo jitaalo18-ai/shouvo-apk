@@ -11,6 +11,7 @@ import androidx.media3.exoplayer.audio.AudioSink
 import androidx.media3.exoplayer.audio.ForwardingAudioSink
 import com.videoeditor.core.AudioFx
 import com.videoeditor.core.FxSegment
+import com.videoeditor.core.NoiseProfile
 import com.videoeditor.core.PlayMap
 import com.videoeditor.core.VoiceFx
 import java.nio.ByteBuffer
@@ -50,7 +51,11 @@ internal object Pcm {
  * Export: applies one clip's Voice enhance settings to its sound. Positions count from the start
  * of the clip; fades end at [durationUs]. Inactive when the settings change nothing.
  */
-class VoiceFxProcessor(private val fx: AudioFx, private val durationUs: Long) : BaseAudioProcessor() {
+class VoiceFxProcessor(
+    private val fx: AudioFx,
+    private val durationUs: Long,
+    private val profile: NoiseProfile? = null,
+) : BaseAudioProcessor() {
     private var engine: VoiceFx? = null
     private var frames = 0L
     private var floats = FloatArray(0)
@@ -63,7 +68,7 @@ class VoiceFxProcessor(private val fx: AudioFx, private val durationUs: Long) : 
     override fun onFlush() {
         val f = inputAudioFormat
         engine = if (f == AudioFormat.NOT_SET) null else VoiceFx(f.sampleRate, f.channelCount, compensate = true).apply {
-            plan = listOf(FxSegment("clip", Long.MIN_VALUE / 4, Long.MAX_VALUE / 4, fx, 0, durationUs))
+            plan = listOf(FxSegment("clip", Long.MIN_VALUE / 4, Long.MAX_VALUE / 4, fx, 0, durationUs, profile))
         }
         frames = 0
     }
@@ -134,6 +139,12 @@ class FxState(
 
     @Volatile
     var flushes = 0
+
+    /** Time spent processing sound and how much sound that was (for the CPU share in reports). */
+    @Volatile
+    var processNanos = 0L
+    @Volatile
+    var processFrames = 0L
 }
 
 /**
@@ -195,6 +206,7 @@ class VoiceFxSink(sink: AudioSink, private val state: FxState) : ForwardingAudio
                 firstAfterFlush = false
                 state.firstAfterFlushUs = posUs
             }
+            val t0 = System.nanoTime()
             if (floats.size < frames * channels) floats = FloatArray(frames * channels)
             Pcm.read(buffer, encoding, frames * channels, floats)
             e.plan = state.plan
@@ -216,6 +228,8 @@ class VoiceFxSink(sink: AudioSink, private val state: FxState) : ForwardingAudio
             fifoCount -= take
             out.flip()
             pending = out
+            state.processNanos += System.nanoTime() - t0
+            state.processFrames += frames
         }
         val done = super.handleBuffer(out, presentationTimeUs, encodedAccessUnitCount)
         if (done) {
