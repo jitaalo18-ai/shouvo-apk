@@ -162,7 +162,7 @@ object VoiceProcessing {
 
     private fun isolatedFile(context: Context, uri: String): File? {
         val f = cacheFile(context, uri) ?: return null
-        return File(File(context.filesDir, "isolated_voice"), f.name.removeSuffix(".nnp") + "_dfn3.wav")
+        return File(File(context.filesDir, "isolated_voice"), f.name.removeSuffix(".nnp") + "_dfn3_v2.wav")
     }
 
     private fun isolatedFromDisk(context: Context, uri: String): File? {
@@ -279,7 +279,8 @@ object VoiceProcessing {
     /**
      * Decodes the whole first audio track of [uri] at its own rate and channels. [onFormat] is
      * told the format (return false to stop: the format changed half way); [onPcm] gets
-     * interleaved floats. Returns false when there is no audio track.
+     * interleaved floats with the time of their first sample as the players count it (the
+     * encoder's start-up samples come before 0). Returns false when there is no audio track.
      */
     internal suspend fun decodeAudio(
         context: Context,
@@ -310,6 +311,10 @@ object VoiceProcessing {
             decoder.start()
             var rate = format.getInteger(MediaFormat.KEY_SAMPLE_RATE)
             var channels = format.getInteger(MediaFormat.KEY_CHANNEL_COUNT)
+            // The encoder's start-up samples (AAC: usually 1024): MediaCodec gives them out, but
+            // ExoPlayer and Transformer leave them out - times are counted the players' way.
+            val encoderDelay = if (format.containsKey("encoder-delay")) format.getInteger("encoder-delay") else 0
+            val delayUs = encoderDelay * 1_000_000L / rate
             var pcmFloat = false
             var formatTold = false
             var floats = FloatArray(0)
@@ -360,7 +365,7 @@ object VoiceProcessing {
                             val sb = buf.asShortBuffer()
                             for (k in 0 until frames * channels) floats[k] = sb.get(k) / 32768f
                         }
-                        onPcm(floats, frames, info.presentationTimeUs)
+                        onPcm(floats, frames, info.presentationTimeUs - delayUs)
                         if (testSlowdown > 0f) kotlinx.coroutines.delay((frames * 1000L * testSlowdown / rate).toLong())
                         if (durationUs > 0) {
                             val p = (info.presentationTimeUs.toFloat() / durationUs).coerceIn(0f, 1f)

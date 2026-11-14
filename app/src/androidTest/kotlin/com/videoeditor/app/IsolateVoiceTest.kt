@@ -73,18 +73,26 @@ class IsolateVoiceTest {
         val out = ArrayList<FloatArray>()
         var resampler: Resampler? = null
         var channels = 1
-        var lead = -1L
+        var started = false
+        var drop = 0
         VoiceProcessing.decodeAudio(ctx, uri, onFormat = { rate, ch ->
             resampler = Resampler(rate, 48_000)
             channels = ch
             true
         }, onPcm = { pcm, frames, pts ->
-            if (lead < 0) {
-                lead = Math.round(pts * 48_000 / 1e6)
-                out += FloatArray(lead.toInt())
+            if (!started) {
+                started = true
+                val lead = Math.round(pts * 48_000 / 1e6).toInt()
+                if (lead > 0) out += FloatArray(lead) else drop = -lead
             }
             val mono = FloatArray(frames) { f -> (0 until channels).map { pcm[f * channels + it] }.sum() / channels }
-            out += resampler!!.feed(mono, frames)
+            var y = resampler!!.feed(mono, frames)
+            if (drop > 0) {
+                val d = minOf(drop, y.size)
+                drop -= d
+                y = y.copyOfRange(d, y.size)
+            }
+            out += y
         }, onProgress = {})
         out += resampler!!.finish()
         val all = FloatArray(out.sumOf { it.size })
@@ -364,8 +372,11 @@ class IsolateVoiceTest {
         pause(500)
         Shots.take("81_isolate_on")
         // the player plays the voices now
-        val audio = editor.player.main.currentTracks.groups.first { it.type == C.TRACK_TYPE_AUDIO && it.isSelected }.getTrackFormat(0)
-        assertEquals(1, audio.channelCount)
+        var channels = 0
+        rule.runOnUiThread {
+            channels = editor.player.main.currentTracks.groups.first { it.type == C.TRACK_TYPE_AUDIO && it.isSelected }.getTrackFormat(0).channelCount
+        }
+        assertEquals("the isolated (mono) voice plays", 1, channels)
 
         // tap again: off
         rule.onAllNodes(hasText("Isolate voice"))[0].performClick()
