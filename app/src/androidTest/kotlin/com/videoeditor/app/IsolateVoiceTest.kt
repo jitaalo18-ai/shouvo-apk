@@ -2,7 +2,10 @@ package com.videoeditor.app
 
 import android.net.Uri
 import androidx.compose.ui.test.ExperimentalTestApi
+import androidx.compose.ui.test.hasStateDescription
+import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.performClick
 import androidx.media3.common.C
@@ -317,6 +320,16 @@ class IsolateVoiceTest {
         rule.waitForIdle()
     }
 
+    private fun shown(tag: String) = rule.onAllNodes(hasTestTag(tag), useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty()
+
+    /** Screenshot of what is really on screen (the test clock drives the drawing). */
+    private fun shot(name: String) {
+        rule.waitForIdle()
+        rule.mainClock.advanceTimeBy(700)
+        Thread.sleep(500)
+        Shots.take(name)
+    }
+
     private fun waitFor(what: String, timeoutMs: Long = 30_000, condition: () -> Boolean) {
         try {
             rule.waitUntil(timeoutMs) { condition() }
@@ -338,17 +351,21 @@ class IsolateVoiceTest {
         pause(1_000)
         assertTrue(!editor.isolateOn)
 
-        // tap the button (nothing selected), then play while it works
+        // tap the button (nothing selected): the Processing popup and the dots come up
+        VoiceProcessing.testSlowdown = 0.3f
         rule.onAllNodes(hasText("Isolate voice"))[0].performClick()
-        rule.runOnUiThread { editor.player.play() }
-        VoiceProcessing.testSlowdown = 0f
-        Thread.sleep(1_200)
+        waitFor("processing popup", 15_000) { shown("voiceProcessing") }
         assertTrue("on for the whole timeline", editor.isolateOn)
         assertTrue("both clips", VoiceEdits.mainVoices(editor.timeline).all { it.audio.isolate })
-        assertTrue("popup", editor.processingDialogShown || editor.processingProgress == null)
-        rule.mainClock.advanceTimeBy(700)
-        Thread.sleep(300)
-        Shots.take("80_isolate_processing")
+        assertTrue("dots over the video", shown("voiceSparkles"))
+        assertTrue("button lit", rule.onAllNodes(hasStateDescription("On")).fetchSemanticsNodes().isNotEmpty())
+        shot("80_isolate_processing")
+        rule.onNodeWithTag("voiceMinimize").performClick()
+        pause(400)
+        assertTrue("minimized", !shown("voiceProcessing"))
+        // play while it works
+        rule.runOnUiThread { editor.player.play() }
+        Thread.sleep(1_200)
         // keeps playing, never an error
         val positions = ArrayList<Long>()
         val t0 = System.currentTimeMillis()
@@ -376,7 +393,9 @@ class IsolateVoiceTest {
         if (positions.size > 3) assertTrue("moved on", positions.last() - positions.first() > (positions.size - 1) * 400 / 3)
         rule.runOnUiThread { editor.player.pause() }
         pause(500)
-        Shots.take("81_isolate_on")
+        assertTrue("dots gone from the screen", !shown("voiceSparkles"))
+        assertTrue("no popup", !shown("voiceProcessing"))
+        shot("81_isolate_on")
         // the player plays the voices now
         var channels = 0
         rule.runOnUiThread {
