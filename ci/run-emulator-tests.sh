@@ -19,8 +19,8 @@ fi
 adb logcat -c
 adb shell am instrument -w -r $PKG.test/androidx.test.runner.AndroidJUnitRunner > "$OUT/instrumentation.txt" 2>&1
 STATUS=$?
-adb logcat -d -v time > "$OUT/logcat.txt" 2>&1
-adb exec-out run-as $PKG tar -cf - files/shots > "$OUT/shots.tar" 2>/dev/null && tar -xf "$OUT/shots.tar" -C "$OUT" && rm "$OUT/shots.tar"
+timeout 120 adb logcat -d -v time > "$OUT/logcat.txt" 2>&1
+timeout 180 adb exec-out run-as $PKG tar -cf - files/shots > "$OUT/shots.tar" 2>/dev/null && tar -xf "$OUT/shots.tar" -C "$OUT" && rm "$OUT/shots.tar"
 grep -E "^(OK|FAILURES|Tests run)|INSTRUMENTATION_(RESULT|CODE|STATUS: stream)|^[0-9]+\)" "$OUT/instrumentation.txt" | head -60
 cat "$OUT/files/shots/report.txt" 2>/dev/null
 if [ $STATUS -ne 0 ] || ! grep -q "^OK (" "$OUT/instrumentation.txt"; then

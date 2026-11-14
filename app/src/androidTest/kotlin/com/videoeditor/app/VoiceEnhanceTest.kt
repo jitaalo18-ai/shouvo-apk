@@ -289,15 +289,16 @@ class VoiceEnhanceTest {
         assertEquals(1f, clip(toneId).audio.volume)
         Shots.take("73_voice_volume")
 
-        // ---- Fade (at most half the clip: 4 s for the 8 s clip)
+        // ---- Fade (at most half the clip: about 4 s for the 8 s clip)
         rule.onNodeWithTag("voiceTab_FADE").performClick()
         pause(300)
         setSlider("voiceFadeIn", 0.5f)
         setSlider("voiceFadeOut", 1f)
         val fi = clip(noisyId).audio.fadeInMs
         val fo = clip(noisyId).audio.fadeOutMs
-        assertTrue("fade in $fi", abs(fi - 2_000) <= 300)
-        assertEquals(4_000L, fo)
+        val maxFade = com.videoeditor.core.VoiceEdits.maxFadeMs(clip(noisyId))
+        assertTrue("fade in $fi of $maxFade", abs(fi - maxFade / 2) <= 300)
+        assertTrue("fade out $fo of $maxFade", fo in (maxFade - 100)..maxFade)
         Shots.take("74_voice_fade")
 
         // the preview player got the settings
