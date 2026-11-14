@@ -127,6 +127,9 @@ class IsolateVoiceTest {
         return best
     }
 
+    /** y[i] = x[i + by] (silence outside). */
+    private fun shifted(x: FloatArray, by: Int): FloatArray = FloatArray(x.size) { i -> x.getOrElse(i + by) { 0f } }
+
     /** How much of [ref] is in [x] (least squares). */
     private fun scaleOf(x: FloatArray, ref: FloatArray): Double {
         val n = minOf(x.size, ref.size)
@@ -195,15 +198,18 @@ class IsolateVoiceTest {
             val voice = readWav(out!!)
             val noisy = decode48(Uri.fromFile(file))
             val info = MediaProbe.probe(ctx, Uri.fromFile(file))!!
+            // the reference was mixed before the AAC encoder; compare where it really lines up
             val inLag = lag(noisy, clean, 48_000, 2_400)
             val outLag = lag(voice, clean, 48_000, 2_400)
-            val sdrIn = siSdr(noisy, clean)
-            val sdrOut = siSdr(voice, clean)
-            val pauseIn = frames.medianPause(noisy)
-            val pauseOut = frames.medianPause(voice)
+            val noisyA = shifted(noisy, inLag)
+            val voiceA = shifted(voice, inLag)
+            val sdrIn = siSdr(noisyA, clean)
+            val sdrOut = siSdr(voiceA, clean)
+            val pauseIn = frames.medianPause(noisyA)
+            val pauseOut = frames.medianPause(voiceA)
             // how loud the clean voice is inside the input and inside the result
-            val speechIn = 20 * log10(scaleOf(noisy, clean))
-            val speechOut = 20 * log10(scaleOf(voice, clean))
+            val speechIn = 20 * log10(scaleOf(noisyA, clean))
+            val speechOut = 20 * log10(scaleOf(voiceA, clean))
             Report.note(
                 "isolate $rate Hz: %.1f s of sound in %.1f s; SI-SDR %.1f -> %.1f dB; pauses %.1f -> %.1f dBFS; voice level %+.1f -> %+.1f dB; shift input %d, voice %d samples; file %.2f s for a %.2f s video".format(
                     clean.size / 48_000.0, ms / 1000.0, sdrIn, sdrOut, pauseIn, pauseOut, speechIn, speechOut, inLag, outLag,
