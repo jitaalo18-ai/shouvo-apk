@@ -157,7 +157,8 @@ object TimelineOps {
                 (c.timelineEndMs - MAX_IMAGE_MS).coerceAtLeast(0),
                 c.timelineEndMs - MIN_TRIM_MS,
             )
-            c.copy(timelineStartMs = start, sourceStartMs = 0, sourceEndMs = c.timelineEndMs - start)
+            c.copy(timelineStartMs = start, sourceStartMs = 0, sourceEndMs = c.timelineEndMs - start,
+                captionTiming = CaptionTiming.shift(c.captionTiming, -c.sourceStartMs - (start - c.timelineStartMs)))
         } else {
             val delta = wanted - c.timelineStartMs
             val newSourceStart = (c.sourceStartMs + delta).coerceIn(0, c.sourceEndMs - MIN_TRIM_MS)
@@ -171,7 +172,8 @@ object TimelineOps {
         if (c.track == Track.MAIN) return@update c
         val wantedDur = newTimelineEndMs - c.timelineStartMs
         if (c.hasVirtualSource) {
-            c.copy(sourceStartMs = 0, sourceEndMs = wantedDur.coerceIn(MIN_TRIM_MS, MAX_IMAGE_MS))
+            c.copy(sourceStartMs = 0, sourceEndMs = wantedDur.coerceIn(MIN_TRIM_MS, MAX_IMAGE_MS),
+                captionTiming = CaptionTiming.shift(c.captionTiming, -c.sourceStartMs))
         } else {
             val end = (c.sourceStartMs + wantedDur)
                 .coerceIn(c.sourceStartMs + MIN_TRIM_MS, maxOf(c.sourceDurationMs, c.sourceStartMs + MIN_TRIM_MS))

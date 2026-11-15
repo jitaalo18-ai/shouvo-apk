@@ -70,6 +70,7 @@ data class ClipEntity(
     @ColumnInfo(defaultValue = "") val style: String = "",
     /** 0.18: Voice enhance settings ([com.videoeditor.core.AudioFx.encode], "" = none). */
     @ColumnInfo(defaultValue = "") val audioFx: String = "",
+    @ColumnInfo(defaultValue = "") val captionTiming: String = "",
 )
 
 /**
@@ -171,7 +172,7 @@ abstract class LibraryDao {
 
 @Database(
     entities = [ProjectEntity::class, ClipEntity::class, LibraryItemEntity::class],
-    version = 6,
+    version = 7,
     exportSchema = false,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -181,10 +182,16 @@ abstract class AppDatabase : RoomDatabase() {
     companion object {
         fun create(context: Context): AppDatabase =
             Room.databaseBuilder(context, AppDatabase::class.java, "video_editor.db")
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7)
                 .build()
 
         /** 0.18: Voice enhance. Existing clips keep their sound as it was. */
+        val MIGRATION_6_7 = object : Migration(6, 7) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE clips ADD COLUMN captionTiming TEXT NOT NULL DEFAULT ''")
+            }
+        }
+
         val MIGRATION_5_6 = object : Migration(5, 6) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE clips ADD COLUMN audioFx TEXT NOT NULL DEFAULT ''")

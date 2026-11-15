@@ -1,7 +1,7 @@
 package com.videoeditor.core
 
 /** One piece of recognised speech: [startMs]..[endMs] on the project timeline. */
-data class SpeechPiece(val startMs: Long, val endMs: Long, val text: String)
+data class SpeechPiece(val startMs: Long, val endMs: Long, val text: String, val words: List<MsRange> = emptyList())
 
 /**
  * Turns recognised speech into caption clips on the TEXT track (Auto Captions).
@@ -35,7 +35,7 @@ object Captions {
             if (inside.isEmpty()) return@map p
             val start = maxOf(p.startMs, inside.first().startMs - padBeforeMs)
             val end = minOf(p.endMs, inside.last().endMs + padAfterMs)
-            if (end - start >= 200) p.copy(startMs = start, endMs = end) else p
+            if (end - start >= 200) p.copy(startMs = start, endMs = end, words = p.words.map { MsRange(it.startMs + p.startMs - start, it.endMs + p.startMs - start) }) else p
         }
 
     /**
@@ -109,7 +109,9 @@ object Captions {
             val wanted = maxOf(p.endMs, start + MIN_MS).coerceAtMost(start + MAX_MS)
             val end = minOf(wanted, maxOf(nextStart, start + 1), projectMs)
             if (end - start < 100) continue
-            out += textClip(newId(), start, end - start, p.text, AUTO_NAME, style, posY, size)
+            out += textClip(newId(), start, end - start, p.text, AUTO_NAME, style, posY, size).copy(
+                captionTiming = CaptionTiming.encode(p.words.map { MsRange(it.startMs + p.startMs - start, it.endMs + p.startMs - start) }),
+            )
         }
         return out
     }
@@ -154,5 +156,5 @@ object Captions {
         })
 
     fun setText(t: Timeline, id: String, text: String): Timeline =
-        Timeline(t.clips.map { if (it.id == id && it.kind == MediaKind.TEXT) it.copy(text = text) else it })
+        Timeline(t.clips.map { if (it.id == id && it.kind == MediaKind.TEXT) it.copy(text = text, captionTiming = if (Regex("\\S+").findAll(text).count() == Regex("\\S+").findAll(it.text).count()) it.captionTiming else "") else it })
 }

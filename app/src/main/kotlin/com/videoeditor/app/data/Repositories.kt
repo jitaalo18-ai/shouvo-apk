@@ -28,6 +28,7 @@ fun ClipEntity.toClip() = Clip(
     children = ClipJson.decode(childrenJson),
     text = text,
     style = style,
+    captionTiming = captionTiming,
     audio = AudioFx.decode(audioFx),
     id = id,
     track = Track.valueOf(track),
@@ -79,6 +80,7 @@ fun Clip.toEntity(projectId: Long) = ClipEntity(
     childLibraryIds = Compound.libraryIds(this).takeIf { it.isNotEmpty() }?.joinToString(",", ",", ","),
     text = text,
     style = style,
+    captionTiming = captionTiming,
     audioFx = audio.encode(),
 )
 

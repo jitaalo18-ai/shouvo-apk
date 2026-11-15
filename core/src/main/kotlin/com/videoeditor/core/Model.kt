@@ -52,6 +52,8 @@ data class Clip(
     /** TEXT clips: the words shown, and the look (a style name the app knows, e.g. "CLASSIC"). */
     val text: String = "",
     val style: String = "",
+    /** Source-relative recognised word intervals; survives moving/splitting a caption. */
+    val captionTiming: String = "",
     /** Sound settings from the Voice enhance panel (volume, noise, voice, fades). */
     val audio: AudioFx = AudioFx.NONE,
 ) {

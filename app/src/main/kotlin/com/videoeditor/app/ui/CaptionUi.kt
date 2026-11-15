@@ -121,6 +121,7 @@ fun CaptionSheet(ctl: EditorController) {
                 Spacer(Modifier.height(12.dp))
                 Text("Style", fontSize = 13.sp, fontWeight = FontWeight.Medium)
                 StyleChips(ctl.captionStyle) { ctl.captionStyle = it }
+                Text("Dynamic: bold white text with the spoken word in yellow.", fontSize = 12.sp)
                 if (ctl.hasAutoCaptions) {
                     Spacer(Modifier.height(8.dp))
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -174,6 +175,7 @@ fun TextEditDialog(ctl: EditorController, id: String) {
                 onValueChange = { value = it },
                 modifier = Modifier.fillMaxWidth().testTag("textField"),
                 minLines = 2,
+                supportingText = { Text("Adding or removing words needs regenerated captions for word highlighting.") },
             )
         },
         confirmButton = { TextButton(onClick = { ctl.setText(id, value) }, modifier = Modifier.testTag("textDone")) { Text("Done") } },
@@ -234,8 +236,9 @@ fun TextLayer(ctl: EditorController, position: Long, canvasW: Dp, canvasH: Dp, c
         key(clip.id) {
             val owner = Compound.ownerId(clip.id)
             val isPiece = owner != clip.id
-            val bmp = remember(clip.text, clip.style, clip.scale, canvasWPx, canvasHPx) {
-                CaptionRenderer.render(clip.text, clip.style, clip.scale, canvasWPx.toInt().coerceAtLeast(2), canvasHPx.toInt().coerceAtLeast(2))
+            val activeWord = com.videoeditor.core.CaptionTiming.active(clip, position)
+            val bmp = remember(clip.text, clip.style, clip.scale, canvasWPx, canvasHPx, activeWord) {
+                CaptionRenderer.render(clip.text, clip.style, clip.scale, canvasWPx.toInt().coerceAtLeast(2), canvasHPx.toInt().coerceAtLeast(2), activeWord)
             }
             val w = with(density) { bmp.width.toDp() }
             val h = with(density) { bmp.height.toDp() }

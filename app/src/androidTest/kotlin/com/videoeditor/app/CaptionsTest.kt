@@ -62,6 +62,7 @@ class CaptionsTest {
         for (word in listOf("everyone", "video", "editor", "clips", "export")) {
             assertTrue("heard \"$word\" in: $heard", heard.contains(word))
         }
+        assertTrue("native word timings available", pieces.any { p -> p.words.count { it.lengthMs > 0 } >= 2 })
         val first = pieces.first()
         Report.note("captions: first piece ${first.startMs}-${first.endMs} ms \"${first.text}\"")
         assertTrue("first caption starts with the speech (1.5 s), was ${first.startMs}", first.startMs in 1_000..2_600)

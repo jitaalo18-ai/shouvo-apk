@@ -118,11 +118,24 @@ object AutoCaptioner {
     }
 
     fun parse(line: String): SpeechPiece? {
-        val parts = line.split('\t', limit = 3)
+        val parts = line.split('\t', limit = 4)
         if (parts.size < 3) return null
         val t0 = parts[0].toLongOrNull() ?: return null
         val t1 = parts[1].toLongOrNull() ?: return null
         // a broken letter (should not happen any more) is dropped rather than shown as a box
-        return SpeechPiece(t0, t1, parts[2].replace("\uFFFD", ""))
+        val text = parts[2].replace("\uFFFD", "")
+        val tokens = parts.getOrNull(3)?.split(';')?.mapNotNull { token ->
+            val fields = token.split(',').mapNotNull { it.toLongOrNull() }
+            fields.takeIf { it.size == 4 && it[0] >= 0 && it[1] >= it[0] && it[3] >= it[2] }
+        }.orEmpty()
+        val words = Regex("\\S+").findAll(text).map { word ->
+            val from = text.substring(0, word.range.first).toByteArray(Charsets.UTF_8).size
+            val to = from + word.value.toByteArray(Charsets.UTF_8).size
+            val overlap = tokens.filter { it[0] < to && it[1] > from }
+            val start = overlap.minOfOrNull { it[2] }?.coerceIn(t0, maxOf(t0, t1)) ?: t0
+            val end = overlap.maxOfOrNull { it[3] }?.coerceIn(start, maxOf(start, t1)) ?: start
+            MsRange(start - t0, end - t0)
+        }.toList()
+        return SpeechPiece(t0, t1, text, if (tokens.isEmpty()) emptyList() else words)
     }
 }

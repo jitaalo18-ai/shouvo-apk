@@ -141,11 +141,27 @@ Java_com_videoeditor_app_captions_WhisperNative_transcribe(
     for (int i = 0; i < segments; i++) {
         long long t0 = whisper_full_get_segment_t0(ctx, i) * 10;   // centiseconds -> ms
         long long t1 = whisper_full_get_segment_t1(ctx, i) * 10;
+        const size_t prefix = carry.size();
         std::string text = carry + whisper_full_get_segment_text(ctx, i);
         size_t ok = (i == segments - 1) ? text.size() : complete_utf8(text);
         carry = text.substr(ok);
         text.resize(ok);
         std::string line = std::to_string(t0) + "\t" + std::to_string(t1) + "\t" + text;
+        // Keep token timing and byte ranges; Kotlin merges subword tokens into whole words.
+        std::string timings;
+        size_t offset = prefix;
+        for (int j = 0; j < whisper_full_n_tokens(ctx, i); ++j) {
+            auto token = whisper_full_get_token_data(ctx, i, j);
+            if (token.id >= whisper_token_eot(ctx)) continue;
+            std::string tokenText = whisper_full_get_token_text(ctx, i, j);
+            const size_t end = offset + tokenText.size();
+            if (token.t0 >= 0 && token.t1 >= token.t0) {
+                timings += std::to_string(offset) + "," + std::to_string(end) + "," +
+                    std::to_string(token.t0 * 10) + "," + std::to_string(token.t1 * 10) + ";";
+            }
+            offset = end;
+        }
+        line += "\t" + timings;
         // the text is UTF-8; NewStringUTF wants modified UTF-8, so go through a byte array
         jbyteArray bytes = env->NewByteArray((jsize) line.size());
         env->SetByteArrayRegion(bytes, 0, (jsize) line.size(), reinterpret_cast<const jbyte *>(line.data()));

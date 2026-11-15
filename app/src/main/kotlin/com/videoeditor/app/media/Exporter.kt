@@ -450,13 +450,17 @@ private class TimedText(private val clip: Clip, private val canvasW: Int, privat
         .setRotationDegrees(-clip.rotation)
         .build()
     private val hidden: OverlaySettings = OverlaySettings.Builder().setAlphaScale(0f).build()
-    private val bitmap: Bitmap by lazy {
-        com.videoeditor.app.captions.CaptionRenderer.render(clip.text, clip.style, clip.scale, canvasW, canvasH)
-    }
+    // Hidden overlays share a tiny bitmap; avoid allocating every caption at every video frame.
+    private val empty by lazy { Bitmap.createBitmap(1, 1, Bitmap.Config.ARGB_8888) }
 
     private fun active(timeMs: Long) = timeMs >= clip.timelineStartMs && timeMs < clip.timelineEndMs
 
-    override fun getBitmap(presentationTimeUs: Long): Bitmap = bitmap
+    override fun getBitmap(presentationTimeUs: Long): Bitmap {
+        val ms = presentationTimeUs / 1000
+        if (!active(ms)) return empty
+        return com.videoeditor.app.captions.CaptionRenderer.render(clip.text, clip.style, clip.scale, canvasW, canvasH,
+            com.videoeditor.core.CaptionTiming.active(clip, ms))
+    }
 
     override fun getOverlaySettings(presentationTimeUs: Long): OverlaySettings =
         if (active(presentationTimeUs / 1000)) visible else hidden

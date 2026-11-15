@@ -28,7 +28,7 @@ object Compound {
 
     /** [c] cut down to the part from [from] to [to] (times relative to the clip's own start). */
     private fun crop(c: Clip, from: Long, to: Long): Clip =
-        if (c.hasVirtualSource) c.copy(sourceStartMs = 0, sourceEndMs = to - from)
+        if (c.hasVirtualSource) c.copy(sourceStartMs = 0, sourceEndMs = to - from, captionTiming = CaptionTiming.shift(c.captionTiming, -c.sourceStartMs - from))
         else c.copy(sourceStartMs = c.sourceStartMs + from, sourceEndMs = c.sourceStartMs + to)
 
     /** Overlay layers numbered 0, 1, 2 ... in the given order (bottom first). */

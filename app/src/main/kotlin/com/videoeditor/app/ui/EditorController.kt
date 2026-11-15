@@ -547,7 +547,7 @@ class EditorController(private val app: App, val projectId: Long, uiScope: Corou
     /** The Auto Captions sheet is open. */
     var captionSheet by mutableStateOf(false)
     var captionLanguage by mutableStateOf(CaptionLanguage.BANGLA)
-    var captionStyle by mutableStateOf("CLASSIC")
+    var captionStyle by mutableStateOf("KARAOKE")
 
     /** Model download in progress: bytes so far / total (null = not downloading). */
     var modelDownload by mutableStateOf<Pair<Long, Long>?>(null)

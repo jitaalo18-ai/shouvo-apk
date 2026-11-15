@@ -52,6 +52,7 @@ object ClipJson {
         put("stretchY", c.stretchY.toDouble())
         if (c.text.isNotEmpty()) put("text", c.text)
         if (c.style.isNotEmpty()) put("style", c.style)
+        if (c.captionTiming.isNotEmpty()) put("captionTiming", c.captionTiming)
         if (!c.audio.isDefault) put("audio", c.audio.encode())
         if (c.children.isNotEmpty()) {
             val arr = JSONArray()
@@ -86,6 +87,7 @@ object ClipJson {
             children = children ?: emptyList(),
             text = o.optString("text", ""),
             style = o.optString("style", ""),
+            captionTiming = o.optString("captionTiming", ""),
             audio = AudioFx.decode(o.optString("audio", "")),
         )
     }

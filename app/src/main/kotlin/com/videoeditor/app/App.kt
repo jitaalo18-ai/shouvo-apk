@@ -19,6 +19,7 @@ class App : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        com.videoeditor.app.captions.CaptionRenderer.initialize(this)
         val db = AppDatabase.create(this)
         projects = ProjectRepository(db)
         library = LibraryRepository(this, db)
