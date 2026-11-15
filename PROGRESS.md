@@ -1,3 +1,32 @@
+# V0.21 — large isolated-video export (2026-11-15)
+
+Reported: a 1 GB video isolates successfully but the app exits on Export. No device crash log
+or the original video was available; resource pressure is a suspected cause, not a confirmed trace.
+
+Changes:
+- Stop/clear preview sources and release all auxiliary players during export, then restore the
+  paused timeline and playhead. Preview buffering is capped at 8 MiB per player / 5 seconds.
+- For a single, uncut, untransformed isolated video with matching aspect and no other tracks:
+  encode the isolated WAV to AAC, then stream the ORIGINAL encoded video samples into an MP4
+  with that audio. No video decoding/encoding, no full-video byte array; rotation is retained.
+  This path preserves source resolution/frame rate and picture quality. Visual edits, trims,
+  overlays, captions, and extra tracks continue through Media3's compositing exporter.
+- Explicit AAC/H.264 in the compositing path; shut down the image-loader executor after export.
+- Require the isolated file to exist instead of silently exporting original noisy audio.
+- Space preflight for the copy path includes BOTH temporary output and Gallery copy; monitor
+  space while muxing, clean temporary files, support cancellation including the Gallery copy.
+- Keep the display awake during export, and log recoverable failures with tag NockExport.
+
+Validation additions: three JVM policy/space tests and LargeExportTest, with a generated
+1,121,420,784-byte, 66-second CBR H.264/AAC fixture. The latter checks isolation, export audio
+presence/duration, bit-exact picture sample SHA-256, and preview suspend/restore. The fixture
+uses 640x360 frames with valid CBR filler; it tests large encoded size, not real-phone 4K/HDR.
+Existing isolation tests also check measured noise removal and audio alignment.
+See the fix branch's GitHub Actions results for execution status. Real S25 Ultra reproduction,
+background process termination and a long 4K/HDR workload still need device testing. This is
+an Activity-bound exporter, not a background export service.
+
+---
 # V0.20 — Isolate voice (like the iPhone's) (2026-11-15)
 
 Current version: 0.20 (versionCode 20), label V0.20. Branch v0.20-isolate-voice merged to main.

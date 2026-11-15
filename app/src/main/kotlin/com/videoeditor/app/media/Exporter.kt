@@ -48,6 +48,7 @@ import com.videoeditor.core.Track
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
@@ -332,7 +333,7 @@ class Exporter(private val context: Context) {
         return b.build()
     }
 
-    private fun saveToMovies(file: File): Uri {
+    private suspend fun saveToMovies(file: File): Uri {
         val resolver = context.contentResolver
         val stamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
         val values = ContentValues().apply {
@@ -344,7 +345,17 @@ class Exporter(private val context: Context) {
         val collection = MediaStore.Video.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
         val uri = resolver.insert(collection, values) ?: error("Could not create the output file")
         try {
-            resolver.openOutputStream(uri)!!.use { out -> file.inputStream().use { it.copyTo(out) } }
+            resolver.openOutputStream(uri)!!.use { out ->
+                file.inputStream().use { input ->
+                    val buffer = ByteArray(256 * 1024)
+                    while (true) {
+                        kotlin.coroutines.coroutineContext.ensureActive()
+                        val count = input.read(buffer)
+                        if (count < 0) break
+                        out.write(buffer, 0, count)
+                    }
+                }
+            }
             values.clear()
             values.put(MediaStore.Video.Media.IS_PENDING, 0)
             resolver.update(uri, values, null, null)

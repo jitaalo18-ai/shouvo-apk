@@ -1,6 +1,7 @@
-# Nock Nock (Android video editor) - v0.20 source
+# Nock Nock (Android video editor) - v0.21 source
 
 Native Android video editor: Kotlin, Jetpack Compose, Media3 (ExoPlayer + Transformer), Room.
+V0.21 hardens large isolated-video exports and adds a streaming, original-quality export path.
 Read PROGRESS.md first - it is the current checkpoint. V0.20: Isolate voice (DeepFilterNet3 neural network on the phone, whole main timeline); V0.19: Voice enhance processes each file once like Edits (Processing popup, sparkles, whole-clip noise learning, video keeps playing); V0.18: Voice enhance (Auto / Volume / Enhance / Fade, noise reduction and voice EQ in preview and export); V0.17: smart alignment guides and auto-snapping (video, overlays, texts) in 9:16, 16:9, 1:1 and 4:5; V0.16: Auto Captions. Device tests run in CI (see TEST_REPORT.md).
 
 ## Get an APK

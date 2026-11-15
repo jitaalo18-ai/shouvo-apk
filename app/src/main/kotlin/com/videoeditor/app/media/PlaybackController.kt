@@ -316,7 +316,7 @@ class PlaybackController(private val context: Context, private val scope: Corout
                 auxFx[c.id] = fx
                 val p = ExoPlayer.Builder(context, FxRenderersFactory(context, fx))
                     .setLoadControl(previewLoadControl())
-        .setMediaSourceFactory(VoiceMediaSourceFactory(context))
+                    .setMediaSourceFactory(VoiceMediaSourceFactory(context))
                     .build()
                 val item = auxItem(c)
                 auxVoice[c.id] = item.second
