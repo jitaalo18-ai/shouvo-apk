@@ -164,6 +164,13 @@ fun EditorScreen(app: App, projectId: Long, onBack: () -> Unit) {
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
+    val exportView = androidx.compose.ui.platform.LocalView.current
+    DisposableEffect(ctl.exporting) {
+        val was = exportView.keepScreenOn
+        if (ctl.exporting) exportView.keepScreenOn = true
+        onDispose { exportView.keepScreenOn = was }
+    }
+
     val position by ctl.player.positionMs.collectAsState()
     val playing by ctl.player.isPlaying.collectAsState()
 
@@ -455,6 +462,9 @@ fun EditorScreen(app: App, projectId: Long, onBack: () -> Unit) {
                         Text("${(p * 100).toInt()}%", fontSize = 12.sp, color = Color.Gray)
                     } else {
                         CircularProgressIndicator()
+                    }
+                    if (ctl.exporting) {
+                        TextButton(onClick = { ctl.cancelExport() }, modifier = Modifier.testTag("exportCancel")) { Text("Cancel export") }
                     }
                     if (ctl.captionsRunning) {
                         Spacer(Modifier.height(8.dp))

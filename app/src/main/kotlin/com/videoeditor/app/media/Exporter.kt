@@ -10,6 +10,8 @@ import android.os.Environment
 import android.os.Handler
 import android.os.Looper
 import android.provider.MediaStore
+import androidx.media3.common.MimeTypes
+import com.videoeditor.core.ExportPolicy
 import androidx.media3.common.Effect
 import androidx.media3.common.MediaItem
 import androidx.media3.common.audio.AudioProcessor
@@ -106,7 +108,14 @@ class Exporter(private val context: Context) {
         }
         // Isolate voice: the voice of every such file worked out (usually done already in the editor)
         val isolating = timeline.clips.filter { it.isAudible && it.audio.isolate }.map { it.sourceUri }.distinct()
-        for (uri in isolating) VoiceProcessing.ensureIsolation(context, uri)
+        for (uri in isolating) {
+            check(VoiceProcessing.ensureIsolation(context, uri)?.isFile == true) {
+                "Voice isolation failed. Turn it off and on again, or free storage and restart the app. Export stopped to protect your audio."
+            }
+        }
+        if (ExportPolicy.canCopyVideo(timeline, aspect)) {
+            return@withContext exportIsolatedVideo(main.single(), onProgress)
+        }
         // pictures / videos first, captions and texts on top of everything
         val overlays: List<TextureOverlay> = timeline.track(Track.OVERLAY).sortedBy { it.layer }
             .map { TimedOverlay(context, it, canvasW, canvasH) } +
@@ -114,9 +123,12 @@ class Exporter(private val context: Context) {
                 .map { TimedText(it, canvasW, canvasH) }
         val composition = buildComposition(timeline, canvasW, canvasH, overlays)
         val outFile = File(context.cacheDir, "export_${System.currentTimeMillis()}.mp4")
-        val transformer = Transformer.Builder(context).apply {
+        val imageExecutor = Executors.newSingleThreadExecutor()
+        val transformer = Transformer.Builder(context)
+            .setAudioMimeType(MimeTypes.AUDIO_AAC)
+            .setVideoMimeType(MimeTypes.VIDEO_H264).apply {
             // isolated voices: the picture of the file with the voice file as its sound
-            if (timeline.clips.any { voiceOf(it) != null }) setAssetLoaderFactory(voiceAssetLoader())
+            if (timeline.clips.any { voiceOf(it) != null }) setAssetLoaderFactory(voiceAssetLoader(imageExecutor))
         }.build()
         val progressJob = launch {
             val holder = ProgressHolder()
@@ -152,7 +164,64 @@ class Exporter(private val context: Context) {
             withContext(Dispatchers.IO) { saveToMovies(outFile) }
         } finally {
             progressJob.cancel()
+            transformer.cancel()
+            imageExecutor.shutdownNow()
             outFile.delete()
+        }
+    }
+
+    /** Isolated-only full clips preserve encoded picture quality and avoid a second video decoder. */
+    private suspend fun exportIsolatedVideo(c: Clip, progress: (Float) -> Unit): Uri {
+        val source = Uri.parse(c.sourceUri)
+        val isolatedFile = VoiceProcessing.isolatedVoice(c.sourceUri) ?: error("Isolated voice file is missing")
+        val bytes = withContext(Dispatchers.IO) {
+            context.contentResolver.openAssetFileDescriptor(source, "r")?.use { it.length } ?: -1L
+        }
+        if (bytes >= 0) {
+            val need = ExportPolicy.requiredSpace(bytes, c.durationMs)
+            check(context.cacheDir.usableSpace >= need) {
+                "Not enough storage. Free at least ${((need - context.cacheDir.usableSpace).coerceAtLeast(0) / (1024 * 1024)) + 1} MB more and retry. Your project is saved."
+            }
+        }
+        val audio = File.createTempFile("voice_export_", ".m4a", context.cacheDir).apply { delete() }
+        val output = File.createTempFile("video_export_", ".mp4", context.cacheDir).apply { delete() }
+        try {
+            val item = EditedMediaItem.Builder(MediaItem.Builder().setUri(Uri.fromFile(isolatedFile))
+                .setClippingConfiguration(MediaItem.ClippingConfiguration.Builder()
+                    .setEndPositionMs(c.durationMs).build()).build())
+                .setRemoveVideo(true).setEffects(Effects(voice(c), emptyList())).build()
+            val encoder = Transformer.Builder(context).setAudioMimeType(MimeTypes.AUDIO_AAC).build()
+            val polling = kotlinx.coroutines.CoroutineScope(kotlin.coroutines.coroutineContext).launch {
+                val holder = ProgressHolder()
+                while (isActive) {
+                    if (encoder.getProgress(holder) == Transformer.PROGRESS_STATE_AVAILABLE) progress(holder.progress / 100f * 0.4f)
+                    delay(300)
+                }
+            }
+            try {
+                suspendCancellableCoroutine<Unit> { cont ->
+                    encoder.addListener(object : Transformer.Listener {
+                        override fun onCompleted(composition: Composition, result: ExportResult) {
+                            if (cont.isActive) cont.resume(Unit)
+                        }
+                        override fun onError(composition: Composition, result: ExportResult, error: ExportException) {
+                            if (cont.isActive) cont.resumeWithException(error)
+                        }
+                    })
+                    cont.invokeOnCancellation { Handler(Looper.getMainLooper()).post { encoder.cancel() } }
+                    encoder.start(item, audio.absolutePath)
+                }
+            } finally {
+                polling.cancel()
+                encoder.cancel()
+            }
+            StreamingMux.copy(context, source, audio, output, c.durationMs) { progress(0.4f + it * 0.5f) }
+            val uri = withContext(Dispatchers.IO) { saveToMovies(output) }
+            progress(1f)
+            return uri
+        } finally {
+            audio.delete()
+            output.delete()
         }
     }
 
@@ -234,10 +303,10 @@ class Exporter(private val context: Context) {
         if (c.audio.isolate && c.isAudible) VoiceProcessing.isolatedVoice(c.sourceUri)?.absolutePath else null
 
     /** Transformer's standard loader, with sources that know isolated voices. */
-    private fun voiceAssetLoader(): DefaultAssetLoaderFactory {
+    private fun voiceAssetLoader(executor: java.util.concurrent.ExecutorService): DefaultAssetLoaderFactory {
         val options = BitmapFactory.Options().apply { inPreferredColorSpace = ColorSpace.get(ColorSpace.Named.SRGB) }
         val bitmaps = DataSourceBitmapLoader(
-            MoreExecutors.listeningDecorator(Executors.newSingleThreadExecutor()),
+            MoreExecutors.listeningDecorator(executor),
             DefaultDataSource.Factory(context),
             options,
             4096,

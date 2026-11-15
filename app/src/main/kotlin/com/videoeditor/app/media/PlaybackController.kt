@@ -6,6 +6,7 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import android.util.Log
+import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.SeekParameters
 import com.videoeditor.core.AudioFx
@@ -42,6 +43,7 @@ class PlaybackController(private val context: Context, private val scope: Corout
     /** Voice enhance of the main track (the plan follows the playlist, see [updateFx]). */
     val mainFx = FxState(sourceTime = false)
     val main: ExoPlayer = ExoPlayer.Builder(context, FxRenderersFactory(context, mainFx))
+        .setLoadControl(previewLoadControl())
         .setMediaSourceFactory(VoiceMediaSourceFactory(context))
         .build()
     val positionMs = MutableStateFlow(0L)
@@ -60,6 +62,39 @@ class PlaybackController(private val context: Context, private val scope: Corout
     private var wantedFx: Map<String, AudioFx> = emptyMap()
     private val overlayViews = HashMap<String, TextureView>()
     private var released = false
+    private var exporting = false
+    private var exportPosition = 0L
+
+    /** Stop and clear preview sources before allocating export decoders/buffers. */
+    fun suspendForExport() {
+        if (released || exporting) return
+        exportPosition = positionMs.value
+        exporting = true
+        pendingApply?.cancel()
+        pendingApply = null
+        main.pause()
+        main.stop()
+        main.clearMediaItems()
+        mainSignature = emptyList()
+        aux.values.forEach { it.release() }
+        aux.clear()
+        auxFx.clear()
+        auxVoice.clear()
+        isPlaying.value = false
+    }
+
+    fun resumeAfterExport(timeline: Timeline) {
+        if (released || !exporting) return
+        exporting = false
+        setTimeline(timeline)
+        seekTo(exportPosition)
+    }
+
+    private fun previewLoadControl() = DefaultLoadControl.Builder()
+        .setBufferDurationsMs(1_000, 5_000, 250, 500)
+        .setTargetBufferBytes(8 * 1024 * 1024)
+        .setPrioritizeTimeOverSizeThresholds(false)
+        .build()
 
     // scrubbing state
     private var seekInFlightSince = 0L
@@ -108,10 +143,10 @@ class PlaybackController(private val context: Context, private val scope: Corout
     /** A file's noise was learned: the players use it from now on. */
     private val fxWatcher: Job = scope.launch {
         VoiceProcessing.version.collect {
-            if (released) return@collect
+            if (released || exporting) return@collect
             updateFx()
             // a voice was isolated: the clips that wait for it switch to it now
-            if (pendingApply == null) applyMain()
+            if (pendingApply?.isActive != true) applyMain()
             refreshAuxVoices()
         }
     }
@@ -141,7 +176,7 @@ class PlaybackController(private val context: Context, private val scope: Corout
      * updated a moment after the last change instead of immediately.
      */
     fun setTimeline(timeline: Timeline, interactive: Boolean = false) {
-        if (released) return
+        if (released || exporting) return
         // compound clips play as the pieces inside them, on every track (framing does not
         // matter to the player)
         val flat = Compound.flatten(timeline, 1f)
@@ -280,7 +315,8 @@ class PlaybackController(private val context: Context, private val scope: Corout
                 val fx = FxState(sourceTime = true)
                 auxFx[c.id] = fx
                 val p = ExoPlayer.Builder(context, FxRenderersFactory(context, fx))
-                    .setMediaSourceFactory(VoiceMediaSourceFactory(context))
+                    .setLoadControl(previewLoadControl())
+        .setMediaSourceFactory(VoiceMediaSourceFactory(context))
                     .build()
                 val item = auxItem(c)
                 auxVoice[c.id] = item.second
@@ -307,7 +343,7 @@ class PlaybackController(private val context: Context, private val scope: Corout
     }
 
     fun play() {
-        if (released) return
+        if (released || exporting) return
         if (pendingApply != null) flush()
         if (scrubbing) endScrub()
         if (mainClips.isEmpty()) return
@@ -324,7 +360,7 @@ class PlaybackController(private val context: Context, private val scope: Corout
     }
 
     fun seekTo(timelineMs: Long) {
-        if (released || mainClips.isEmpty()) return
+        if (released || exporting || mainClips.isEmpty()) return
         val ms = timelineMs.coerceIn(0, mainClips.sumOf { it.durationMs })
         val pos = TimelineOps.locate(Timeline(mainClips), ms) ?: return
         val inClip = (ms - pos.clip.timelineStartMs).coerceIn(0, (pos.clip.durationMs - 1).coerceAtLeast(0))
@@ -339,7 +375,7 @@ class PlaybackController(private val context: Context, private val scope: Corout
      * seeks; call [endScrub] when the finger lifts to land exactly.
      */
     fun scrubTo(timelineMs: Long) {
-        if (released || mainClips.isEmpty()) return
+        if (released || exporting || mainClips.isEmpty()) return
         if (!scrubbing) {
             scrubbing = true
             main.setSeekParameters(SeekParameters.CLOSEST_SYNC)
@@ -373,7 +409,7 @@ class PlaybackController(private val context: Context, private val scope: Corout
     }
 
     private fun tick() {
-        if (released || mainClips.isEmpty()) return
+        if (released || exporting || mainClips.isEmpty()) return
         // a seek that never reported back: let the newest scrub target through
         if (pendingSeekMs != null && !seekInFlight()) seekDone()
         if (scrubbing || pendingSeekMs != null) return

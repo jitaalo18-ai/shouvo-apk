@@ -1021,11 +1021,21 @@ class EditorController(private val app: App, val projectId: Long, uiScope: Corou
 
     // ---- Rendering -----------------------------------------------------------------------
 
+    var exporting by mutableStateOf(false)
+        private set
+    private var exportJob: Job? = null
+
+    fun cancelExport() { exportJob?.cancel() }
+
     fun export() {
         if (busy != null || timeline.main.isEmpty()) return
-        player.pause()
+        player.suspendForExport()
+        LiveFrames.clear()
+        exporting = true
+        val snapshot = timeline
+        val aspect = targetAspect
         busy = Busy("Rendering video…", 0f)
-        scope.launch {
+        exportJob = scope.launch {
             try {
                 val missing = voiceSourcesNeeding()
                 val voices = isolationSourcesNeeding()
@@ -1035,14 +1045,22 @@ class EditorController(private val app: App, val projectId: Long, uiScope: Corou
                     for (uri in voices) VoiceProcessing.ensureIsolation(app, uri)
                     busy = Busy("Rendering video…", 0f)
                 }
-                Exporter(app).export(timeline, targetAspect) { p -> busy = Busy("Rendering video…", p) }
+                Exporter(app).export(snapshot, aspect) { p -> busy = Busy("Rendering video…", p) }
                 message = "Saved to Movies/VideoEditor in your Gallery."
             } catch (e: kotlinx.coroutines.CancellationException) {
+                message = "Export cancelled. Your project is saved."
                 throw e
+            } catch (e: OutOfMemoryError) {
+                android.util.Log.e("NockExport", "Export ran out of memory", e)
+                message = "Not enough memory to export. Close other apps and retry. Your project is saved."
             } catch (e: Exception) {
+                android.util.Log.e("NockExport", "Export failed", e)
                 message = "Rendering failed: ${e.message ?: e.javaClass.simpleName}"
             } finally {
+                exporting = false
+                exportJob = null
                 busy = null
+                player.resumeAfterExport(timeline)
             }
         }
     }
