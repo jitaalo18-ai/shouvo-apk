@@ -17,3 +17,5 @@ with additive migration preserving existing projects. Move, split, trim and comp
 source-relative word timing. Existing captions must be regenerated to obtain word timing.
 Correcting words preserves their timing slots. Adding/removing words clears the old timing; regenerate to refresh alignment.
 All older static styles remain available. Bitmap cache is capped at 8 MiB.
+
+Captions share one reusable full-frame texture, avoiding Media3 1.5.1's 15-overlay sampler limit. Extra visual overlays are composed in ordered batches of at most 15.

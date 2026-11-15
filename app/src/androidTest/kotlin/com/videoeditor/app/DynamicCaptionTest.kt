@@ -55,7 +55,10 @@ class DynamicCaptionTest {
         val plain = TimelineOps.appendMain(Timeline(), listOf(clipFrom(Fixtures.info("portrait_test.mp4"), Track.MAIN)))
         val c = Captions.textClip("dynamic", 1000, 3000, "Hello world", style="KARAOKE", posY=.5f, size=.06f)
             .copy(captionTiming="0,1400;1500,2800")
-        val uri = Exporter(Fixtures.target).export(Timeline(plain.clips+c), 9f/16f) { }
+        val many = (0 until 40).map { i ->
+            Captions.textClip("tail$i", 4200L + i*30, 30, "Tail $i", style="KARAOKE")
+        }
+        val uri = Exporter(Fixtures.target).export(Timeline(plain.clips+c+many), 9f/16f) { }
         val r = MediaMetadataRetriever()
         try {
             r.setDataSource(Fixtures.target, uri)
@@ -65,7 +68,7 @@ class DynamicCaptionTest {
             }
             val first = yellowX(region(1600)); val last = yellowX(region(3100))
             assertTrue("exported highlight moves right: $first -> $last", last > first+25)
-            Report.note("Dynamic captions: exported yellow word moves $first -> $last px")
+            Report.note("Dynamic captions: 41 caption export; yellow word moves $first -> $last px")
         } finally { r.release(); Fixtures.target.contentResolver.delete(uri,null,null) }
     }
 }

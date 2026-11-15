@@ -121,7 +121,7 @@ class Exporter(private val context: Context) {
         val overlays: List<TextureOverlay> = timeline.track(Track.OVERLAY).sortedBy { it.layer }
             .map { TimedOverlay(context, it, canvasW, canvasH) } +
             timeline.track(Track.TEXT).filter { it.kind == MediaKind.TEXT && it.text.isNotBlank() }
-                .map { TimedText(it, canvasW, canvasH) }
+                .takeIf { it.isNotEmpty() }?.let { listOf(TimedTextLayer(it, canvasW, canvasH)) }.orEmpty()
         val composition = buildComposition(timeline, canvasW, canvasH, overlays)
         val outFile = File(context.cacheDir, "export_${System.currentTimeMillis()}.mp4")
         val imageExecutor = Executors.newSingleThreadExecutor()
@@ -285,7 +285,7 @@ class Exporter(private val context: Context) {
 
         val builder = Composition.Builder(sequences)
         if (overlays.isNotEmpty()) {
-            builder.setEffects(Effects(noAudio, listOf(OverlayEffect(ImmutableList.copyOf(overlays)))))
+            builder.setEffects(Effects(noAudio, overlays.chunked(15).map { OverlayEffect(ImmutableList.copyOf(it)) }))
         }
         // A main track that starts with a silent item but has sound later needs a silent audio
         // track generated from the start.
@@ -443,25 +443,36 @@ private class TimedOverlay(
     }
 }
 
-/** A caption / text burned into the video while it is on the timeline (same drawing as the preview). */
-private class TimedText(private val clip: Clip, private val canvasW: Int, private val canvasH: Int) : BitmapOverlay() {
-    private val visible: OverlaySettings = OverlaySettings.Builder()
-        .setBackgroundFrameAnchor(clip.posX * 2f - 1f, 1f - clip.posY * 2f)
-        .setRotationDegrees(-clip.rotation)
-        .build()
-    private val hidden: OverlaySettings = OverlaySettings.Builder().setAlphaScale(0f).build()
-    // Hidden overlays share a tiny bitmap; avoid allocating every caption at every video frame.
-    private val empty by lazy { Bitmap.createBitmap(1, 1, Bitmap.Config.ARGB_8888) }
-
-    private fun active(timeMs: Long) = timeMs >= clip.timelineStartMs && timeMs < clip.timelineEndMs
+/** All captions share one texture: long videos must not exceed Media3's 15-overlay limit. */
+private class TimedTextLayer(private val clips: List<Clip>, private val canvasW: Int, private val canvasH: Int) : BitmapOverlay() {
+    private val empty = Bitmap.createBitmap(1, 1, Bitmap.Config.ARGB_8888)
+    private var frame: Bitmap? = null
+    private var last: List<Pair<Clip, Int>> = emptyList()
+    private val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG or android.graphics.Paint.FILTER_BITMAP_FLAG)
 
     override fun getBitmap(presentationTimeUs: Long): Bitmap {
         val ms = presentationTimeUs / 1000
-        if (!active(ms)) return empty
-        return com.videoeditor.app.captions.CaptionRenderer.render(clip.text, clip.style, clip.scale, canvasW, canvasH,
-            com.videoeditor.core.CaptionTiming.active(clip, ms))
+        val active = clips.filter { it.contains(ms) }.map { it to com.videoeditor.core.CaptionTiming.active(it, ms) }
+        if (active.isEmpty()) return empty
+        val output = frame ?: Bitmap.createBitmap(canvasW, canvasH, Bitmap.Config.ARGB_8888).also { frame = it }
+        if (active != last) {
+            output.eraseColor(android.graphics.Color.TRANSPARENT)
+            val canvas = android.graphics.Canvas(output)
+            for ((clip, word) in active) {
+                val text = com.videoeditor.app.captions.CaptionRenderer.render(clip.text, clip.style, clip.scale, canvasW, canvasH, word)
+                canvas.save()
+                canvas.translate(clip.posX * canvasW, clip.posY * canvasH)
+                canvas.rotate(clip.rotation)
+                canvas.drawBitmap(text, -text.width / 2f, -text.height / 2f, paint)
+                canvas.restore()
+            }
+            last = active
+        }
+        // BitmapOverlay checks generationId, so this single reusable bitmap uploads only on changes.
+        return output
     }
 
-    override fun getOverlaySettings(presentationTimeUs: Long): OverlaySettings =
-        if (active(presentationTimeUs / 1000)) visible else hidden
+    override fun release() {
+        try { super.release() } finally { frame?.recycle(); frame = null; empty.recycle(); last = emptyList() }
+    }
 }
