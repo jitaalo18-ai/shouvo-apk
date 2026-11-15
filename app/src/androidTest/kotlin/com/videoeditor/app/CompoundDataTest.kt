@@ -64,13 +64,14 @@ class CompoundDataTest {
         val name = "migration_test.db"
         createVersion3(name)
         val db = Room.databaseBuilder(ctx, AppDatabase::class.java, name)
-            .addMigrations(AppDatabase.MIGRATION_1_2, AppDatabase.MIGRATION_2_3, AppDatabase.MIGRATION_3_4, AppDatabase.MIGRATION_4_5, AppDatabase.MIGRATION_5_6)
+            .addMigrations(AppDatabase.MIGRATION_1_2, AppDatabase.MIGRATION_2_3, AppDatabase.MIGRATION_3_4, AppDatabase.MIGRATION_4_5, AppDatabase.MIGRATION_5_6, AppDatabase.MIGRATION_6_7)
             .build()
         try {
             val repo = ProjectRepository(db)
             val old = repo.load(1)
             assertEquals(1, old.clips.size)
             val c = old.clips.single()
+            assertEquals("older projects have no word timing", "", c.captionTiming)
             assertEquals(4000L, c.durationMs)
             assertEquals(15f, c.rotation, 0.001f)
             assertEquals(1.2f, c.stretchX, 0.001f)
