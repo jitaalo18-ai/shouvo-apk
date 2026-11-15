@@ -1,3 +1,22 @@
+# V0.22 validation (2026-11-16, Bangladesh)
+
+Tested code commit: `349d46b0527f737b95fa4c40508f71d3c17b4c26`.
+CI: https://github.com/jitaalo18-ai/shouvo-apk/actions/runs/43746147908
+
+- 118 JVM unit tests: passed.
+- 31/31 Android 12 emulator tests: passed.
+- Dynamic rendering: stable layout, moving yellow word, English and Bengali glyphs, translucent panel.
+- Native Whisper word timings, UTF-8 subword merging, saved caption timing and clip serialization: passed.
+- Export with 41 captions: completed; yellow-word position changes across sampled output frames.
+- Old schema-3 projects upgrade through schema 7 and retain their clips and library references. The first run exposed a stale migration list in the test setup; the updated test includes the same 6-to-7 migration already registered by the app.
+- Existing real Bengali and English recognition, caption UI, compound clips, voice processing and isolation: passed.
+- 1 GiB isolated-video regression: passed; output retains identical encoded video samples and restores preview.
+- APK package `com.videoeditor.app`, versionCode 22 / versionName 0.22, arm64-v8a and x86_64.
+- Signature verified; certificate SHA-256 `9ad27be4862060f72ca76fc6b6bc440ba4c61d6bfac2c98ff31fb3e202dc101b`, matching previous releases.
+- APK SHA-256 `3f6997b4383cd6bcc0023946ccd2e7c2727c0e674182098c517c944045fe6072`.
+
+Limits: tests ran on an emulator, not the user's S25 Ultra or original video. The 1 GiB fixture tests large encoded size (640x360 with valid CBR filler), not real-phone 4K/HDR. Whisper recognition/timing is approximate. Existing captions require regeneration for word timing; adding/removing words clears old timing, while same-word-count corrections retain timing slots.
+
 # V0.20 validation (2026-11-15)
 
 Executed (GitHub Actions):

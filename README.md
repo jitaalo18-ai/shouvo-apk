@@ -1,7 +1,7 @@
-# Nock Nock (Android video editor) - v0.21 source
+# Nock Nock (Android video editor) - v0.22 source
 
 Native Android video editor: Kotlin, Jetpack Compose, Media3 (ExoPlayer + Transformer), Room.
-V0.21 hardens large isolated-video exports and adds a streaming, original-quality export path.
+V0.22 adds Dynamic captions: Lilita One / bold Bengali fonts, a translucent dark panel, and word-timed yellow highlighting shared by preview and export. V0.21 large-export fixes are retained. See THIRD_PARTY_CAPTIONS.md for font licenses and timing behavior.
 Read PROGRESS.md first - it is the current checkpoint. V0.20: Isolate voice (DeepFilterNet3 neural network on the phone, whole main timeline); V0.19: Voice enhance processes each file once like Edits (Processing popup, sparkles, whole-clip noise learning, video keeps playing); V0.18: Voice enhance (Auto / Volume / Enhance / Fade, noise reduction and voice EQ in preview and export); V0.17: smart alignment guides and auto-snapping (video, overlays, texts) in 9:16, 16:9, 1:1 and 4:5; V0.16: Auto Captions. Device tests run in CI (see TEST_REPORT.md).
 
 ## Get an APK
@@ -10,7 +10,7 @@ Read PROGRESS.md first - it is the current checkpoint. V0.20: Isolate voice (Dee
 1. Create a new private repository on github.com.
 2. Upload the contents of this folder (keep the `.github` folder).
 3. Open the repository's **Actions** tab -> "Build debug APK" -> wait for it to finish.
-4. Download the APK from the repository's Releases page and install the APK on your phone.
+4. Download the `apks` artifact from the completed Actions run; install `debug/app-debug.apk`. Main-branch builds also publish a Release.
 If the run fails, copy the red error lines and send them back for a fix.
 
 **Option B - Android Studio (Windows PC)**

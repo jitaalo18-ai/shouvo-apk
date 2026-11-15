@@ -1,3 +1,17 @@
+# V0.22 — dynamic captions (2026-11-15)
+
+- Default Auto Captions style is Dynamic: bold white type, yellow spoken word, dark translucent box.
+- Licensed Lilita One and Noto Sans Bengali are bundled offline with their OFL licenses.
+- Whisper subword token timestamps are merged using UTF-8 byte ranges, preserving Bengali text.
+- Caption word timings persist in Room schema 7 and nested clip JSON. An additive migration keeps older projects.
+- Moving, splitting, trimming and compound crops preserve source-relative word timing. Word corrections with the same word count preserve time slots; adding/removing words clears them and requires regeneration.
+- Preview and export use the same caption renderer. Export composites all captions into one reusable texture; this removes the previous 15-caption shader limit. Other overlays use ordered batches of at most 15.
+- Bitmap cache is bounded to 8 MiB. Full-frame export caption texture is allocated once, updated only when visible text/highlight changes.
+- V0.21 isolated-video export, preview suspension, storage checks and cancellation changes remain.
+- Four timing unit tests and three Android regression tests added. Android test exports 41 captions and checks highlighted-word pixels at two timestamps.
+
+Validation completed on 2026-11-16 (Bangladesh): 118 JVM tests and all 31 Android 12 emulator tests passed in GitHub Actions run 43746147908, code commit 349d46b0527f737b95fa4c40508f71d3c17b4c26. Includes old-project migration, 41-caption dynamic export and the 1 GiB isolated-video export regression. No real-phone validation claimed.
+
 # V0.21 — large isolated-video export (2026-11-15)
 
 Reported: a 1 GB video isolates successfully but the app exits on Export. No device crash log
