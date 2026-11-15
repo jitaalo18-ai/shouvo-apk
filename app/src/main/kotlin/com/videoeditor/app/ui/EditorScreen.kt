@@ -35,6 +35,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
@@ -181,6 +182,9 @@ fun EditorScreen(app: App, projectId: Long, onBack: () -> Unit) {
     val importOverlay = rememberMediaImporter(videoOnly = false, multiple = false) { uris ->
         uris.firstOrNull()?.let { ctl.addOverlay(it) }
     }
+    val importOverlayLibrary = rememberMediaImporter(videoOnly = false, multiple = true) { uris ->
+        ctl.importToLibrary(LibraryKind.OVERLAYS, uris)
+    }
     val importMain = rememberMediaImporter(videoOnly = false, multiple = true) { uris ->
         ctl.appendMedia(uris)
     }
@@ -223,7 +227,7 @@ fun EditorScreen(app: App, projectId: Long, onBack: () -> Unit) {
                     )
                     Icon(Icons.Filled.ArrowDropDown, contentDescription = null, tint = Color.Gray)
                 }
-                IconButton(onClick = { ctl.comingSoon("Search") }) {
+                IconButton(onClick = { ctl.player.pause(); ctl.imageSearch = true }) {
                     Icon(Icons.Filled.Search, contentDescription = "Search")
                 }
                 Text("FHD", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
@@ -322,6 +326,8 @@ fun EditorScreen(app: App, projectId: Long, onBack: () -> Unit) {
                     ToolButton(Icons.Filled.MusicNote, "BG MUSIC") { ctl.library = LibraryKind.MUSIC }
                     ToolButton(Icons.Filled.Movie, "Video FX") { ctl.library = LibraryKind.VIDEO_FX }
                     ToolButton(Icons.Filled.Layers, "Overlay") { importOverlay() }
+                    ToolButton(Icons.Filled.Folder, "Overlay Folder") { ctl.library = LibraryKind.OVERLAYS }
+                    ToolButton(Icons.Filled.Search, "Image Search") { ctl.player.pause(); ctl.imageSearch = true }
                     ToolButton(Icons.Filled.ClosedCaption, "Captions") { ctl.captionSheet = true }
                     ToolButton(Icons.Filled.TextFields, "Text") { ctl.addText() }
                     ToolButton(Icons.Filled.MergeType, "Compound") { ctl.startCompound() }
@@ -354,6 +360,8 @@ fun EditorScreen(app: App, projectId: Long, onBack: () -> Unit) {
                             ToolButton(Icons.Filled.Movie, "Video FX") { ctl.library = LibraryKind.VIDEO_FX }
                             ToolButton(Icons.Filled.GraphicEq, "Sound FX") { ctl.library = LibraryKind.SOUND_FX }
                             ToolButton(Icons.Filled.Layers, "Overlay") { importOverlay() }
+                    ToolButton(Icons.Filled.Folder, "Overlay Folder") { ctl.library = LibraryKind.OVERLAYS }
+                    ToolButton(Icons.Filled.Search, "Image Search") { ctl.player.pause(); ctl.imageSearch = true }
                             // shown now, functions come in later versions
                             ToolButton(Icons.Filled.AutoAwesome, "Effects") { ctl.comingSoon("Effects") }
                             ToolButton(Icons.Filled.Tune, "Adjust") { ctl.comingSoon("Adjust") }
@@ -444,10 +452,20 @@ fun EditorScreen(app: App, projectId: Long, onBack: () -> Unit) {
             app = app,
             kind = kind,
             onDismiss = { ctl.library = null },
-            onAdd = { if (kind == LibraryKind.VIDEO_FX) importVideoFx() else libraryPicker.launch(arrayOf(kind.mime)) },
+            onAdd = { when (kind) {
+                LibraryKind.VIDEO_FX -> importVideoFx()
+                LibraryKind.OVERLAYS -> importOverlayLibrary()
+                else -> libraryPicker.launch(arrayOf(kind.mime))
+            } },
+            onSearch = { ctl.imageSearch = true },
             onInsert = { ctl.insertFromLibrary(kind, it) },
         )
     }
+
+    if (ctl.imageSearch) ImageSearchDialog(app, onDismiss = { ctl.imageSearch = false }, onSaved = {
+        ctl.imageSearch = false
+        ctl.library = LibraryKind.OVERLAYS
+    })
 
     ctl.busy?.let { busy ->
         Dialog(onDismissRequest = { }, properties = DialogProperties(dismissOnBackPress = false, dismissOnClickOutside = false)) {

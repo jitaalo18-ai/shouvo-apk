@@ -74,6 +74,7 @@ class EditorController(private val app: App, val projectId: Long, uiScope: Corou
         private set
     var message by mutableStateOf<String?>(null)
     var library by mutableStateOf<LibraryKind?>(null)
+    var imageSearch by mutableStateOf(false)
 
     private val saveLock = Mutex()
     private var pendingSave: Job? = null
@@ -331,14 +332,14 @@ class EditorController(private val app: App, val projectId: Long, uiScope: Corou
             return
         }
         when (kind) {
-            LibraryKind.VIDEO_FX -> {
+            LibraryKind.VIDEO_FX, LibraryKind.OVERLAYS -> {
                 // Video FX go on the layer above the video (overlay track), at the playhead,
                 // fitted to the frame - the main video stays as it is.
                 val fit = if (info.aspect >= canvasAspect) 1f else info.aspect / canvasAspect
                 val clip = clipFrom(info, Track.OVERLAY, timelineStartMs = position, libraryItemId = item.id)
                     .copy(posX = 0.5f, posY = 0.5f, scale = fit.coerceIn(TimelineOps.MIN_SCALE, 1f))
                 commitEdit(TimelineOps.select(TimelineOps.addClip(timeline, clip), clip.id))
-                message = "Video FX added on the layer above the video."
+                message = "${if (kind == LibraryKind.OVERLAYS) "Overlay" else "Video FX"} added above the video."
             }
             LibraryKind.SOUND_FX, LibraryKind.MUSIC -> {
                 val track = if (kind == LibraryKind.SOUND_FX) Track.SFX else Track.MUSIC
@@ -352,15 +353,15 @@ class EditorController(private val app: App, val projectId: Long, uiScope: Corou
     // ---- Step 8: Overlay -----------------------------------------------------------------
 
     fun addOverlay(uri: Uri) {
+        if (busy != null) return
+        busy = Busy("Saving overlay…")
         scope.launch {
-            persistRead(app, uri)
-            val info = withContext(Dispatchers.IO) { MediaProbe.probe(app, uri) }
-            if (info == null || info.kind == MediaKind.AUDIO) {
-                message = "Choose an image or a video for the overlay."
-                return@launch
-            }
-            val clip = clipFrom(info, Track.OVERLAY, timelineStartMs = position)
-            commitEdit(TimelineOps.select(TimelineOps.addClip(timeline, clip), clip.id))
+            try {
+                val item = app.library.importItems(LibraryKind.OVERLAYS, listOf(uri)).singleOrNull()
+                if (item == null) { message = "Choose a supported image or video and check free storage."; return@launch }
+                val clip = clipFrom(app.library.toMediaInfo(item), Track.OVERLAY, timelineStartMs = position, libraryItemId = item.id)
+                commitEdit(TimelineOps.select(TimelineOps.addClip(timeline, clip), clip.id))
+            } finally { busy = null }
         }
     }
 

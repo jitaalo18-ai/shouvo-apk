@@ -1,4 +1,6 @@
-# Nock Nock (Android video editor) - v0.22 source
+# Nock Nock (Android video editor) - v0.23 source
+
+V0.23 adds Overlay Folder (owned image/video copies, preview and playback) and in-app web Image Search with save-to-library.
 
 Native Android video editor: Kotlin, Jetpack Compose, Media3 (ExoPlayer + Transformer), Room.
 V0.22 adds Dynamic captions: Lilita One / bold Bengali fonts, a translucent dark panel, and word-timed yellow highlighting shared by preview and export. V0.21 large-export fixes are retained. See THIRD_PARTY_CAPTIONS.md for font licenses and timing behavior.

@@ -1,3 +1,14 @@
+# V0.23 — Overlay Folder and Image Search (2026-11-16)
+
+- Overlay Folder is separate from Video FX / Sound FX / BG MUSIC and accepts images and videos.
+- Gallery and Files imports copy media into persistent private storage. Regular Overlay imports now also keep an owned library copy.
+- Library supports image previews, video playback, All/Images/Videos filters, names, rename, remove and explicit insert controls.
+- Deleting originals does not affect imported files. Removing used items hides them from the library while protecting saved-project references until unused.
+- Image Search opens live Google/Bing image results inside the app, supports search history and long-press/download-to-library with a preview confirmation.
+- Image downloads stream to temporary files, validate real image bytes, reject unsupported links and oversized files, preserve original bytes/transparency, then copy into the library. Internet required; websites may limit downloads or show consent/CAPTCHA. No private image-search API key or scraped search-index endpoint is used.
+- Five new Android checks cover 50 images + video, deletion of originals, project-safe removal, transparent image downloading, image preview/insert and search-screen interactions.
+- Validation pending. Prior V0.22 caption and V0.21 large-export fixes retained.
+
 # V0.22 — dynamic captions (2026-11-15)
 
 - Default Auto Captions style is Dynamic: bold white type, yellow spoken word, dark translucent box.

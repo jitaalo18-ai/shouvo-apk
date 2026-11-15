@@ -24,6 +24,9 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material3.FilterChip
+import androidx.compose.ui.platform.testTag
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
@@ -86,11 +89,15 @@ fun LibraryDialog(
     onDismiss: () -> Unit,
     onAdd: () -> Unit,
     onInsert: (LibraryItemEntity) -> Unit,
+    onSearch: () -> Unit = {},
 ) {
     val scope = rememberCoroutineScope()
     val items by remember(kind) { app.library.observe(kind) }.collectAsState(initial = emptyList())
     var renaming by remember { mutableStateOf<LibraryItemEntity?>(null) }
     var removing by remember { mutableStateOf<RemoveCheck?>(null) }
+    var previewImage by remember { mutableStateOf<LibraryItemEntity?>(null) }
+    var mediaFilter by remember(kind) { mutableStateOf("All") }
+    var previewError by remember { mutableStateOf<String?>(null) }
 
     // Preview: one small player; the clip that is playing is shown inside its own thumbnail box.
     val context = LocalContext.current
@@ -98,6 +105,9 @@ fun LibraryDialog(
     val previewPlayer = remember { ExoPlayer.Builder(context.applicationContext).build() }
     DisposableEffect(Unit) {
         val listener = object : Player.Listener {
+            override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
+                playingId = null; previewError = "This video cannot be previewed."
+            }
             override fun onPlaybackStateChanged(playbackState: Int) {
                 if (playbackState == Player.STATE_ENDED) playingId = null
             }
@@ -105,8 +115,18 @@ fun LibraryDialog(
         previewPlayer.addListener(listener)
         onDispose { previewPlayer.release() }
     }
+    val lifecycle = androidx.lifecycle.compose.LocalLifecycleOwner.current.lifecycle
+    DisposableEffect(lifecycle, previewPlayer) {
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_STOP) { previewPlayer.pause(); playingId = null }
+        }
+        lifecycle.addObserver(observer)
+        onDispose { lifecycle.removeObserver(observer) }
+    }
     val togglePreview: (LibraryItemEntity) -> Unit = { item ->
-        if (playingId == item.id) {
+        if (app.library.mediaKind(item) == MediaKind.IMAGE) {
+            previewPlayer.stop(); playingId = null; previewImage = item
+        } else if (playingId == item.id) {
             previewPlayer.stop()
             playingId = null
         } else {
@@ -117,7 +137,8 @@ fun LibraryDialog(
         }
     }
     var query by remember(kind) { mutableStateOf("") }
-    val shown = if (query.isBlank()) items else items.filter { it.name.contains(query.trim(), ignoreCase = true) }
+    val shown = items.filter { (query.isBlank() || it.name.contains(query.trim(), ignoreCase = true)) &&
+        (mediaFilter == "All" || (mediaFilter == "Images") == (app.library.mediaKind(it) == MediaKind.IMAGE)) }
 
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Surface(Modifier.fillMaxSize(), color = Bg) {
@@ -132,9 +153,18 @@ fun LibraryDialog(
                     Spacer(Modifier.width(8.dp))
                     Text(kind.addLabel)
                 }
+                if (kind == LibraryKind.OVERLAYS) {
+                    TextButton(onClick = { previewPlayer.stop(); playingId = null; onSearch() }, modifier = Modifier.testTag("overlayImageSearch")) { Text("Image Search") }
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        for (filter in listOf("All", "Images", "Videos")) {
+                            FilterChip(selected = mediaFilter == filter, onClick = { mediaFilter = filter }, label = { Text(filter) })
+                        }
+                    }
+                }
+                previewError?.let { Text(it, color = Color.Red) }
                 Spacer(Modifier.height(6.dp))
                 Text(
-                    "Saved inside the app. Tap an item to insert it at the playhead.",
+                    "${items.size} saved inside the app. Originals can be deleted from your phone. Tap + to insert at the playhead.",
                     fontSize = 12.sp,
                     color = Color.Gray,
                 )
@@ -185,6 +215,10 @@ fun LibraryDialog(
             }
         }
 
+        previewImage?.let { item ->
+            SavedImagePreview(app, item, onDismiss = { previewImage = null }, onInsert = { onInsert(item) })
+        }
+
         renaming?.let { item ->
             var text by remember(item.id) { mutableStateOf(item.name) }
             AlertDialog(
@@ -223,6 +257,7 @@ fun LibraryDialog(
                 confirmButton = {
                     TextButton(
                         onClick = {
+                            if (playingId == check.item.id) { previewPlayer.stop(); playingId = null }
                             scope.launch { app.library.remove(check.item.id) }
                             removing = null
                         },
@@ -256,11 +291,12 @@ private fun LibraryRow(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         val thumb = Modifier.size(56.dp).clip(RoundedCornerShape(8.dp))
-        if (kind == LibraryKind.VIDEO_FX) {
+        if (kind == LibraryKind.VIDEO_FX || kind == LibraryKind.OVERLAYS) {
             val context = LocalContext.current.applicationContext
             val uri = remember(item.id) { Uri.fromFile(app.library.file(item)).toString() }
             val bitmap by produceState<Bitmap?>(initialValue = null, uri) {
-                value = Thumbnails.representative(context, uri, item.durationMs)
+                value = if (app.library.mediaKind(item) == MediaKind.IMAGE) com.videoeditor.app.media.WebImages.preview(context, Uri.parse(uri), 160)
+                else Thumbnails.representative(context, uri, item.durationMs)
             }
             // Tap the box to play / stop the clip inside it.
             Box(thumb.background(Color(0xFF22252C)).clickable(onClick = onTogglePreview), contentAlignment = Alignment.Center) {
@@ -290,8 +326,8 @@ private fun LibraryRow(
                     )
                 }
                 Icon(
-                    if (playing) Icons.Filled.Stop else Icons.Filled.PlayArrow,
-                    contentDescription = if (playing) "Stop preview" else "Play preview",
+                    if (app.library.mediaKind(item) == MediaKind.IMAGE) Icons.Filled.Visibility else if (playing) Icons.Filled.Stop else Icons.Filled.PlayArrow,
+                    contentDescription = if (app.library.mediaKind(item) == MediaKind.IMAGE) "Preview image" else if (playing) "Stop preview" else "Play preview",
                     tint = Color.White,
                     modifier = Modifier.size(24.dp).background(Color(0x80000000), CircleShape).padding(2.dp),
                 )
@@ -303,8 +339,8 @@ private fun LibraryRow(
                 contentAlignment = Alignment.Center,
             ) {
                 Icon(
-                    if (playing) Icons.Filled.Stop else Icons.Filled.PlayArrow,
-                    contentDescription = if (playing) "Stop preview" else "Play preview",
+                    if (app.library.mediaKind(item) == MediaKind.IMAGE) Icons.Filled.Visibility else if (playing) Icons.Filled.Stop else Icons.Filled.PlayArrow,
+                    contentDescription = if (app.library.mediaKind(item) == MediaKind.IMAGE) "Preview image" else if (playing) "Stop preview" else "Play preview",
                     tint = Color.White,
                     modifier = Modifier.size(30.dp),
                 )
@@ -313,9 +349,32 @@ private fun LibraryRow(
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
             Text(item.name, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.Medium)
-            Text(formatTime(item.durationMs), fontSize = 12.sp, color = Color.Gray)
+            Text(if (app.library.mediaKind(item) == MediaKind.IMAGE) "Image" else formatTime(item.durationMs), fontSize = 12.sp, color = Color.Gray)
         }
+        IconButton(onClick = onInsert) { Icon(Icons.Filled.Add, contentDescription = "Insert ${item.name}") }
         IconButton(onClick = onRename) { Icon(Icons.Filled.Edit, contentDescription = "Rename") }
         IconButton(onClick = onRemove) { Icon(Icons.Filled.Delete, contentDescription = "Remove") }
+    }
+}
+
+@Composable
+private fun SavedImagePreview(app: App, item: LibraryItemEntity, onDismiss: () -> Unit, onInsert: () -> Unit) {
+    val bitmap by produceState<Bitmap?>(null, item.id) {
+        value = com.videoeditor.app.media.WebImages.preview(app, Uri.fromFile(app.library.file(item)))
+    }
+    Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+        Surface(Modifier.fillMaxSize().testTag("savedImagePreview"), color = Bg) {
+            Column(Modifier.fillMaxSize().padding(16.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(item.name, modifier = Modifier.weight(1f), maxLines = 2)
+                    TextButton(onClick = onDismiss) { Text("Close preview") }
+                }
+                Box(Modifier.weight(1f).fillMaxWidth().background(Color(0xFF363942)), contentAlignment = Alignment.Center) {
+                    bitmap?.let { Image(it.asImageBitmap(), "Saved image", Modifier.fillMaxSize(), contentScale = ContentScale.Fit) }
+                        ?: Text("Loading image…")
+                }
+                Button(onClick = onInsert, modifier = Modifier.fillMaxWidth()) { Text("Insert overlay") }
+            }
+        }
     }
 }

@@ -139,6 +139,7 @@ class ProjectRepository(private val db: AppDatabase) {
 }
 
 enum class LibraryKind(val folder: String, val title: String, val addLabel: String, val mime: String) {
+    OVERLAYS("overlays", "Overlay Folder", "Add Images / Videos", "*/*"),
     VIDEO_FX("video_fx", "Video FX", "Add Video", "video/*"),
     SOUND_FX("sound_fx", "Sound FX", "Add Sound", "audio/*"),
     MUSIC("music", "BG MUSIC", "Add Music", "audio/*"),
@@ -163,22 +164,36 @@ class LibraryRepository(private val context: Context, db: AppDatabase) {
 
     fun observe(kind: LibraryKind): Flow<List<LibraryItemEntity>> = dao.observe(kind.name)
 
+    fun mediaKind(item: LibraryItemEntity): MediaKind = when {
+        item.mimeType?.startsWith("image/") == true -> MediaKind.IMAGE
+        item.kind == LibraryKind.VIDEO_FX.name || item.kind == LibraryKind.OVERLAYS.name -> MediaKind.VIDEO
+        else -> MediaKind.AUDIO
+    }
+
+    private fun accepts(kind: LibraryKind, media: MediaKind): Boolean = when (kind) {
+        LibraryKind.OVERLAYS -> media == MediaKind.IMAGE || media == MediaKind.VIDEO
+        LibraryKind.VIDEO_FX -> media == MediaKind.VIDEO
+        else -> media == MediaKind.AUDIO
+    }
+
     /** Copies each picked file into private storage. Returns how many were imported. */
-    suspend fun import(kind: LibraryKind, uris: List<Uri>): Int = withContext(Dispatchers.IO) {
-        var imported = 0
+    suspend fun import(kind: LibraryKind, uris: List<Uri>): Int = importItems(kind, uris).size
+
+    suspend fun importItems(kind: LibraryKind, uris: List<Uri>): List<LibraryItemEntity> = withContext(Dispatchers.IO) {
+        val imported = ArrayList<LibraryItemEntity>()
         for (uri in uris) {
             val source = MediaProbe.probe(context, uri) ?: continue
-            val wantedKind = if (kind == LibraryKind.VIDEO_FX) MediaKind.VIDEO else MediaKind.AUDIO
-            if (source.kind != wantedKind) continue
-            val ext = source.name.substringAfterLast('.', "").lowercase().take(5)
-                .ifEmpty { if (wantedKind == MediaKind.VIDEO) "mp4" else "m4a" }
+            val wantedKind = source.kind
+            if (!accepts(kind, wantedKind)) continue
+            val ext = source.name.substringAfterLast('.', "").lowercase().takeIf { it.matches(Regex("[a-z0-9]{1,5}")) }
+                ?: if (wantedKind == MediaKind.IMAGE) "png" else if (wantedKind == MediaKind.VIDEO) "mp4" else "m4a"
             val target = File(dir(kind), "${System.currentTimeMillis()}_${UUID.randomUUID().toString().take(8)}.$ext")
             val copied = try {
                 context.contentResolver.openInputStream(uri)?.use { input ->
                     target.outputStream().use { output -> input.copyTo(output) }
                     true
                 } ?: false
-            } catch (e: Exception) {
+            } catch (e: kotlinx.coroutines.CancellationException) { target.delete(); throw e } catch (e: Exception) {
                 false
             }
             if (!copied || target.length() == 0L) {
@@ -186,9 +201,9 @@ class LibraryRepository(private val context: Context, db: AppDatabase) {
                 continue
             }
             // Probe the private copy so durations describe the file the app will really use.
-            val info = MediaProbe.probe(context, Uri.fromFile(target)) ?: source
-            dao.insert(
-                LibraryItemEntity(
+            val info = MediaProbe.probe(context, Uri.fromFile(target))
+            if (info == null || !accepts(kind, info.kind)) { target.delete(); continue }
+            val record = LibraryItemEntity(
                     kind = kind.name,
                     name = source.name.substringBeforeLast('.').ifEmpty { source.name },
                     fileName = target.name,
@@ -197,9 +212,12 @@ class LibraryRepository(private val context: Context, db: AppDatabase) {
                     hasAudio = info.hasAudio,
                     aspect = info.aspect,
                     addedAt = System.currentTimeMillis(),
-                ),
-            )
-            imported++
+                )
+            try {
+                val id = dao.insert(record)
+                imported += record.copy(id = id)
+            } catch (e: kotlinx.coroutines.CancellationException) { throw e }
+            catch (_: Exception) { target.delete() }
         }
         imported
     }
@@ -271,7 +289,7 @@ class LibraryRepository(private val context: Context, db: AppDatabase) {
         uri = Uri.fromFile(file(item)),
         name = item.name,
         mimeType = item.mimeType,
-        kind = if (item.kind == LibraryKind.VIDEO_FX.name) MediaKind.VIDEO else MediaKind.AUDIO,
+        kind = mediaKind(item),
         durationMs = item.durationMs,
         hasAudio = item.hasAudio,
         aspect = item.aspect,
