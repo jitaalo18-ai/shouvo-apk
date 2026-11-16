@@ -1,6 +1,27 @@
+# V0.28 — Export sheet (resolution, frame rate) and Export video for one clip (2026-11-17)
+
+Current version: 0.28 (versionCode 28), label V0.28.
+
+- Export sheet (like CapCut's), opened by the Export button and by the badge next to it (SD /
+  HD / FHD / 2K / 4K): Resolution 480p, 720p, 1080p, 2K (1440p), 4K (2160p); Frame rate Auto,
+  24, 25, 30, 50, 60; the frame size it will give; then Export. The choice is remembered
+  (SharedPreferences "editor").
+- "Export video" in the toolbar of a selected main clip: the same sheet, titled "Export this
+  clip"; only the part of the project under that clip is rendered and saved to the Gallery
+  (Movies/VideoEditor) - with everything seen and heard there (overlays, texts / captions,
+  music, each cut to that part; core ExportRange). The project is not changed.
+- Frame rate: a chosen rate leaves frames out (Media3 FrameDropEffect); it never invents
+  frames, so a 30 fps video exported at 50 / 60 stays 30. Auto = as the videos are (as before).
+- 2K / 4K: the frame is made bigger; a video is not sharper than its original. If the phone's
+  H.264 encoder cannot make the size / rate, the export is refused with a message instead of
+  silently coming out smaller. Overlay pictures are drawn at the frame size, so 4K with many
+  overlays needs much memory.
+- With a chosen resolution / frame rate the picture is always made anew (no stream copy).
+
+---
 # V0.27 — Split scenes (like CapCut's) (2026-11-17)
 
-Current version: 0.27 (versionCode 27), label V0.27.
+Version 0.27 (versionCode 27), label V0.27.
 
 - What the user had asked for in V0.26 was CapCut's "Split scenes" (right-click menu on PC), not
   a split screen: the video is looked through, and wherever the shot changes the clip is cut, so
