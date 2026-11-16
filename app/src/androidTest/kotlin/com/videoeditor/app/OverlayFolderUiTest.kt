@@ -1,6 +1,6 @@
 package com.videoeditor.app
 
-import androidx.compose.material3.MaterialTheme
+import com.videoeditor.app.ui.AppTheme
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -25,7 +25,7 @@ class OverlayFolderUiTest {
         var inserted: Long? = null
         var searched = false
         try {
-            rule.setContent { MaterialTheme {
+            rule.setContent { AppTheme {
                 LibraryDialog(app, LibraryKind.OVERLAYS, {}, {}, { inserted = it.id }, { searched = true })
             } }
             rule.onNodeWithText("Search by name").performTextInput("Overlay UI image")
@@ -38,18 +38,22 @@ class OverlayFolderUiTest {
             assertTrue(searched)
             rule.onNodeWithContentDescription("Insert Overlay UI image").performClick()
             assertEquals(item.id, inserted)
+            rule.waitForIdle()
+            android.os.SystemClock.sleep(1000)
             Shots.take("overlay_folder")
         } finally { runBlocking { app.library.remove(item.id) } }
     }
     @Test fun imageSearchOpensAndAcceptsAKeyword() {
         val app = Fixtures.target.applicationContext as App
-        rule.setContent { MaterialTheme { com.videoeditor.app.ui.ImageSearchDialog(app, {}, {}) } }
+        rule.setContent { AppTheme { com.videoeditor.app.ui.ImageSearchDialog(app, {}, {}) } }
         rule.onNodeWithTag("imageSearchScreen").assertExists()
         rule.onNodeWithTag("imageSearchQuery").performTextInput("Tom Cruise movies")
         rule.onNodeWithTag("imageSearchGo").performClick()
         rule.onNodeWithTag("imageSearchQuery").assertTextContains("Tom Cruise movies")
         rule.onNodeWithText("Bing").performClick()
         rule.onNodeWithText("Reload").assertExists()
+        rule.waitForIdle()
+        android.os.SystemClock.sleep(10000)
         Shots.take("image_search")
     }
 

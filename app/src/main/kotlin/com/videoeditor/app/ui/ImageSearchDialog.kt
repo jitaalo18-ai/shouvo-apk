@@ -16,6 +16,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.window.Dialog
@@ -32,6 +33,7 @@ import java.io.File
 @Composable
 fun ImageSearchDialog(app: App, onDismiss: () -> Unit, onSaved: () -> Unit) {
     val scope = rememberCoroutineScope()
+    val focus = LocalFocusManager.current
     val prefs = remember { app.getSharedPreferences("image_search", 0) }
     var history by remember { mutableStateOf(try {
         val a = JSONArray(prefs.getString("history", "[]")); (0 until a.length()).map { a.getString(it) }
@@ -51,6 +53,7 @@ fun ImageSearchDialog(app: App, onDismiss: () -> Unit, onSaved: () -> Unit) {
     }
     fun search(term: String = query) {
         if (term.isBlank()) return
+        focus.clearFocus()
         query = term.trim(); error = null
         storeHistory((listOf(query) + history.filterNot { it.equals(query, true) }).take(20))
         page = WebImages.searchUrl(query, google)
