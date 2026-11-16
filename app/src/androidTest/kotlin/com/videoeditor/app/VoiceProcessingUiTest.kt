@@ -196,9 +196,14 @@ class VoiceProcessingUiTest {
 
         // the noise reduction is heard in the preview: a pause of the voice
         val fx = editor.player.mainFx
+        // (measured from a standstill, so no sound from before the jump is counted on a slow emulator)
+        ui { editor.player.pause() }
+        ui { editor.player.seekTo(4_500) }
+        Thread.sleep(1_200)
         fx.powerIn.clear(); fx.powerOut.clear()
-        ui { editor.player.seekTo(4_400) }
-        playFor(1_800)
+        positions += -1L to -1L
+        ui { editor.player.play() }
+        playFor(1_300)
         val g = 10 * kotlin.math.log10(fx.powerOut[first]!! / fx.powerIn[first]!!)
         Report.note("voice processing: preview noise in a pause %.1f dB; CPU for the sound %.1f%%".format(
             g, 100.0 * fx.processNanos / 1e9 / (fx.processFrames / 48_000.0)))

@@ -1,3 +1,29 @@
+# V0.26 validation (2026-11-16)
+
+Executed (GitHub Actions):
+- core JVM tests: 123 passed (5 new for Split screen): every layout for 2..9 pictures covers the
+  frame exactly without overlap; for 4 canvas shapes x all layouts x mixed picture shapes every
+  picture's shown box equals its part and its shown shape equals the part's shape (cropped on
+  one side only, never squeezed); the pictures under the playhead are found main first; Reset;
+  cropped clips are never stream-copied on export.
+- Android 12 emulator, 46 instrumented tests (3 new in SplitScreenTest):
+  - Export measured on the video itself (two 400 px pictures with a 100 px square in the
+    middle, 9:16): "side by side" - each half 100 % its own picture, square 480x477 / 477x478 px
+    (expected 480) at (269,960) / (809,960); "top and bottom" - 268x268 px (expected 270) at
+    (539,479) / (539,1439). So: filled, centred, not squeezed, main clip and overlay alike.
+  - Editor: Split screen button -> panel; all four 3-picture layouts put the main video and two
+    overlays exactly into their parts (screenshots checked: video cropped, not squeezed); Reset;
+    undo / redo; saved in the database; playback with the split screen without player errors;
+    with a single clip a hint is shown instead.
+  - Compound: holding a main clip or a chip selects nothing (before and while picking); the
+    Compound button + one tap per clip picks; compound / add to a compound / delete several
+    work as before.
+
+Not executed / needs a real phone: how the split screen feels with real videos by hand
+(moving a clip afterwards keeps its crop); video overlays in a split-screen export were covered
+by code shared with pictures, the measured export used pictures.
+
+---
 # V0.25 validation (2026-11-16)
 
 Executed (GitHub Actions, Android 12 emulator): 43/43 instrumented tests "OK" - of the 4 new

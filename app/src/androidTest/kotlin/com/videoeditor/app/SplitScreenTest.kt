@@ -230,8 +230,11 @@ class SplitScreenTest {
         waitFor("editor loaded") { EditorController.current?.loaded == true && EditorController.current?.projectId == projectId }
         pause(1_000)
         rule.onNodeWithText("Split screen").performScrollTo().performClick()
-        pause(600)
+        // the hint is shown (and no panel)
+        waitFor("hint", 5_000) {
+            editor.message?.contains("two or more") == true ||
+                rule.onAllNodes(hasText("two or more", substring = true)).fetchSemanticsNodes().isNotEmpty()
+        }
         assertFalse(shown("splitScreenSheet"))
-        assertTrue(editor.message?.contains("two or more") == true)
     }
 }
