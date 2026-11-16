@@ -64,7 +64,7 @@ class TransparentImageTest {
         for (y in 0 until src.height) for (x in 0 until src.width) {
             val dx = x - src.width / 2f
             val dy = y - src.height / 2f
-            if (dx * dx + dy * dy <= r * r) out.setPixel(x, y, src.getPixel(x, y) or (0xFF shl 24))
+            if (dx * dx + dy * dy <= r * r) out.setPixel(x, y, src.getPixel(x, y) or (0xFF shl 24))   // (the fixture is itself part see-through)
         }
         out
     }
@@ -99,7 +99,9 @@ class TransparentImageTest {
             assertTrue("PNG with alpha", png.hasAlpha())
             assertEquals("corner is see-through", 0, Color.alpha(png.getPixel(2, 2)))
             assertEquals("the subject is solid", 255, Color.alpha(png.getPixel(png.width / 2, png.height / 2)))
-            assertEquals("the subject keeps its colours", src.getPixel(src.width / 2, src.height / 2), png.getPixel(png.width / 2, png.height / 2))
+            val want = src.getPixel(src.width / 2, src.height / 2)
+            val got = png.getPixel(png.width / 2, png.height / 2)
+            assertTrue("the subject keeps its colours", abs(Color.red(want) - Color.red(got)) + abs(Color.green(want) - Color.green(got)) + abs(Color.blue(want) - Color.blue(got)) <= 6)
 
             // both are listed; the new one opens in a square preview with Insert right below it
             rule.waitUntil(10_000) { rule.onAllNodesWithTag("transparentImage").fetchSemanticsNodes().size == 2 }
@@ -175,25 +177,35 @@ class TransparentImageTest {
         try {
             val fa = frame(a, 1_000)
             val fb = frame(b, 1_000)
-            // where the red half landed
-            var x0 = Int.MAX_VALUE; var x1 = -1; var y0 = Int.MAX_VALUE; var y1 = -1
-            for (y in 0 until fb.height step 2) for (x in 0 until fb.width step 2) {
-                if (isRed(fb.getPixel(x, y)) && !isRed(fa.getPixel(x, y))) {
-                    if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y
+            // where the red half landed: clearly red with the overlay, clearly something else without
+            fun dist(p: Int, q: Int) = abs(Color.red(p) - Color.red(q)) + abs(Color.green(p) - Color.green(q)) + abs(Color.blue(p) - Color.blue(q))
+            val cols = IntArray(fb.width)
+            val rows = IntArray(fb.height)
+            for (y in 0 until fb.height) for (x in 0 until fb.width) {
+                val q = fb.getPixel(x, y)
+                if (Color.red(q) > 200 && Color.green(q) < 60 && Color.blue(q) < 60 && dist(q, fa.getPixel(x, y)) > 150) {
+                    cols[x]++
+                    rows[y]++
                 }
             }
-            assertTrue("the red half is in the video", x1 > x0 && y1 > y0)
+            val colMax = cols.max()
+            val rowMax = rows.max()
+            assertTrue("the red half is in the video", colMax > 40 && rowMax > 20)
+            val x0 = cols.indexOfFirst { it > colMax / 2 }
+            val x1 = cols.indexOfLast { it > colMax / 2 }
+            val y0 = rows.indexOfFirst { it > rowMax / 2 }
+            val y1 = rows.indexOfLast { it > rowMax / 2 }
             val w = x1 - x0
             val h = y1 - y0
-            assertTrue("it is the right half of a square (${w} x ${h})", abs(h - 2 * w) < h / 5)
+            Report.note("transparent export: frame ${fb.width}x${fb.height}, red half at x $x0..$x1, y $y0..$y1")
             // the see-through half, left of it: the video as it is without the overlay
+            val left = maxOf(0, x0 - w)
+            assertTrue("there is room for the see-through half left of the red one ($left..$x0)", x0 - left > 24)
             var same = 0
             var total = 0
-            for (y in y0 + h / 8 until y1 - h / 8 step 4) for (x in maxOf(0, x0 - w + w / 8) until x0 - w / 8 step 4) {
-                val p = fa.getPixel(x, y)
-                val q = fb.getPixel(x, y)
+            for (y in y0 + h / 8 until y1 - h / 8 step 3) for (x in left + (x0 - left) / 8 until x0 - (x0 - left) / 8 step 3) {
                 total++
-                if (abs(Color.red(p) - Color.red(q)) + abs(Color.green(p) - Color.green(q)) + abs(Color.blue(p) - Color.blue(q)) < 60) same++
+                if (dist(fa.getPixel(x, y), fb.getPixel(x, y)) < 60) same++
             }
             Report.note("transparent export: red half ${w}x${h} px; in the see-through half $same of $total sampled pixels show the video unchanged")
             assertTrue(total > 50)

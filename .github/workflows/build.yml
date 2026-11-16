@@ -99,6 +99,40 @@ jobs:
           git -c user.name=ci -c user.email=ci@localhost commit -qm "results of run ${GITHUB_RUN_ID} (${GITHUB_REF_NAME})"
           git push -fq "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" ci-results
 
+  mlkit:
+    # Transparent image with the real Google subject finder, on an emulator with a recent Play services
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: apks
+          path: app/build/outputs/apk
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Real background removal on an Android 15 emulator (Google Play image)
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: google_apis_playstore
+          arch: x86_64
+          profile: pixel_6
+          ram-size: 4096M
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          disable-animations: true
+          script: bash ci/run-mlkit-test.sh
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: mlkit-results
+          path: mlkit-results
+
   release:
     needs: [build, emulator]
     if: github.ref == 'refs/heads/main'
