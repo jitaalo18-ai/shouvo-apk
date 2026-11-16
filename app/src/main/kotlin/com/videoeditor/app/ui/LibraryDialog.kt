@@ -42,6 +42,10 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -98,6 +102,33 @@ fun LibraryDialog(
     var previewImage by remember { mutableStateOf<LibraryItemEntity?>(null) }
     var mediaFilter by remember(kind) { mutableStateOf("All") }
     var previewError by remember { mutableStateOf<String?>(null) }
+    // Transparent image: the item being worked on, what is happening, and the outcome
+    var cuttingId by remember { mutableStateOf<Long?>(null) }
+    var cutStage by remember { mutableStateOf("") }
+    var cutMessage by remember { mutableStateOf<String?>(null) }
+    fun makeTransparent(item: LibraryItemEntity) {
+        if (cuttingId != null) return
+        cuttingId = item.id
+        cutStage = "Removing the background…"
+        cutMessage = null
+        scope.launch {
+            var png: java.io.File? = null
+            try {
+                png = com.videoeditor.app.media.BackgroundRemover.removeBackground(app, app.library.file(item)) { cutStage = it }
+                val added = app.library.importItems(kind, listOf(Uri.fromFile(png)))
+                check(added.size == 1) { "Could not save the picture. Check free storage." }
+                app.library.rename(added.single().id, (item.name.take(100) + " transparent"))
+                cutMessage = "Saved \"${item.name.take(40)} transparent\" - the original is kept."
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                cutMessage = e.message ?: "The background could not be removed."
+            } finally {
+                png?.delete()
+                cuttingId = null
+            }
+        }
+    }
 
     // Preview: one small player; the clip that is playing is shown inside its own thumbnail box.
     val context = LocalContext.current
@@ -208,11 +239,33 @@ fun LibraryDialog(
                                 onInsert = { onInsert(item) },
                                 onRename = { renaming = item },
                                 onRemove = { scope.launch { removing = app.library.checkRemove(item.id) } },
+                                onTransparent = { makeTransparent(item) },
+                                busy = cuttingId != null,
                             )
                         }
                     }
                 }
             }
+        }
+
+        if (cuttingId != null) {
+            Dialog(onDismissRequest = {}) {
+                Surface(shape = RoundedCornerShape(20.dp), color = Panel, modifier = Modifier.testTag("transparentWorking")) {
+                    Column(Modifier.padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                        androidx.compose.material3.CircularProgressIndicator()
+                        Spacer(Modifier.height(14.dp))
+                        Text(cutStage, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+                    }
+                }
+            }
+        }
+        cutMessage?.let { text ->
+            AlertDialog(
+                onDismissRequest = { cutMessage = null },
+                title = { Text("Transparent image") },
+                text = { Text(text, modifier = Modifier.testTag("transparentMessage")) },
+                confirmButton = { TextButton(onClick = { cutMessage = null }) { Text("OK") } },
+            )
         }
 
         previewImage?.let { item ->
@@ -280,6 +333,8 @@ private fun LibraryRow(
     onInsert: () -> Unit,
     onRename: () -> Unit,
     onRemove: () -> Unit,
+    onTransparent: () -> Unit = {},
+    busy: Boolean = false,
 ) {
     Row(
         Modifier
@@ -300,6 +355,7 @@ private fun LibraryRow(
             }
             // Tap the box to play / stop the clip inside it.
             Box(thumb.background(Color(0xFF22252C)).clickable(onClick = onTogglePreview), contentAlignment = Alignment.Center) {
+                if (app.library.mediaKind(item) == MediaKind.IMAGE) Checkerboard(Modifier.fillMaxSize(), 7.dp)
                 bitmap?.let {
                     Image(
                         bitmap = it.asImageBitmap(),
@@ -351,9 +407,18 @@ private fun LibraryRow(
             Text(item.name, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.Medium)
             Text(if (app.library.mediaKind(item) == MediaKind.IMAGE) "Image" else formatTime(item.durationMs), fontSize = 12.sp, color = Color.Gray)
         }
-        IconButton(onClick = onInsert) { Icon(Icons.Filled.Add, contentDescription = "Insert ${item.name}") }
-        IconButton(onClick = onRename) { Icon(Icons.Filled.Edit, contentDescription = "Rename") }
-        IconButton(onClick = onRemove) { Icon(Icons.Filled.Delete, contentDescription = "Remove") }
+        val small = Modifier.size(40.dp)
+        if (kind == LibraryKind.OVERLAYS && app.library.mediaKind(item) == MediaKind.IMAGE) {
+            // Transparent image: a copy of the picture without its background
+            IconButton(onClick = onTransparent, enabled = !busy, modifier = small.testTag("transparentImage")) {
+                Box(Modifier.size(22.dp).clip(RoundedCornerShape(4.dp)).semantics { contentDescription = "Transparent image" }) {
+                    Checkerboard(Modifier.fillMaxSize(), 5.5.dp)
+                }
+            }
+        }
+        IconButton(onClick = onInsert, modifier = small) { Icon(Icons.Filled.Add, contentDescription = "Insert ${item.name}") }
+        IconButton(onClick = onRename, modifier = small) { Icon(Icons.Filled.Edit, contentDescription = "Rename") }
+        IconButton(onClick = onRemove, modifier = small) { Icon(Icons.Filled.Delete, contentDescription = "Remove") }
     }
 }
 
@@ -369,12 +434,44 @@ private fun SavedImagePreview(app: App, item: LibraryItemEntity, onDismiss: () -
                     Text(item.name, modifier = Modifier.weight(1f), maxLines = 2)
                     TextButton(onClick = onDismiss) { Text("Close preview") }
                 }
-                Box(Modifier.weight(1f).fillMaxWidth().background(Color(0xFF363942)), contentAlignment = Alignment.Center) {
-                    bitmap?.let { Image(it.asImageBitmap(), "Saved image", Modifier.fillMaxSize(), contentScale = ContentScale.Fit) }
-                        ?: Text("Loading image…")
+                Spacer(Modifier.height(8.dp))
+                // a square (1:1) box with the whole picture inside; transparent parts show the checkerboard
+                Box(
+                    Modifier.fillMaxWidth().aspectRatio(1f).clip(RoundedCornerShape(12.dp)).background(Color(0xFF363942)).testTag("savedImageBox"),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    bitmap?.let {
+                        val aspect = it.width.toFloat() / it.height
+                        // the checks only behind the picture itself, so its own see-through parts show
+                        Box((if (aspect >= 1f) Modifier.fillMaxWidth() else Modifier.fillMaxHeight()).aspectRatio(aspect, matchHeightConstraintsFirst = aspect < 1f)) {
+                            Checkerboard(Modifier.fillMaxSize(), 12.dp)
+                            Image(it.asImageBitmap(), "Saved image", Modifier.fillMaxSize(), contentScale = ContentScale.Fit)
+                        }
+                    } ?: Text("Loading image…")
                 }
-                Button(onClick = onInsert, modifier = Modifier.fillMaxWidth()) { Text("Insert overlay") }
+                Spacer(Modifier.height(12.dp))
+                Button(onClick = onInsert, modifier = Modifier.fillMaxWidth().testTag("insertOverlay")) { Text("Insert overlay") }
             }
+        }
+    }
+}
+
+/** The grey checks that stand for "transparent". */
+@Composable
+private fun Checkerboard(modifier: Modifier, cell: androidx.compose.ui.unit.Dp) {
+    androidx.compose.foundation.Canvas(modifier) {
+        val c = cell.toPx()
+        drawRect(Color(0xFFBDBDBD))
+        var y = 0f
+        var row = 0
+        while (y < size.height) {
+            var x = if (row % 2 == 0) 0f else c
+            while (x < size.width) {
+                drawRect(Color(0xFF8A8A8A), topLeft = androidx.compose.ui.geometry.Offset(x, y), size = androidx.compose.ui.geometry.Size(c, c))
+                x += 2 * c
+            }
+            y += c
+            row++
         }
     }
 }
