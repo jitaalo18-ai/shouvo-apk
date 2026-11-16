@@ -87,7 +87,7 @@ fun ImageSearchDialog(app: App, onDismiss: () -> Unit, onSaved: () -> Unit,
             }
         }
         BackHandler { if(selected!=null) selected=null else onDismiss() }
-        Surface(Modifier.fillMaxSize().testTag("imageSearchScreen"),color=Color(0xff181d20)) {
+        Surface(Modifier.fillMaxSize().testTag("imageSearchScreen"),color=Color(0xff181d20),contentColor=Color.White) {
             if(selected!=null) key(selected!!.url) {
                 ImageDetail(app,selected!!,results.filterNot { it.url==selected!!.url },{ selected=null },{ selected=it },onSaved,searcher)
             } else Column(Modifier.fillMaxSize()) {
