@@ -1,3 +1,28 @@
+# V0.28 validation (2026-11-17)
+
+Executed (GitHub Actions):
+- core JVM tests: 135 passed (7 new): frame sizes for every resolution and shape (1080p 1920x1080
+  / 1080x1920, 2K 2560x1440, 4K 3840x2160, 720p, 480p, capped long side, even numbers); settings
+  stored and read; the part under a clip cut exactly like Split cuts (main, music, overlays,
+  fades, nothing from before / after); chosen settings never stream-copy; frame-rate limiter:
+  30->24, 30->25, 60->30, 60->24, 60->50, 29.97->25, 59.94->30, 50->24, 120->60 give the chosen
+  number of frames evenly spread; at or below the rate every frame is kept.
+- Android 12 emulator, 50/50 instrumented tests (2 new in ExportSettingsTest), measured on the
+  exported files (640x360, 30 fps, 7 s, 210 frames source):
+  - default -> 1920x1080, 210 frames; 720p / 24 fps -> 1280x720, 168 frames, 7.03 s, with sound;
+    480p / 60 fps -> 854x480, 210 frames (no frames invented).
+  - "Export video" on the middle clip of a 19 s three-clip project, 720p / 25 fps chosen in the
+    sheet: 720x1280, 175 frames, 7033 ms for the 7023 ms clip; project unchanged; choice
+    remembered; badge shows it; no player errors.
+  - The first try used Media3's FrameDropEffect: it left all 209 frames at 24 / 25 fps (found by
+    these tests) - replaced by an own frame limiter.
+
+NOT verified: 2K and 4K. The emulator's encoder cannot make them, so the app refused both with
+its message ("This phone cannot make 2K / 30 fps video (2560 x 1440). Choose a lower
+resolution.") - the refusal is tested, a real 2K / 4K file is not. Needs a real phone (S25 Ultra):
+that 2K / 4K exports come out right, how long they take, and memory with several overlays.
+
+---
 # V0.27 validation (2026-11-17)
 
 Executed (GitHub Actions):
