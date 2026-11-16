@@ -106,7 +106,9 @@ class TransparentImageTest {
             rule.onAllNodesWithContentDescription("Preview image")[0].performClick()
             rule.onNodeWithTag("savedImagePreview").assertExists()
             val box = rule.onNodeWithTag("savedImageBox").getUnclippedBoundsInRoot()
-            assertTrue("1:1 preview (${box.width} x ${box.height})", abs((box.width - box.height).value) < 1f)
+            val boxW = (box.right - box.left).value
+            val boxH = (box.bottom - box.top).value
+            assertTrue("1:1 preview ($boxW x $boxH)", abs(boxW - boxH) < 1f && boxW > 200f)
             rule.onNodeWithTag("insertOverlay").assertIsDisplayed()
             val button = rule.onNodeWithTag("insertOverlay").getUnclippedBoundsInRoot()
             assertTrue("Insert is right under the picture", (button.top - box.bottom).value in 0f..40f)
