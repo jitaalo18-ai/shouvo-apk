@@ -251,10 +251,7 @@ fun TextLayer(ctl: EditorController, position: Long, canvasW: Dp, canvasH: Dp, c
                 .pointerInput(owner) {
                     detectTapGestures(
                         onDoubleTap = { if (!isPiece) ctl.editingTextId = owner },
-                        onLongPress = {
-                            haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                            ctl.longPress(owner)
-                        },
+                        onLongPress = { },
                     ) { ctl.select(owner) }
                 }
             if (clip.selected && !isPiece) {

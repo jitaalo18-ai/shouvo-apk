@@ -24,6 +24,7 @@ import com.videoeditor.core.AudioFx
 import com.videoeditor.core.AudioLevel
 import com.videoeditor.core.AutoCutStrength
 import com.videoeditor.core.VoiceEdits
+import com.videoeditor.core.SplitScreen
 import com.videoeditor.core.Clip
 import com.videoeditor.app.captions.CaptionModel
 import com.videoeditor.app.captions.CaptionModels
@@ -694,9 +695,9 @@ class EditorController(private val app: App, val projectId: Long, uiScope: Corou
     // ---- Multi-select and compound clips --------------------------------------------------
 
     /**
-     * Multi-select mode (like CapCut): the clips the user has picked, on any track (null = not
-     * picking). Long-press a clip to start; then tap or long-press more clips (timeline or
-     * preview) to add or remove them.
+     * Multi-select mode: the clips the user has picked, on any track (null = not picking). It
+     * starts with the Compound button; then every tap on a clip (timeline or preview) adds or
+     * removes it, "All" takes everything. Holding a clip does not select (removed in 0.26).
      */
     var multiPick by mutableStateOf<Set<String>?>(null)
         private set
@@ -726,11 +727,41 @@ class EditorController(private val app: App, val projectId: Long, uiScope: Corou
         if (timeline.selected != null) commitEdit(TimelineOps.select(timeline, null), undoable = false)
     }
 
-    /** Long-press on a clip (timeline or preview): start picking, or add / remove it. */
-    fun longPress(id: String) {
-        val owner = Compound.ownerId(id)
-        if (timeline.byId(owner) == null) return
-        if (multiPick == null) startPicking(owner) else togglePick(owner)
+    // ---- Split screen (like CapCut on PC) -----------------------------------------------------
+
+    var splitSheet by mutableStateOf(false)
+        private set
+
+    /** The pictures the split screen is made of: those on screen at the playhead (main first). */
+    val splitClips: List<Clip> get() = SplitScreen.clipsAt(timeline, player.positionMs.value)
+
+    fun openSplitScreen() {
+        if (busy != null) return
+        player.pause()
+        if (splitClips.size < 2) {
+            message = "Split screen needs two or more videos or pictures at the same time: add an overlay above the main video and put the playhead on it."
+            return
+        }
+        splitSheet = true
+    }
+
+    fun closeSplitScreen() {
+        splitSheet = false
+    }
+
+    /** Every picture at the playhead gets its own part of the frame (one undo step). */
+    fun applySplitScreen(layout: SplitScreen.Layout) {
+        val clips = splitClips
+        if (clips.size < 2) return
+        commitEdit(SplitScreen.apply(timeline, clips.map { it.id }, layout, canvasAspect))
+    }
+
+    /** Whole pictures again (main fitted, overlays in the middle). */
+    fun resetSplitScreen() {
+        val clips = splitClips
+        if (clips.isEmpty()) return
+        commitEdit(SplitScreen.reset(timeline, clips.map { it.id }))
+        message = "Split screen removed."
     }
 
     /** "Compound" button: start picking with the selected clip already picked. */

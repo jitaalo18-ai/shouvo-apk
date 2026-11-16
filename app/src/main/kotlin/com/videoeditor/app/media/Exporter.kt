@@ -25,6 +25,8 @@ import androidx.media3.transformer.DefaultDecoderFactory
 import com.google.common.util.concurrent.MoreExecutors
 import java.util.concurrent.Executors
 import androidx.media3.effect.BitmapOverlay
+import androidx.media3.effect.Crop
+import com.videoeditor.core.Framing
 import androidx.media3.effect.MatrixTransformation
 import androidx.media3.effect.OverlayEffect
 import androidx.media3.effect.OverlaySettings
@@ -240,9 +242,20 @@ class Exporter(private val context: Context) {
         for (c in main) {
             val fit: Effect = Presentation.createForWidthAndHeight(canvasW, canvasH, Presentation.LAYOUT_SCALE_TO_FIT)
             val videoEffects = ArrayList<Effect>()
+            var cropZoom = 1f
+            if (c.isCropped) {
+                // Split screen: only the middle part of the picture. The cropped frame is then
+                // fitted into the canvas anew, which makes it larger than "the fitted whole
+                // picture, cropped" - cropZoom takes that back.
+                videoEffects.add(Crop(-c.cropX, c.cropX, -c.cropY, c.cropY))
+                val canvasAspect = canvasW.toFloat() / canvasH
+                val whole = Framing.fitFractions(c.aspect.coerceAtLeast(0.01f), canvasAspect).first * c.cropX
+                val cropped = Framing.fitFractions((c.aspect * c.cropX / c.cropY).coerceAtLeast(0.01f), canvasAspect).first
+                cropZoom = whole / cropped
+            }
             videoEffects.add(fit)
             // Zoom / position chosen in the preview: scale around the centre, then move.
-            val zoom = TimelineOps.mainZoom(c)
+            val zoom = TimelineOps.mainZoom(c) * cropZoom
             if (zoom != 1f || c.posX != 0.5f || c.posY != 0.5f || c.rotation != 0f || c.stretchX != 1f || c.stretchY != 1f) {
                 // The matrix works in frame coordinates that run -1..1 on both axes (y up), so the
                 // rotation is done in an aspect-corrected space to avoid skewing the picture.
@@ -379,8 +392,11 @@ private class TimedOverlay(
     canvasH: Int,
 ) : BitmapOverlay() {
     private val baseW = clip.scale * canvasW
-    private val targetW = (baseW * clip.stretchX).roundToInt().coerceAtLeast(2)
-    private val targetH = (baseW / clip.aspect.coerceAtLeast(0.01f) * clip.stretchY).roundToInt().coerceAtLeast(2)
+    // the whole picture at its size on the canvas, and the part of it that is shown (Split screen crop)
+    private val wholeW = (baseW * clip.stretchX).roundToInt().coerceAtLeast(2)
+    private val wholeH = (baseW / clip.aspect.coerceAtLeast(0.01f) * clip.stretchY).roundToInt().coerceAtLeast(2)
+    private val targetW = (wholeW * clip.cropX).roundToInt().coerceIn(2, wholeW)
+    private val targetH = (wholeH * clip.cropY).roundToInt().coerceIn(2, wholeH)
     private val visible: OverlaySettings = OverlaySettings.Builder()
         .setBackgroundFrameAnchor(clip.posX * 2f - 1f, 1f - clip.posY * 2f)
         .setRotationDegrees(-clip.rotation)       // overlay settings rotate counter-clockwise
@@ -392,9 +408,11 @@ private class TimedOverlay(
 
     private fun active(timeMs: Long) = timeMs >= clip.timelineStartMs && timeMs < clip.timelineEndMs
 
-    private fun fitted(src: Bitmap): Bitmap =
-        if (src.width == targetW && src.height == targetH) src
-        else Bitmap.createScaledBitmap(src, targetW, targetH, true)
+    private fun fitted(src: Bitmap): Bitmap {
+        val whole = if (src.width == wholeW && src.height == wholeH) src else Bitmap.createScaledBitmap(src, wholeW, wholeH, true)
+        if (targetW == wholeW && targetH == wholeH) return whole
+        return Bitmap.createBitmap(whole, (wholeW - targetW) / 2, (wholeH - targetH) / 2, targetW, targetH)
+    }
 
     private fun placeholder(): Bitmap =
         Bitmap.createBitmap(targetW, targetH, Bitmap.Config.ARGB_8888)
@@ -404,7 +422,7 @@ private class TimedOverlay(
         if (clip.kind == MediaKind.IMAGE) {
             bitmap?.let { return it }
             val loaded = try {
-                Thumbnails.decodeImage(context, Uri.parse(clip.sourceUri), maxOf(targetW, targetH))
+                Thumbnails.decodeImage(context, Uri.parse(clip.sourceUri), maxOf(wholeW, wholeH))
             } catch (e: Exception) {
                 null
             }
@@ -420,7 +438,7 @@ private class TimedOverlay(
                     it.setDataSource(context, Uri.parse(clip.sourceUri))
                     retriever = it
                 }
-                r.getScaledFrameAtTime(sourceMs * 1000, MediaMetadataRetriever.OPTION_CLOSEST, targetW, targetH)
+                r.getScaledFrameAtTime(sourceMs * 1000, MediaMetadataRetriever.OPTION_CLOSEST, wholeW, wholeH)
             } catch (e: Exception) {
                 null
             }

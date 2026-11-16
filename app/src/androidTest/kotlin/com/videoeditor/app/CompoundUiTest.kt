@@ -67,6 +67,15 @@ class CompoundUiTest {
     }
 
     /** Taps a bottom-bar button (scrolling the bar to it first). */
+    /** Taps the Compound button and starts with nothing ticked (a selected clip would be ticked already). */
+    private fun pickNothing() {
+        if (editor.multiPick == null) tool("Compound")
+        pause(500)
+        rule.runOnUiThread { editor.multiPick?.toList()?.forEach { editor.togglePick(it) } }
+        pause(300)
+        assertEquals(emptySet<String>(), editor.multiPick)
+    }
+
     private fun tool(label: String) {
         rule.onNodeWithText(label).performScrollTo().performClick()
         pause(700)
@@ -256,12 +265,24 @@ class CompoundUiTest {
         assertEquals(2, original.main.size)
         assertEquals(2, original.track(Track.OVERLAY).size)
 
-        // ---- long-press the first video clip: multi-select starts with it
+        // ---- holding a clip no longer selects anything (0.26)
         rule.onNodeWithTag("mainClip_0").performTouchInput { longClick() }
         pause(600)
-        assertEquals(setOf(original.main[0].id), editor.multiPick)
-        // hold the first overlay, then tap the sound, the music and the second video clip
+        assertEquals("holding does not start picking", null, editor.multiPick)
         rule.onNodeWithTag("chip_OVERLAY_0").performTouchInput { longClick() }
+        pause(600)
+        assertEquals(null, editor.multiPick)
+        // ---- the Compound button starts picking; then one tap per clip
+        pickNothing()
+        rule.onNodeWithTag("mainClip_0").performClick()
+        pause(400)
+        assertEquals(setOf(original.main[0].id), editor.multiPick)
+        // holding while picking does not tick either
+        rule.onNodeWithTag("chip_OVERLAY_0").performTouchInput { longClick() }
+        pause(400)
+        assertEquals(setOf(original.main[0].id), editor.multiPick)
+        // the first overlay, the sound, the music and the second video clip, one tap each
+        rule.onNodeWithTag("chip_OVERLAY_0").performClick()
         pause(400)
         rule.onNodeWithTag("chip_SFX_0").performClick()
         pause(300)
@@ -313,8 +334,9 @@ class CompoundUiTest {
         pause(800)
         assertTrue(editor.timeline.main.single().isCompound)
 
-        // ---- add the second overlay to the compound later: hold the compound, tap the overlay
-        rule.onNodeWithTag("mainClip_0").performTouchInput { longClick() }
+        // ---- add the second overlay to the compound later: Compound, tap the compound, tap the overlay
+        pickNothing()
+        rule.onNodeWithTag("mainClip_0").performClick()
         pause(500)
         rule.onNodeWithTag("chip_OVERLAY_0").performClick()
         pause(500)
@@ -339,7 +361,8 @@ class CompoundUiTest {
         assertEquals(before, plays(editor.timeline))
 
         // ---- several clips deleted at once (one undo step)
-        rule.onNodeWithTag("chip_OVERLAY_0").performTouchInput { longClick() }
+        pickNothing()
+        rule.onNodeWithTag("chip_OVERLAY_0").performClick()
         pause(400)
         rule.onNodeWithTag("chip_SFX_0").performClick()
         pause(400)

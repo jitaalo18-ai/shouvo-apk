@@ -71,6 +71,9 @@ data class ClipEntity(
     /** 0.18: Voice enhance settings ([com.videoeditor.core.AudioFx.encode], "" = none). */
     @ColumnInfo(defaultValue = "") val audioFx: String = "",
     @ColumnInfo(defaultValue = "") val captionTiming: String = "",
+    /** 0.26: Split screen crop (the shown part of the width / height, 1 = everything). */
+    @ColumnInfo(defaultValue = "1") val cropX: Float = 1f,
+    @ColumnInfo(defaultValue = "1") val cropY: Float = 1f,
 )
 
 /**
@@ -172,7 +175,7 @@ abstract class LibraryDao {
 
 @Database(
     entities = [ProjectEntity::class, ClipEntity::class, LibraryItemEntity::class],
-    version = 7,
+    version = 8,
     exportSchema = false,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -182,8 +185,16 @@ abstract class AppDatabase : RoomDatabase() {
     companion object {
         fun create(context: Context): AppDatabase =
             Room.databaseBuilder(context, AppDatabase::class.java, "video_editor.db")
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8)
                 .build()
+
+        /** 0.26: Split screen crop. Existing clips are not cropped. */
+        val MIGRATION_7_8 = object : Migration(7, 8) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE clips ADD COLUMN cropX REAL NOT NULL DEFAULT 1")
+                db.execSQL("ALTER TABLE clips ADD COLUMN cropY REAL NOT NULL DEFAULT 1")
+            }
+        }
 
         /** 0.18: Voice enhance. Existing clips keep their sound as it was. */
         val MIGRATION_6_7 = object : Migration(6, 7) {

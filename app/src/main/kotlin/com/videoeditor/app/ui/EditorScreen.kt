@@ -78,6 +78,7 @@ import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.RecordVoiceOver
+import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.KeyboardVoice
 import androidx.compose.material.icons.filled.TextFields
 import androidx.compose.material3.Button
@@ -110,6 +111,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
@@ -331,6 +333,7 @@ fun EditorScreen(app: App, projectId: Long, onBack: () -> Unit) {
                     ToolButton(Icons.Filled.ClosedCaption, "Captions") { ctl.captionSheet = true }
                     ToolButton(Icons.Filled.TextFields, "Text") { ctl.addText() }
                     ToolButton(Icons.Filled.MergeType, "Compound") { ctl.startCompound() }
+                    ToolButton(Icons.Filled.GridView, "Split screen") { ctl.openSplitScreen() }
                     ToolButton(Icons.Filled.Mic, "Voice") { ctl.comingSoon("Voice") }
                 }
             } else {
@@ -353,6 +356,7 @@ fun EditorScreen(app: App, projectId: Long, onBack: () -> Unit) {
                             if (clipboard != null) ToolButton(Icons.Filled.ContentPaste, "Paste") { ctl.paste() }
                             ToolButton(Icons.Filled.FileCopy, "Duplicate") { ctl.duplicateSelected() }
                             ToolButton(Icons.Filled.MergeType, "Compound") { ctl.startCompound() }
+                            if (selected.track == Track.MAIN || selected.track == Track.OVERLAY) ToolButton(Icons.Filled.GridView, "Split screen") { ctl.openSplitScreen() }
                             ToolButton(Icons.Filled.Delete, "Delete") { ctl.deleteSelected() }
                             ToolButton(Icons.AutoMirrored.Filled.ArrowBack, "Move left") { ctl.moveSelectedMain(-1) }
                             ToolButton(Icons.AutoMirrored.Filled.ArrowForward, "Move right") { ctl.moveSelectedMain(1) }
@@ -381,6 +385,7 @@ fun EditorScreen(app: App, projectId: Long, onBack: () -> Unit) {
                             if (clipboard != null) ToolButton(Icons.Filled.ContentPaste, "Paste") { ctl.paste() }
                             ToolButton(Icons.Filled.FileCopy, "Duplicate") { ctl.duplicateSelected() }
                             ToolButton(Icons.Filled.MergeType, "Compound") { ctl.startCompound() }
+                            if (selected.track == Track.MAIN || selected.track == Track.OVERLAY) ToolButton(Icons.Filled.GridView, "Split screen") { ctl.openSplitScreen() }
                             ToolButton(Icons.Filled.Delete, "Delete") { ctl.deleteSelected() }
                             // shown now, functions come in later versions
                             ToolButton(Icons.Filled.Opacity, "Opacity") { ctl.comingSoon("Opacity") }
@@ -402,6 +407,7 @@ fun EditorScreen(app: App, projectId: Long, onBack: () -> Unit) {
                             if (clipboard != null) ToolButton(Icons.Filled.ContentPaste, "Paste") { ctl.paste() }
                             ToolButton(Icons.Filled.FileCopy, "Duplicate") { ctl.duplicateSelected() }
                             ToolButton(Icons.Filled.MergeType, "Compound") { ctl.startCompound() }
+                            if (selected.track == Track.MAIN || selected.track == Track.OVERLAY) ToolButton(Icons.Filled.GridView, "Split screen") { ctl.openSplitScreen() }
                             ToolButton(Icons.Filled.Delete, "Delete") { ctl.deleteSelected() }
                             if (selected.name == com.videoeditor.core.Captions.AUTO_NAME) {
                                 ToolButton(Icons.Filled.ClosedCaption, "Captions") { ctl.captionSheet = true }
@@ -415,6 +421,7 @@ fun EditorScreen(app: App, projectId: Long, onBack: () -> Unit) {
                             if (clipboard != null) ToolButton(Icons.Filled.ContentPaste, "Paste") { ctl.paste() }
                             ToolButton(Icons.Filled.FileCopy, "Duplicate") { ctl.duplicateSelected() }
                             ToolButton(Icons.Filled.MergeType, "Compound") { ctl.startCompound() }
+                            if (selected.track == Track.MAIN || selected.track == Track.OVERLAY) ToolButton(Icons.Filled.GridView, "Split screen") { ctl.openSplitScreen() }
                             ToolButton(Icons.Filled.Delete, "Delete") { ctl.deleteSelected() }
                         }
                     }
@@ -423,6 +430,7 @@ fun EditorScreen(app: App, projectId: Long, onBack: () -> Unit) {
         }
 
         if (ctl.voiceOpen) VoicePanel(ctl, Modifier.align(Alignment.BottomCenter))
+        if (ctl.splitSheet) Box(Modifier.align(Alignment.BottomCenter)) { SplitScreenSheet(ctl) }
         if (ctl.processingDialogShown) ProcessingDialog(ctl)
 
         shownMessage?.let { text ->
@@ -678,12 +686,20 @@ private fun PreviewCanvas(ctl: EditorController, position: Long) {
             val clipAspect = c.aspect.coerceAtLeast(0.01f)
             val fitW: Dp = if (clipAspect > aspect) canvasW else canvasH * clipAspect
             val zoomed = fitW * TimelineOps.mainZoom(c)
-            val w = zoomed * c.stretchX
-            val h = zoomed / clipAspect * c.stretchY
+            // (a Split screen crop shows only the middle part of the picture)
+            val w = zoomed * c.stretchX * c.cropX
+            val h = zoomed / clipAspect * c.stretchY * c.cropY
             return Modifier
                 .offset(x = canvasW * c.posX - w / 2, y = canvasH * c.posY - h / 2)
                 .size(w, h)
                 .rotate(c.rotation)
+        }
+        // The whole (uncropped) picture's size, for drawing it inside its cropped box.
+        fun wholeFor(c: Clip): Pair<Dp, Dp> {
+            val clipAspect = c.aspect.coerceAtLeast(0.01f)
+            val fitW: Dp = if (clipAspect > aspect) canvasW else canvasH * clipAspect
+            val zoomed = fitW * TimelineOps.mainZoom(c)
+            return zoomed * c.stretchX to zoomed / clipAspect * c.stretchY
         }
         val place: Modifier = if (current != null) placeFor(current) else Modifier
         val liveFrame by LiveFrames.frame.collectAsState()
@@ -692,25 +708,29 @@ private fun PreviewCanvas(ctl: EditorController, position: Long) {
         Box(Modifier.size(canvasW, canvasH)) {
             Box(Modifier.matchParentSize().clip(RoundedCornerShape(10.dp)).background(Color.Black)) {
                 if (current != null) {
-                    AndroidView(
-                        factory = { context ->
-                            TextureView(context).also { ctl.player.main.setVideoTextureView(it) }
-                        },
-                        onRelease = {
-                            try {
-                                ctl.player.main.clearVideoTextureView(it)
-                            } catch (e: Exception) {
-                                // player already released
-                            }
-                        },
-                        modifier = place,
-                    )
+                    CropBox(current, place, wholeFor(current)) { inner ->
+                        AndroidView(
+                            factory = { context ->
+                                TextureView(context).also { ctl.player.main.setVideoTextureView(it) }
+                            },
+                            onRelease = {
+                                try {
+                                    ctl.player.main.clearVideoTextureView(it)
+                                } catch (e: Exception) {
+                                    // player already released
+                                }
+                            },
+                            modifier = inner,
+                        )
+                    }
                     // Image clips on the main track are drawn here.
                     if (current.kind == MediaKind.IMAGE) {
-                        Thumb(
-                            current.sourceUri, MediaKind.IMAGE, 0, place,
-                            maxSize = 1280, contentScale = ContentScale.FillBounds, background = Color.Black,
-                        )
+                        CropBox(current, place, wholeFor(current)) { inner ->
+                            Thumb(
+                                current.sourceUri, MediaKind.IMAGE, 0, inner,
+                                maxSize = 1280, contentScale = ContentScale.FillBounds, background = Color.Black,
+                            )
+                        }
                     }
                 }
 
@@ -719,12 +739,14 @@ private fun PreviewCanvas(ctl: EditorController, position: Long) {
                 val frame = liveFrame
                 if (trimmed != null && frame != null && frame.uri == trimmed.sourceUri) {
                     Box(Modifier.matchParentSize().background(Color.Black))
-                    Image(
-                        bitmap = frame.bitmap.asImageBitmap(),
-                        contentDescription = null,
-                        contentScale = ContentScale.FillBounds,
-                        modifier = placeFor(trimmed).testTag("liveTrimFrame"),
-                    )
+                    CropBox(trimmed, placeFor(trimmed).testTag("liveTrimFrame"), wholeFor(trimmed)) { inner ->
+                        Image(
+                            bitmap = frame.bitmap.asImageBitmap(),
+                            contentDescription = null,
+                            contentScale = ContentScale.FillBounds,
+                            modifier = inner,
+                        )
+                    }
                 }
 
                 // Touch layer for the main video. It lies above the video surface so the gestures
@@ -735,12 +757,8 @@ private fun PreviewCanvas(ctl: EditorController, position: Long) {
                         .testTag("previewCanvas")
                         .pointerInput(Unit) {
                             detectTapGestures(
-                                onLongPress = {
-                                    latest?.let {
-                                        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                                        ctl.longPress(it.id)
-                                    }
-                                },
+                                // holding does nothing (clips are picked with the Compound button, then taps)
+                                onLongPress = { },
                             ) { ctl.select(latest?.id) }
                         }
                         // finger(s) lifted: the guides go away
@@ -769,12 +787,12 @@ private fun PreviewCanvas(ctl: EditorController, position: Long) {
                                     gesture.x = (gesture.x + pan.x / canvasWPx).coerceIn(0f, 1f)
                                     gesture.y = (gesture.y + pan.y / canvasHPx).coerceIn(0f, 1f)
                                     gesture.zoom = (gesture.zoom * zoom)
-                                        .coerceIn(TimelineOps.MIN_MAIN_ZOOM, TimelineOps.MAX_MAIN_ZOOM)
+                                        .coerceIn(TimelineOps.MIN_MAIN_ZOOM, TimelineOps.MAX_MAIN_ZOOM / minOf(c.cropX, c.cropY))
                                     gesture.rotation += rotation
                                     // lock onto centre / edges / straight angles when close to them
                                     val snapped = Framing.snap(
                                         FrameState(gesture.x, gesture.y, gesture.zoom, gesture.rotation),
-                                        c.aspect, aspect, c.stretchX, c.stretchY,
+                                        c.aspect, aspect, c.stretchX * c.cropX, c.stretchY * c.cropY,
                                         toleranceX = tolerancePx / canvasWPx, toleranceY = tolerancePx / canvasHPx,
                                     )
                                     if (snapped.key and gesture.snapKey.inv() != 0) {
@@ -867,8 +885,11 @@ private fun OverlayView(ctl: EditorController, clip: Clip, canvasW: Dp, canvasH:
     val owner = Compound.ownerId(clip.id)
     val isPiece = owner != clip.id
     val picked = ctl.multiPick?.contains(owner) == true
-    val w = canvasW * clip.scale * clip.stretchX
-    val h = canvasW * clip.scale / clip.aspect.coerceAtLeast(0.01f) * clip.stretchY
+    val wholeW = canvasW * clip.scale * clip.stretchX
+    val wholeH = canvasW * clip.scale / clip.aspect.coerceAtLeast(0.01f) * clip.stretchY
+    // (a Split screen crop shows only the middle part)
+    val w = wholeW * clip.cropX
+    val h = wholeH * clip.cropY
     // Gestures are read before the rotation is applied, so drags follow the finger on screen.
     var modifier = Modifier
         .offset(x = canvasW * clip.posX - w / 2, y = canvasH * clip.posY - h / 2)
@@ -876,10 +897,7 @@ private fun OverlayView(ctl: EditorController, clip: Clip, canvasW: Dp, canvasH:
         .testTag("overlay_${clip.id}")
         .pointerInput(clip.id) {
             detectTapGestures(
-                onLongPress = {
-                    haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                    ctl.longPress(owner)
-                },
+                onLongPress = { },
             ) { ctl.select(owner) }
         }
     if (clip.selected && !isPiece) {
@@ -905,8 +923,8 @@ private fun OverlayView(ctl: EditorController, clip: Clip, canvasW: Dp, canvasH:
                     drag.y += pan.y / canvasHPx
                     val scale = c.scale * zoom
                     val turn = c.rotation + rotation
-                    val wPx = canvasWPx * scale * c.stretchX
-                    val hPx = canvasWPx * scale / c.aspect.coerceAtLeast(0.01f) * c.stretchY
+                    val wPx = canvasWPx * scale * c.stretchX * c.cropX
+                    val hPx = canvasWPx * scale / c.aspect.coerceAtLeast(0.01f) * c.stretchY * c.cropY
                     val (boxW, boxH) = Align.boundingBox(wPx, hPx, turn)
                     val snapped = Align.snap(drag.x, drag.y, boxW, boxH, canvasWPx, canvasHPx, tolerancePx)
                     if (Align.newlyOn(drag.guides, snapped.guides)) haptics.performHapticFeedback(HapticFeedbackType.LongPress)
@@ -919,19 +937,21 @@ private fun OverlayView(ctl: EditorController, clip: Clip, canvasW: Dp, canvasH:
     modifier = modifier.rotate(clip.rotation)
     if (clip.selected || picked) modifier = modifier.border(2.dp, GuideYellow)
     Box(modifier) {
-        if (clip.kind == MediaKind.IMAGE) {
-            Thumb(
-                clip.sourceUri, MediaKind.IMAGE, 0, Modifier.fillMaxSize(),
-                maxSize = 1080, contentScale = ContentScale.FillBounds, background = Color.Transparent,
-            )
-        } else {
-            AndroidView(
-                factory = { context ->
-                    TextureView(context).also { ctl.player.bindOverlayView(clip.id, it) }
-                },
-                onRelease = { ctl.player.bindOverlayView(clip.id, null) },
-                modifier = Modifier.fillMaxSize(),
-            )
+        CropBox(clip, Modifier.fillMaxSize(), wholeW to wholeH) { inner ->
+            if (clip.kind == MediaKind.IMAGE) {
+                Thumb(
+                    clip.sourceUri, MediaKind.IMAGE, 0, inner,
+                    maxSize = 1080, contentScale = ContentScale.FillBounds, background = Color.Transparent,
+                )
+            } else {
+                AndroidView(
+                    factory = { context ->
+                        TextureView(context).also { ctl.player.bindOverlayView(clip.id, it) }
+                    },
+                    onRelease = { ctl.player.bindOverlayView(clip.id, null) },
+                    modifier = inner,
+                )
+            }
         }
     }
 }
@@ -995,6 +1015,21 @@ private fun MultiSelectBar(ctl: EditorController) {
             Icon(Icons.Filled.MergeType, contentDescription = null, modifier = Modifier.size(18.dp))
             Spacer(Modifier.width(4.dp))
             Text("Compound")
+        }
+    }
+}
+
+/**
+ * Draws a clip's picture inside its box. A cropped clip (Split screen) is drawn at its whole
+ * size, centred, and the box cuts off what sticks out.
+ */
+@Composable
+private fun CropBox(clip: Clip, box: Modifier, whole: Pair<Dp, Dp>, content: @Composable (Modifier) -> Unit) {
+    if (!clip.isCropped) {
+        content(box)
+    } else {
+        Box(box.clipToBounds(), contentAlignment = Alignment.Center) {
+            content(Modifier.requiredSize(whole.first, whole.second))
         }
     }
 }

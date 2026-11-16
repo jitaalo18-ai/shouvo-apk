@@ -32,6 +32,8 @@ fun ClipEntity.toClip() = Clip(
     text = text,
     style = style,
     captionTiming = captionTiming,
+    cropX = cropX,
+    cropY = cropY,
     audio = AudioFx.decode(audioFx),
     id = id,
     track = Track.valueOf(track),
@@ -84,6 +86,8 @@ fun Clip.toEntity(projectId: Long) = ClipEntity(
     text = text,
     style = style,
     captionTiming = captionTiming,
+    cropX = cropX,
+    cropY = cropY,
     audioFx = audio.encode(),
 )
 

@@ -50,6 +50,10 @@ object ClipJson {
         put("rotation", c.rotation.toDouble())
         put("stretchX", c.stretchX.toDouble())
         put("stretchY", c.stretchY.toDouble())
+        if (c.isCropped) {
+            put("cropX", c.cropX.toDouble())
+            put("cropY", c.cropY.toDouble())
+        }
         if (c.text.isNotEmpty()) put("text", c.text)
         if (c.style.isNotEmpty()) put("style", c.style)
         if (c.captionTiming.isNotEmpty()) put("captionTiming", c.captionTiming)
@@ -84,6 +88,8 @@ object ClipJson {
             rotation = o.optDouble("rotation", 0.0).toFloat(),
             stretchX = o.optDouble("stretchX", 1.0).toFloat(),
             stretchY = o.optDouble("stretchY", 1.0).toFloat(),
+            cropX = o.optDouble("cropX", 1.0).toFloat().coerceIn(0.02f, 1f),
+            cropY = o.optDouble("cropY", 1.0).toFloat().coerceIn(0.02f, 1f),
             children = children ?: emptyList(),
             text = o.optString("text", ""),
             style = o.optString("style", ""),

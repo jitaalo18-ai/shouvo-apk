@@ -432,12 +432,7 @@ private fun MainClipView(ctl: EditorController, clip: Clip, pxPerMs: Float, visi
                 .padding(horizontal = 1.dp)
                 .clip(RoundedCornerShape(4.dp))
                 .background(Bg)
-                .combinedClickable(
-                    onLongClick = {
-                        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                        ctl.longPress(clip.id)
-                    },
-                ) { ctl.select(clip.id) },
+                .clickable { ctl.select(clip.id) },
         ) {
             if (clip.isCompound) {
                 CompoundStrips(clip, pxPerMs, visible)
@@ -647,7 +642,8 @@ private fun ChipView(
                     haptics.performHapticFeedback(HapticFeedbackType.LongPress)
                 },
                 onDragEnd = {
-                    if (dragged) ctl.endGesture() else ctl.longPress(current.id)
+                    // holding without moving does nothing (no select-by-holding any more)
+                    if (dragged) ctl.endGesture()
                 },
                 onDragCancel = { ctl.endGesture() },
             ) { change, drag ->

@@ -42,6 +42,13 @@ data class Clip(
     /** Extra width / height factors (1 = unchanged) to make the picture wider or taller. */
     val stretchX: Float = 1f,
     val stretchY: Float = 1f,
+    /**
+     * Crop (Split screen): the part of the picture's width / height that is shown, taken from
+     * its middle (1 = everything). The shown box is that much narrower / lower; [scale] still
+     * describes the whole, uncropped picture.
+     */
+    val cropX: Float = 1f,
+    val cropY: Float = 1f,
     val selected: Boolean = false,
     /**
      * Only for COMPOUND clips: the clips inside, laid out one after another from 0 (their
@@ -58,6 +65,7 @@ data class Clip(
     val audio: AudioFx = AudioFx.NONE,
 ) {
     val isCompound: Boolean get() = kind == MediaKind.COMPOUND
+    val isCropped: Boolean get() = cropX < 1f || cropY < 1f
 
     /** Images and texts have no source file time: their "source range" is just 0..duration. */
     val hasVirtualSource: Boolean get() = kind == MediaKind.IMAGE || kind == MediaKind.TEXT

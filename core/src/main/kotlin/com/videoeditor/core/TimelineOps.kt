@@ -249,7 +249,8 @@ object TimelineOps {
             it.copy(
                 posX = posX.coerceIn(0f, 1f),
                 posY = posY.coerceIn(0f, 1f),
-                scale = scale.coerceIn(MIN_SCALE, MAX_SCALE),
+                // (a cropped picture may be larger as a whole: only its shown part counts)
+                scale = scale.coerceIn(MIN_SCALE, MAX_SCALE / minOf(it.cropX, it.cropY)),
                 rotation = if (rotation == null) it.rotation else normalizeAngle(rotation),
             )
         }
@@ -271,7 +272,7 @@ object TimelineOps {
             if (it.track != Track.MAIN) it else it.copy(
                 posX = posX.coerceIn(0f, 1f),
                 posY = posY.coerceIn(0f, 1f),
-                scale = zoom.coerceIn(MIN_MAIN_ZOOM, MAX_MAIN_ZOOM) * MAIN_SCALE_UNIT,
+                scale = zoom.coerceIn(MIN_MAIN_ZOOM, MAX_MAIN_ZOOM / minOf(it.cropX, it.cropY)) * MAIN_SCALE_UNIT,
                 rotation = if (rotation == null) it.rotation else normalizeAngle(rotation),
             )
         }
