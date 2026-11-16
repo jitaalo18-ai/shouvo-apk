@@ -1,6 +1,30 @@
+# V0.26 — Split screen; Compound picking by taps only (2026-11-16)
+
+Current version: 0.26 (versionCode 26), label V0.26.
+
+- Compound: holding a clip no longer selects anything (timeline chips, main clips, preview,
+  captions). Picking starts only with the Compound button; then one tap per clip (tap again =
+  out), "All" takes everything, the blue Compound button makes the compound. Holding a chip on
+  an upper track still drags it.
+- Split screen (toolbar button; also for a selected main / overlay clip), like CapCut on PC: the
+  videos / pictures on screen at the playhead (the main clip + overlays above it, up to 9) each
+  get their own part of the frame. A panel offers layouts for that number (2: side by side,
+  top and bottom; 3: columns, rows, 1 + 2, 1 over 2; 4: 2 x 2, rows, columns, 1 over 3; more:
+  grids); a tap applies it at once, another can be tried, "Reset" gives whole pictures back.
+  Each apply is one undo step.
+- Every picture fills its part (scaled up to cover, the overhang cropped evenly, never
+  squeezed). New clip fields cropX / cropY (shown part of width / height, centred; DB version
+  8, children JSON). Preview: cropped clips are drawn whole inside a clipping box (CropBox);
+  export: main clips get a Media3 Crop before the fit (zoom corrected), overlays are cropped
+  bitmaps. Clips can still be moved / zoomed by hand afterwards; they keep their crop.
+- core/SplitScreen.kt (clipsAt, layouts, fit, apply, reset, shownBox).
+- Not included: compound clips and texts are not arranged by Split screen; gaps / borders
+  between the parts; dragging the picture inside its part to choose what is cropped.
+
+---
 # V0.25 — Transparent image (background removal), square image preview (2026-11-16)
 
-Current version: 0.25 (versionCode 25), label V0.25.
+Version 0.25 (versionCode 25), label V0.25.
 
 - Overlay Folder, every picture row: a "Transparent image" button (checkerboard icon, before +).
   It makes a copy of the picture without its background - a PNG named "<name> transparent",
