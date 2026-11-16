@@ -1,6 +1,27 @@
+# V0.25 — Transparent image (background removal), square image preview (2026-11-16)
+
+Current version: 0.25 (versionCode 25), label V0.25.
+
+- Overlay Folder, every picture row: a "Transparent image" button (checkerboard icon, before +).
+  It makes a copy of the picture without its background - a PNG named "<name> transparent",
+  at most 2048 px on the longer side - and keeps the original. A progress box shows while it
+  works; a message tells the outcome (also "No subject was found", download / Play services
+  problems). media/BackgroundRemover.kt.
+- The subject is found by Google ML Kit Subject Segmentation (on the phone; free; people,
+  animals, things). Google Play services downloads its model the first time (internet needed
+  once). Open-source models were tried first on a real portrait (u2netp, silueta,
+  isnet-general-use, u2net_human_seg via ONNX): the small ones removed the dark dress with the
+  background, the usable one is 176 MB and people-only - not shipped.
+- Image preview in the Overlay Folder: a 1:1 square box with the whole picture inside and
+  "Insert overlay" right under it (before, the picture took the whole screen height and pushed
+  the button off the screen). Transparent parts show a checkerboard (also in the thumbnails).
+- Pictures with see-through parts were already drawn correctly as overlays; now covered by a
+  test on the exported video.
+
+---
 # V0.24 — native Image Search (2026-11-16)
 
-Current version: 0.24 (versionCode 24), label V0.24.
+Version 0.24 (versionCode 24), label V0.24.
 
 - Image Search no longer shows a web page. Results are a 3-column picture grid inside the app
   (more load by themselves on scrolling); tapping a picture opens it large with its title,

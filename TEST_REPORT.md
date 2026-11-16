@@ -1,3 +1,24 @@
+# V0.25 validation (2026-11-16)
+
+Executed (GitHub Actions, Android 12 emulator): 43/43 instrumented tests "OK" - of the 4 new
+ones, 3 really ran and 1 could not run (see below):
+- Button -> copy without background: with a stand-in subject finder (keeps a disc in the
+  middle) the button makes "<name> transparent", a PNG of the same size with alpha: corner
+  alpha 0, subject solid with its colours; the original stays; both rows listed.
+- Preview: the box is square (1:1), "Insert overlay" is on screen right under it (screenshot).
+- Failure: "No subject was found" is shown, nothing is added, no temporary file is left.
+- Export: an overlay PNG with a see-through half over a video: 5995 of 5995 sampled pixels of
+  that half show the video unchanged; the red half is where it should be.
+
+NOT verified: the real subject finder (Google ML Kit) on a picture.
+- On the Android 12 emulator Google Play services is from 2022 and cannot get the model.
+- On an Android 15 emulator (Play services 24.23) the app's download step worked, but ML Kit
+  itself then failed ("Failed to run thin subject segmenter / Failed to segment input image").
+  This is the emulator: the segmenter is known not to run there. So how well - and whether -
+  the background is removed has to be checked on a real phone (S25 Ultra) before it goes to the
+  client. If it fails there, the app says so in a message; nothing else is affected.
+
+---
 # V0.23 validation (2026-11-16, Bangladesh)
 
 Tested code commit: `8901f46b31c42c928bde87e1c8b36be7ab23939f`.

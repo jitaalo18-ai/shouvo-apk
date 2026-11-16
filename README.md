@@ -1,4 +1,4 @@
-# Nock Nock (Android video editor) - v0.24 source
+# Nock Nock (Android video editor) - v0.25 source
 
 V0.23 adds Overlay Folder (owned image/video copies, preview and playback) and in-app web Image Search with save-to-library.
 
@@ -47,4 +47,6 @@ Requires Android 10 or newer on the phone.
   DeepFilterNet3 network, app/src/main/assets/df/DeepFilterNet3_onnx.dfn (same license).
   Building it needs Rust + cargo-ndk (third_party/deepfilternet/build-android.sh; CI does it);
   without it the app builds and Isolate voice reports it is not available.
+- Google ML Kit Subject Segmentation (com.google.android.gms:play-services-mlkit-subject-segmentation, ML Kit
+  Terms of Service) - Transparent image; the model is delivered by Google Play services.
 - Google FLEURS (CC-BY-4.0) - Bangla speech used only in the CI tests. Mixed with synthetic traffic and music for the Isolate voice tests.
