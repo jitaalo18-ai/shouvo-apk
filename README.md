@@ -1,4 +1,4 @@
-# Nock Nock (Android video editor) - v0.26 source
+# Nock Nock (Android video editor) - v0.27 source
 
 V0.23 adds Overlay Folder (owned image/video copies, preview and playback) and in-app web Image Search with save-to-library.
 

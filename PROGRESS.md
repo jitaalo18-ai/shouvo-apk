@@ -1,6 +1,27 @@
+# V0.27 — Split scenes (like CapCut's) (2026-11-17)
+
+Current version: 0.27 (versionCode 27), label V0.27.
+
+- What the user had asked for in V0.26 was CapCut's "Split scenes" (right-click menu on PC), not
+  a split screen: the video is looked through, and wherever the shot changes the clip is cut, so
+  one long clip becomes one clip per scene. (Split screen from V0.26 stays as its own button.)
+- Button "Split scenes" for a selected video clip (main track, next to AutoCut; also overlay
+  videos). A progress box with Cancel shows while the video is read; then the clip is split at
+  every cut in one undo step ("Split into N scenes"), or "No scene changes were found".
+  Nothing is removed or moved: picture and sound of each piece continue exactly where the piece
+  before ended.
+- How: media/SceneSplitter.kt decodes the clip's part of the file (MediaCodec, every frame,
+  as fast as the decoder goes) and shrinks each frame to a 32 x 32 brightness picture;
+  core/SceneDetect.kt calls a frame a cut when both its brightness histogram and its pixels
+  differ from the frame before, clearly more than the frames just before differed from each
+  other (so motion and pans are not cuts), the next frame confirms it (a single flash frame is
+  not a cut), and shots under 0.4 s are not split off.
+- Not found by design: slow fades / dissolves between shots (only hard cuts).
+
+---
 # V0.26 — Split screen; Compound picking by taps only (2026-11-16)
 
-Current version: 0.26 (versionCode 26), label V0.26.
+Version 0.26 (versionCode 26), label V0.26.
 
 - Compound: holding a clip no longer selects anything (timeline chips, main clips, preview,
   captions). Picking starts only with the Compound button; then one tap per clip (tap again =
