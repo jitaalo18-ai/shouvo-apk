@@ -48,18 +48,29 @@ class OverlayFolderUiTest {
         val bytes=Fixtures.file("image_test.png").readBytes()
         val url="data:image/png;base64,"+android.util.Base64.encodeToString(bytes,android.util.Base64.NO_WRAP)
         val fixture=com.videoeditor.app.media.SearchImage(url,url,"Test image","https://example.com/photo")
+        val queries=java.util.concurrent.CopyOnWriteArrayList<String>()
         rule.setContent { AppTheme { com.videoeditor.app.ui.ImageSearchDialog(app, {}, {}, searcher={q, _ ->
-            assertEquals("Tom Cruise movies",q); listOf(fixture)
+            queries+=q; listOf(fixture)
         }) } }
         rule.onNodeWithTag("imageSearchQuery").performTextInput("Tom Cruise movies")
         rule.onNodeWithTag("imageSearchGo").performClick()
         rule.waitUntil(10000) { rule.onAllNodesWithTag("imageResult").fetchSemanticsNodes().size==1 }
         rule.onNodeWithTag("imageResult").performClick()
+        assertEquals("Tom Cruise movies",queries.first())
         rule.onNodeWithTag("imageDetail").assertExists()
+        // related images are looked up by the picture's title
+        rule.waitUntil(10000) { queries.contains("Test image") }
         rule.waitUntil(10000) { rule.onAllNodesWithContentDescription("Full image").fetchSemanticsNodes().isNotEmpty() }
         rule.onNodeWithTag("downloadImage").performClick()
         rule.waitUntil(10000) { rule.onAllNodesWithText("Downloaded to Pictures/NockNock").fetchSemanticsNodes().isNotEmpty() }
         rule.onNodeWithTag("saveSearchOverlay").assertIsEnabled()
+        // size and the source link, like the reference; share and the menu are there
+        rule.onNodeWithTag("imageInfo").assertTextContains(" - https://example.com/photo", substring=true)
+        rule.onNodeWithTag("shareImage").assertIsEnabled()
+        rule.onNodeWithTag("imageMenu").performClick()
+        rule.onNodeWithText("Copy image link").assertExists()
+        rule.onNodeWithText("Copy source link").performClick()
+        rule.waitUntil(5000) { rule.onAllNodesWithText("Source link copied").fetchSemanticsNodes().isNotEmpty() }
         Shots.take("image_detail")
         rule.onNodeWithContentDescription("Back to images").performClick()
         rule.onNodeWithTag("imageResultsGrid").assertExists()

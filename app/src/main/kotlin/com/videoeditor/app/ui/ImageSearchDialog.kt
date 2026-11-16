@@ -89,7 +89,7 @@ fun ImageSearchDialog(app: App, onDismiss: () -> Unit, onSaved: () -> Unit,
         BackHandler { if(selected!=null) selected=null else onDismiss() }
         Surface(Modifier.fillMaxSize().testTag("imageSearchScreen"),color=Color(0xff181d20)) {
             if(selected!=null) key(selected!!.url) {
-                ImageDetail(app,selected!!,results.filterNot { it.url==selected!!.url },{ selected=null },{ selected=it },onSaved)
+                ImageDetail(app,selected!!,results.filterNot { it.url==selected!!.url },{ selected=null },{ selected=it },onSaved,searcher)
             } else Column(Modifier.fillMaxSize()) {
                 Row(Modifier.fillMaxWidth().padding(horizontal=4.dp),verticalAlignment=Alignment.CenterVertically) {
                     IconButton(onClick=onDismiss) { Icon(Icons.Default.ArrowBack,"Close search") }
@@ -106,7 +106,14 @@ fun ImageSearchDialog(app: App, onDismiss: () -> Unit, onSaved: () -> Unit,
                     for(term in history) TextButton(onClick={query=term;search()}) { Text(term) }
                     if(history.isNotEmpty()) TextButton(onClick={history=emptyList();prefs.edit().remove("history").apply()}) {Text("Clear history")}
                 } else {
-                    LazyVerticalStaggeredGrid(columns=StaggeredGridCells.Fixed(3),modifier=Modifier.weight(1f).testTag("imageResultsGrid"),horizontalArrangement=Arrangement.spacedBy(3.dp),verticalItemSpacing=3.dp) {
+                    val gridState = rememberLazyStaggeredGridState()
+                    // near the end of the list: the next page loads by itself (like the reference app)
+                    val nearEnd by remember { derivedStateOf {
+                        val last = gridState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
+                        gridState.layoutInfo.totalItemsCount > 1 && last >= gridState.layoutInfo.totalItemsCount - 7
+                    } }
+                    LaunchedEffect(nearEnd, results.size) { if (nearEnd && more && !loading && error == null && results.isNotEmpty()) search(true) }
+                    LazyVerticalStaggeredGrid(columns=StaggeredGridCells.Fixed(3),state=gridState,modifier=Modifier.weight(1f).testTag("imageResultsGrid"),horizontalArrangement=Arrangement.spacedBy(3.dp),verticalItemSpacing=3.dp) {
                         items(results,key={it.url}) { item -> SearchThumbnail(app,item,Modifier.clickable { keyboard?.hide();selected=item }.testTag("imageResult")) }
                         item(span=StaggeredGridItemSpan.FullLine) {
                             if(more && results.isNotEmpty()) TextButton(enabled=!loading,onClick={search(true)},modifier=Modifier.fillMaxWidth()) {Text(if(loading) "Loading…" else "Load more")}
@@ -119,7 +126,20 @@ fun ImageSearchDialog(app: App, onDismiss: () -> Unit, onSaved: () -> Unit,
 }
 
 @Composable
-private fun ImageDetail(app: App,item: SearchImage,related: List<SearchImage>,onBack:()->Unit,onSelect:(SearchImage)->Unit,onSaved:()->Unit) {
+private fun ImageDetail(app: App,item: SearchImage,sameQuery: List<SearchImage>,onBack:()->Unit,onSelect:(SearchImage)->Unit,onSaved:()->Unit,
+    searcher: suspend (String, Int) -> List<SearchImage>) {
+    // Related images: a search for this picture's title; the other results of the query until (or unless) that arrives
+    val related by produceState(sameQuery, item.url) {
+        val title = item.title.trim()
+        if (title.length >= 3 && title != "Image") {
+            try {
+                val found = searcher(title, 0).filterNot { it.url == item.url }
+                if (found.size >= 3) value = found
+            } catch (e: CancellationException) { throw e } catch (_: Exception) {}
+        }
+    }
+    var menu by remember { mutableStateOf(false) }
+    val clipboard = androidx.compose.ui.platform.LocalClipboardManager.current
     val scope=rememberCoroutineScope()
     var file by remember { mutableStateOf<File?>(null) }
     var bitmap by remember { mutableStateOf<Bitmap?>(null) }
@@ -136,7 +156,7 @@ private fun ImageDetail(app: App,item: SearchImage,related: List<SearchImage>,on
             bitmap=WebImages.preview(app,Uri.fromFile(downloaded))
             val bounds=android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds=true }
             withContext(Dispatchers.IO) { android.graphics.BitmapFactory.decodeFile(downloaded.absolutePath,bounds) }
-            dimensions="${bounds.outWidth} × ${bounds.outHeight}"
+            dimensions="${bounds.outWidth}x${bounds.outHeight}"
         } catch(e:CancellationException) { throw e } catch(e:Exception) { error=e.message ?: "Image could not load." }
     }
     DisposableEffect(Unit) { onDispose { file?.delete() } }
@@ -156,7 +176,7 @@ private fun ImageDetail(app: App,item: SearchImage,related: List<SearchImage>,on
             IconButton(enabled=!busy,onClick=onBack) { Icon(Icons.Default.ArrowBack,"Back to images") }
             Column(Modifier.weight(1f).padding(8.dp)) {
                 Text(item.title,maxLines=1,overflow=TextOverflow.Ellipsis)
-                Text("$dimensions · ${Uri.parse(item.source).host.orEmpty()}",style=MaterialTheme.typography.bodySmall,color=Color.Gray,maxLines=1)
+                Text(listOf(dimensions,item.source).filter { it.isNotBlank() }.joinToString(" - "),style=MaterialTheme.typography.bodySmall,color=Color.Gray,maxLines=1,overflow=TextOverflow.Ellipsis,modifier=Modifier.testTag("imageInfo"))
             }
         }
         Box(Modifier.fillMaxWidth().heightIn(min=260.dp,max=520.dp),contentAlignment=Alignment.Center) {
@@ -165,9 +185,26 @@ private fun ImageDetail(app: App,item: SearchImage,related: List<SearchImage>,on
         }
         if(error!=null) TextButton(onClick={retry++}) {Text("Retry image")}
         HorizontalDivider()
-        Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceEvenly) {
-            TextButton(enabled=file!=null&&!busy,onClick={download()},modifier=Modifier.testTag("downloadImage")) {Icon(Icons.Default.Download,null);Text("Download")}
-            TextButton(enabled=file!=null&&!busy,onClick={download(true)}) {Icon(Icons.Default.Share,null);Text("Share")}
+        // like the reference: download, share, more
+        Row(Modifier.fillMaxWidth().padding(vertical=4.dp),horizontalArrangement=Arrangement.SpaceEvenly,verticalAlignment=Alignment.CenterVertically) {
+            IconButton(enabled=file!=null&&!busy,onClick={download()},modifier=Modifier.size(56.dp).testTag("downloadImage")) {Icon(Icons.Default.Download,"Download",Modifier.size(32.dp))}
+            IconButton(enabled=file!=null&&!busy,onClick={download(true)},modifier=Modifier.size(56.dp).testTag("shareImage")) {Icon(Icons.Default.Share,"Share",Modifier.size(30.dp))}
+            Box {
+                IconButton(onClick={menu=true},modifier=Modifier.size(56.dp).testTag("imageMenu")) {Icon(Icons.Default.MoreVert,"More",Modifier.size(30.dp))}
+                DropdownMenu(expanded=menu,onDismissRequest={menu=false}) {
+                    DropdownMenuItem(text={Text("Open source page")},enabled=item.source.startsWith("http"),onClick={
+                        menu=false
+                        try { app.startActivity(Intent(Intent.ACTION_VIEW,Uri.parse(item.source)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
+                        catch(_:Exception) { message="No app can open this link." }
+                    })
+                    DropdownMenuItem(text={Text("Copy image link")},enabled=item.url.startsWith("http"),onClick={
+                        menu=false; clipboard.setText(androidx.compose.ui.text.AnnotatedString(item.url)); message="Image link copied"
+                    })
+                    DropdownMenuItem(text={Text("Copy source link")},enabled=item.source.startsWith("http"),onClick={
+                        menu=false; clipboard.setText(androidx.compose.ui.text.AnnotatedString(item.source)); message="Source link copied"
+                    })
+                }
+            }
         }
         TextButton(enabled=file!=null&&!busy,onClick={
             val source=file ?: return@TextButton
@@ -181,10 +218,10 @@ private fun ImageDetail(app: App,item: SearchImage,related: List<SearchImage>,on
         if(busy) LinearProgressIndicator(Modifier.fillMaxWidth())
         message?.let {Text(it,Modifier.padding(12.dp))}
         HorizontalDivider()
-        Text("↓ Related images ↓",Modifier.align(Alignment.CenterHorizontally).padding(10.dp),style=MaterialTheme.typography.titleLarge)
+        Text("↓Related Images↓",Modifier.align(Alignment.CenterHorizontally).padding(10.dp),style=MaterialTheme.typography.titleLarge)
         HorizontalDivider()
         // Same-query results stay available without opening a website or losing the search.
-        for(row in related.take(18).chunked(3)) Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(3.dp)) {
+        for(row in related.take(30).chunked(3)) Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(3.dp)) {
             for(other in row) Box(Modifier.weight(1f)) {SearchThumbnail(app,other,Modifier.clickable(enabled=!busy) {onSelect(other)})}
             repeat(3-row.size) {Spacer(Modifier.weight(1f))}
         }
