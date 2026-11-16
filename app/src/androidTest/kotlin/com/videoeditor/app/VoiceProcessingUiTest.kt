@@ -74,7 +74,7 @@ class VoiceProcessingUiTest {
     private fun openEditor(projectId: Long) {
         waitFor("project listed") { rule.onAllNodes(hasText("Edited", substring = true)).fetchSemanticsNodes().isNotEmpty() }
         pause(800)
-        rule.onAllNodes(hasText("Edited", substring = true))[0].performClick()
+        TestProjects.openNewest(rule)
         waitFor("editor loaded") { EditorController.current?.loaded == true && EditorController.current?.projectId == projectId }
         pause(1_000)
     }

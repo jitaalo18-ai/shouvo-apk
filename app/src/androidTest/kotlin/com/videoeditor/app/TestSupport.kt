@@ -1,5 +1,10 @@
 package com.videoeditor.app
 
+import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.junit4.ComposeTestRule
+import androidx.compose.ui.test.performClick
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.runBlocking
 import android.content.Context
 import android.graphics.Bitmap
 import android.net.Uri
@@ -77,5 +82,21 @@ object Pushed {
     fun file(name: String): java.io.File? {
         val f = java.io.File(Fixtures.target.filesDir, "ci/$name")
         return if (copyTo(name, f)) f else null
+    }
+}
+
+/**
+ * Opens the project the test has just made. (Tests used to tap the first row of the project
+ * list after a fixed wait; on a slow emulator the new row was sometimes not there yet and an
+ * older project was opened.)
+ */
+object TestProjects {
+    fun openNewest(rule: ComposeTestRule) {
+        val app = Fixtures.target.applicationContext as App
+        val newest = runBlocking { app.projects.observeProjects().first().maxByOrNull { it.id } ?: error("no project") }
+        val row = hasText(newest.name, substring = true)
+        rule.waitUntil(30_000) { rule.onAllNodes(row).fetchSemanticsNodes().isNotEmpty() }
+        rule.waitForIdle()
+        rule.onAllNodes(row)[0].performClick()
     }
 }

@@ -76,7 +76,7 @@ class SplitScenesTest {
         val projectId = runBlocking { app.projects.create(listOf(Fixtures.info("scenes_test.mp4"), Fixtures.info("portrait_test.mp4"))) }
         waitFor("project listed") { rule.onAllNodes(hasText("Edited", substring = true)).fetchSemanticsNodes().isNotEmpty() }
         pause(800)
-        rule.onAllNodes(hasText("Edited", substring = true))[0].performClick()
+        TestProjects.openNewest(rule)
         waitFor("editor loaded") { EditorController.current?.loaded == true && EditorController.current?.projectId == projectId }
         pause(1_000)
         val first = editor.timeline.main[0]

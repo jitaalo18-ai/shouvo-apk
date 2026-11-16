@@ -98,7 +98,7 @@ class CompoundUiTest {
         }
         waitFor("project listed") { rule.onAllNodes(hasText("Edited", substring = true)).fetchSemanticsNodes().isNotEmpty() }
         pause(1_000)
-        rule.onAllNodes(hasText("Edited", substring = true))[0].performClick()
+        TestProjects.openNewest(rule)
         waitFor("editor loaded") { EditorController.current?.loaded == true && EditorController.current?.projectId == projectId }
         pause(2_000)
         val original = editor.timeline.main
@@ -205,7 +205,7 @@ class CompoundUiTest {
         rule.onNodeWithContentDescription("Close project").performClick()
         pause(1_500)
         Shots.take("28_projects_after")
-        rule.onAllNodes(hasText("Edited", substring = true))[0].performClick()
+        TestProjects.openNewest(rule)
         waitFor("editor reloaded") { EditorController.current?.loaded == true && EditorController.current?.projectId == projectId }
         pause(1_500)
         assertEquals(before.map { it.copy(selected = false) }, editor.timeline.main.map { it.copy(selected = false) })
@@ -256,7 +256,7 @@ class CompoundUiTest {
         }
         waitFor("project listed") { rule.onAllNodes(hasText("Edited", substring = true)).fetchSemanticsNodes().isNotEmpty() }
         pause(1_000)
-        rule.onAllNodes(hasText("Edited", substring = true))[0].performClick()
+        TestProjects.openNewest(rule)
         waitFor("editor loaded") { EditorController.current?.loaded == true && EditorController.current?.projectId == projectId }
         pause(2_000)
         Shots.take("40_multi_start")

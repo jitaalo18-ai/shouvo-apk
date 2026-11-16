@@ -76,7 +76,7 @@ class EditorUiTest {
         pause(1_500)
         Shots.take("00_projects")
 
-        rule.onAllNodes(hasText("Edited", substring = true))[0].performClick()
+        TestProjects.openNewest(rule)
         waitFor("editor loaded") { EditorController.current?.loaded == true }
         val decodedAtOpen = Thumbnails.decodedCount.value
         pause(4_000)
@@ -199,7 +199,7 @@ class EditorUiTest {
         rule.onNodeWithContentDescription("Close project").performClick()
         pause(1_500)
         Thumbnails.clearMemory()
-        rule.onAllNodes(hasText("Edited", substring = true))[0].performClick()
+        TestProjects.openNewest(rule)
         waitFor("editor reloaded") { EditorController.current?.loaded == true }
         pause(2_500)
         Shots.take("11_reopened")

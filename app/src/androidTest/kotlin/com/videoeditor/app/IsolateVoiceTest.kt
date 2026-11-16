@@ -346,7 +346,7 @@ class IsolateVoiceTest {
         val projectId = runBlocking { app.projects.create(listOf(noisy, Fixtures.info("phone_test.mp4"))) }
         waitFor("project listed") { rule.onAllNodes(hasText("Edited", substring = true)).fetchSemanticsNodes().isNotEmpty() }
         pause(800)
-        rule.onAllNodes(hasText("Edited", substring = true))[0].performClick()
+        TestProjects.openNewest(rule)
         waitFor("editor loaded") { EditorController.current?.loaded == true && EditorController.current?.projectId == projectId }
         pause(1_000)
         assertTrue(!editor.isolateOn)
