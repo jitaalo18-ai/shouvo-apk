@@ -10,7 +10,10 @@ import com.google.android.gms.common.moduleinstall.ModuleInstall
 import com.google.android.gms.common.moduleinstall.ModuleInstallRequest
 import com.google.android.gms.common.moduleinstall.ModuleInstallStatusUpdate
 import com.google.android.gms.tasks.Task
+import android.util.Log
+import com.google.mlkit.common.MlKitException
 import com.google.mlkit.vision.common.InputImage
+import kotlinx.coroutines.delay
 import com.google.mlkit.vision.segmentation.subject.SubjectSegmentation
 import com.google.mlkit.vision.segmentation.subject.SubjectSegmenterOptions
 import kotlinx.coroutines.CompletableDeferred
@@ -149,12 +152,29 @@ object BackgroundRemover {
                 }
             }
             onStage("Removing the background…")
-            val result = try {
-                segmenter.process(InputImage.fromBitmap(bitmap, 0)).await()
-            } catch (e: Exception) {
-                throw Failed("The background could not be removed from this picture.")
+            // Right after the download Play services may need a moment to make the model usable:
+            // it answers "unavailable, please wait" until then.
+            var waited = 0L
+            while (true) {
+                try {
+                    val result = segmenter.process(InputImage.fromBitmap(bitmap, 0)).await()
+                    return result.foregroundBitmap ?: throw Failed("No subject was found in this picture.")
+                } catch (e: Failed) {
+                    throw e
+                } catch (e: kotlinx.coroutines.CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    val notReady = e is MlKitException && e.errorCode == MlKitException.UNAVAILABLE
+                    Log.w("BackgroundRemover", "subject segmentation failed (waited $waited ms)", e)
+                    if (!notReady) throw Failed("The background could not be removed from this picture.")
+                    if (waited >= READY_TIMEOUT_MS) {
+                        throw Failed("The background remover is still being set up by Google Play services. Try again in a minute.")
+                    }
+                    onStage("Getting the background remover ready…")
+                    delay(2_000)
+                    waited += 2_000
+                }
             }
-            return result.foregroundBitmap ?: throw Failed("No subject was found in this picture.")
         } finally {
             segmenter.close()
         }
@@ -167,4 +187,5 @@ object BackgroundRemover {
     }
 
     private const val INSTALL_TIMEOUT_MS = 180_000L
+    private const val READY_TIMEOUT_MS = 90_000L
 }

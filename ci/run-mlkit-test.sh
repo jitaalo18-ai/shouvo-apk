@@ -14,6 +14,9 @@ adb shell am instrument -w -r -e class com.videoeditor.app.TransparentImageTest#
   $PKG.test/androidx.test.runner.AndroidJUnitRunner > "$OUT/instrumentation.txt" 2>&1
 timeout 120 adb logcat -d -v time > "$OUT/logcat.txt" 2>&1
 timeout 120 adb exec-out run-as $PKG tar -cf - files/shots > "$OUT/shots.tar" 2>/dev/null && tar -xf "$OUT/shots.tar" -C "$OUT" && rm "$OUT/shots.tar"
+grep -E "BackgroundRemover|MlKitException|MobileVisionBase|NockNockTest" "$OUT/logcat.txt" | cut -c1-300 | head -60
+# the cut-out on a green card, small enough to read from the log
+[ -f "$OUT/files/shots/transparent_mlkit.png" ] && { echo "CUTOUT_PNG_BASE64_BEGIN"; base64 -w 0 "$OUT/files/shots/transparent_mlkit.png"; echo; echo "CUTOUT_PNG_BASE64_END"; }
 gzip -f "$OUT/logcat.txt"
 cat "$OUT/instrumentation.txt" | tail -15
 cat "$OUT/files/shots/report.txt" 2>/dev/null
