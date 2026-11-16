@@ -18,6 +18,8 @@ import com.videoeditor.app.media.MediaProbe
 import com.videoeditor.app.media.PlaybackController
 import com.videoeditor.app.media.SceneSplitter
 import com.videoeditor.core.SceneSplit
+import com.videoeditor.core.ExportRange
+import com.videoeditor.core.ExportSettings
 import com.videoeditor.app.media.VoiceProcessing
 import com.videoeditor.app.media.canvasSize
 import com.videoeditor.app.captions.SpeechAudio
@@ -1114,13 +1116,75 @@ class EditorController(private val app: App, val projectId: Long, uiScope: Corou
 
     fun cancelExport() { exportJob?.cancel() }
 
-    fun export() {
+    // ---- Export sheet (like CapCut's): resolution and frame rate; whole project or one clip ----
+
+    private val prefs = app.getSharedPreferences("editor", android.content.Context.MODE_PRIVATE)
+
+    /** Chosen in the Export sheet; remembered for the next export. */
+    var exportSettings by mutableStateOf(ExportSettings.decode(prefs.getString("export_settings", null)))
+        private set
+
+    /** The video the last export saved (for tests). */
+    var lastExport: Uri? = null
+        private set
+
+    /** The Export sheet is open: "" for the whole project, else the id of the one clip to export. */
+    var exportSheet by mutableStateOf<String?>(null)
+        private set
+
+    /** The frame the export will have with the settings as they are. */
+    val exportSize: Pair<Int, Int> get() = exportSettings.canvasSize(targetAspect)
+
+    fun chooseExport(settings: ExportSettings) {
+        exportSettings = settings
+        prefs.edit().putString("export_settings", settings.encode()).apply()
+    }
+
+    /** Opens the Export sheet for the whole project. */
+    fun openExport() {
         if (busy != null || timeline.main.isEmpty()) return
+        player.pause()
+        exportSheet = ""
+    }
+
+    /** "Export video" for the selected clip: only the part of the project under it. */
+    fun openExportClip() {
+        val clip = timeline.selected ?: return
+        if (busy != null) return
+        if (clip.track != Track.MAIN) {
+            message = "Export video works on clips of the main track."
+            return
+        }
+        player.pause()
+        exportSheet = clip.id
+    }
+
+    fun closeExport() {
+        exportSheet = null
+    }
+
+    /** The Export button of the sheet. */
+    fun startExport() {
+        val what = exportSheet ?: return
+        exportSheet = null
+        if (what.isEmpty()) export() else {
+            val part = ExportRange.ofClip(timeline, what)
+            if (part == null || part.main.isEmpty()) {
+                message = "That clip is not there any more."
+                return
+            }
+            export(part, "Saved this clip to Movies/VideoEditor in your Gallery.")
+        }
+    }
+
+    /** Renders [snapshot] (default: the whole project) with the chosen settings. */
+    fun export(snapshot: Timeline = timeline, done: String = "Saved to Movies/VideoEditor in your Gallery.") {
+        if (busy != null || snapshot.main.isEmpty()) return
         player.suspendForExport()
         LiveFrames.clear()
         exporting = true
-        val snapshot = timeline
         val aspect = targetAspect
+        val settings = exportSettings
         busy = Busy("Rendering video…", 0f)
         exportJob = scope.launch {
             try {
@@ -1132,11 +1196,13 @@ class EditorController(private val app: App, val projectId: Long, uiScope: Corou
                     for (uri in voices) VoiceProcessing.ensureIsolation(app, uri)
                     busy = Busy("Rendering video…", 0f)
                 }
-                Exporter(app).export(snapshot, aspect) { p -> busy = Busy("Rendering video…", p) }
-                message = "Saved to Movies/VideoEditor in your Gallery."
+                lastExport = Exporter(app).export(snapshot, aspect, settings) { p -> busy = Busy("Rendering video…", p) }
+                message = done
             } catch (e: kotlinx.coroutines.CancellationException) {
                 message = "Export cancelled. Your project is saved."
                 throw e
+            } catch (e: com.videoeditor.app.media.ExportUnsupported) {
+                message = e.message
             } catch (e: OutOfMemoryError) {
                 android.util.Log.e("NockExport", "Export ran out of memory", e)
                 message = "Not enough memory to export. Close other apps and retry. Your project is saved."

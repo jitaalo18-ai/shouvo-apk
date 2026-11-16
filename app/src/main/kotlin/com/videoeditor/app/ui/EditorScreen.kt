@@ -81,6 +81,7 @@ import androidx.compose.material.icons.filled.RecordVoiceOver
 import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.KeyboardVoice
 import androidx.compose.material.icons.filled.MovieFilter
+import androidx.compose.material.icons.filled.FileDownload
 import androidx.compose.material.icons.filled.TextFields
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -144,6 +145,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import com.videoeditor.core.Compound
 import com.videoeditor.core.FrameState
 import com.videoeditor.core.Framing
+import com.videoeditor.core.ExportSettings
 import com.videoeditor.core.MediaKind
 import com.videoeditor.core.TimelineOps
 import com.videoeditor.core.Track
@@ -233,10 +235,13 @@ fun EditorScreen(app: App, projectId: Long, onBack: () -> Unit) {
                 IconButton(onClick = { ctl.player.pause(); ctl.imageSearch = true }) {
                     Icon(Icons.Filled.Search, contentDescription = "Search")
                 }
-                Text("FHD", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                Text(
+                    ctl.exportSettings.badge, fontWeight = FontWeight.SemiBold, fontSize = 14.sp,
+                    modifier = Modifier.clip(RoundedCornerShape(8.dp)).clickable { ctl.openExport() }.padding(6.dp).testTag("exportBadge"),
+                )
                 Spacer(Modifier.width(10.dp))
                 Button(
-                    onClick = { ctl.export() },
+                    onClick = { ctl.openExport() },
                     enabled = ctl.loaded && ctl.busy == null,
                     shape = RoundedCornerShape(12.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = Color.White, contentColor = Color.Black),
@@ -352,6 +357,7 @@ fun EditorScreen(app: App, projectId: Long, onBack: () -> Unit) {
                                 ToolButton(Icons.Filled.AutoFixHigh, "AutoCut") { ctl.autoCut() }
                                 if (selected.kind == MediaKind.VIDEO) ToolButton(Icons.Filled.MovieFilter, "Split scenes") { ctl.splitScenes() }
                             }
+                            ToolButton(Icons.Filled.FileDownload, "Export video") { ctl.openExportClip() }
                             if (selected.isAudible) ToolButton(Icons.Filled.RecordVoiceOver, "Voice enhance") { ctl.openVoice() }
                             ToolButton(Icons.Filled.KeyboardVoice, "Isolate voice", on = ctl.isolateOn) { ctl.toggleIsolateVoice() }
                             ToolButton(Icons.Filled.ContentCopy, "Copy") { ctl.copySelected() }
@@ -477,6 +483,8 @@ fun EditorScreen(app: App, projectId: Long, onBack: () -> Unit) {
         ctl.imageSearch = false
         ctl.library = LibraryKind.OVERLAYS
     })
+
+    ctl.exportSheet?.let { what -> ExportSheet(ctl, clipOnly = what.isNotEmpty()) }
 
     ctl.busy?.let { busy ->
         Dialog(onDismissRequest = { }, properties = DialogProperties(dismissOnBackPress = false, dismissOnClickOutside = false)) {
@@ -1037,5 +1045,68 @@ private fun CropBox(clip: Clip, box: Modifier, whole: Pair<Dp, Dp>, content: @Co
         Box(box.clipToBounds(), contentAlignment = Alignment.Center) {
             content(Modifier.requiredSize(whole.first, whole.second))
         }
+    }
+}
+
+/**
+ * The Export sheet (like CapCut's): resolution and frame rate, then Export. For "Export video"
+ * of one clip it says so and exports only the part of the project under that clip.
+ */
+@Composable
+private fun ExportSheet(ctl: EditorController, clipOnly: Boolean) {
+    val settings = ctl.exportSettings
+    val (w, h) = ctl.exportSize
+    Dialog(onDismissRequest = { ctl.closeExport() }) {
+        Surface(shape = RoundedCornerShape(20.dp), color = Panel, modifier = Modifier.testTag("exportSheet")) {
+            Column(Modifier.padding(20.dp)) {
+                Text(if (clipOnly) "Export this clip" else "Export", fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
+                Text(
+                    if (clipOnly) "Only the part of the project under the selected clip is saved to your Gallery." else "The whole project is saved to your Gallery.",
+                    fontSize = 12.sp, color = Color.Gray, modifier = Modifier.padding(top = 2.dp),
+                )
+                Spacer(Modifier.height(14.dp))
+                Text("Resolution", fontSize = 13.sp, color = Color.LightGray)
+                Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    for ((side, label) in ExportSettings.RESOLUTIONS) {
+                        ExportChoice(label, settings.shortSide == side, "exportRes_$side") { ctl.chooseExport(settings.copy(shortSide = side)) }
+                    }
+                }
+                Spacer(Modifier.height(14.dp))
+                Text("Frame rate", fontSize = 13.sp, color = Color.LightGray)
+                Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    for (fps in ExportSettings.FRAME_RATES) {
+                        ExportChoice(if (fps == 0) "Auto" else "$fps", settings.fps == fps, "exportFps_$fps") { ctl.chooseExport(settings.copy(fps = fps)) }
+                    }
+                }
+                Spacer(Modifier.height(12.dp))
+                Text(
+                    "$w x $h" + (if (settings.fps == 0) " · frame rate as the video" else " · up to ${settings.fps} fps"),
+                    fontSize = 12.sp, color = Color.Gray, modifier = Modifier.testTag("exportSummary"),
+                )
+                if (settings.shortSide > 1080) {
+                    Text("2K / 4K make the picture bigger, not sharper than the original video, and take longer.", fontSize = 11.sp, color = Color.Gray)
+                }
+                Spacer(Modifier.height(14.dp))
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) {
+                    TextButton(onClick = { ctl.closeExport() }) { Text("Cancel") }
+                    Spacer(Modifier.width(8.dp))
+                    Button(
+                        onClick = { ctl.startExport() },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color.White, contentColor = Color.Black),
+                        modifier = Modifier.testTag("exportStart"),
+                    ) { Text("Export", fontWeight = FontWeight.SemiBold) }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ExportChoice(label: String, on: Boolean, tag: String, onClick: () -> Unit) {
+    Box(
+        Modifier.clip(RoundedCornerShape(10.dp)).background(if (on) Color.White else Color(0xFF2A2D35)).clickable(onClick = onClick)
+            .padding(horizontal = 14.dp, vertical = 9.dp).testTag(tag).semantics { if (on) stateDescription = "Selected" },
+    ) {
+        Text(label, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = if (on) Color.Black else Color.White)
     }
 }

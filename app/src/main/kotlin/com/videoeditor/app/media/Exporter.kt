@@ -13,6 +13,9 @@ import android.provider.MediaStore
 import androidx.media3.common.MimeTypes
 import com.videoeditor.core.ExportPolicy
 import androidx.media3.common.Effect
+import android.media.MediaCodecList
+import androidx.media3.effect.FrameDropEffect
+import com.videoeditor.core.ExportSettings
 import androidx.media3.common.MediaItem
 import androidx.media3.common.audio.AudioProcessor
 import android.graphics.BitmapFactory
@@ -71,27 +74,11 @@ enum class CanvasFormat(val label: String, val ratio: Float?) {
     PORTRAIT("4:5", 4f / 5f),
 }
 
-/** Output frame size for a project: short side 1080, long side at most 1920, even numbers. */
-fun canvasSize(aspect: Float): Pair<Int, Int> {
-    val a = if (aspect.isFinite() && aspect > 0f) aspect else 16f / 9f
-    var w: Float
-    var h: Float
-    if (a >= 1f) {
-        h = 1080f
-        w = h * a
-    } else {
-        w = 1080f
-        h = w / a
-    }
-    val long = maxOf(w, h)
-    if (long > 1920f) {
-        val k = 1920f / long
-        w *= k
-        h *= k
-    }
-    fun even(v: Float) = ((v / 2f).roundToInt() * 2).coerceAtLeast(2)
-    return even(w) to even(h)
-}
+/** Output frame size for a project at the standard 1080p: short side 1080, long side at most 1920, even numbers. */
+fun canvasSize(aspect: Float): Pair<Int, Int> = ExportSettings().canvasSize(aspect)
+
+/** The phone cannot make a video of the chosen size / frame rate. */
+class ExportUnsupported(message: String) : Exception(message)
 
 /**
  * Media Rendering Engine: renders the timeline to an MP4 with Media3 Transformer and saves it to
@@ -99,12 +86,34 @@ fun canvasSize(aspect: Float): Pair<Int, Int> {
  */
 class Exporter(private val context: Context) {
 
-    suspend fun export(project: Timeline, aspect: Float, onProgress: (Float) -> Unit): Uri = withContext(Dispatchers.Main) {
+    /** Whether this phone's H.264 encoder can make [w] x [h] video (at [fps], 0 = any). */
+    fun encoderSupports(w: Int, h: Int, fps: Int): Boolean =
+        MediaCodecList(MediaCodecList.REGULAR_CODECS).codecInfos.any { info ->
+            info.isEncoder && info.supportedTypes.any { it.equals(MimeTypes.VIDEO_H264, ignoreCase = true) } && try {
+                val v = info.getCapabilitiesForType(MimeTypes.VIDEO_H264).videoCapabilities
+                if (fps > 0) v.areSizeAndRateSupported(w, h, fps.toDouble()) else v.isSizeSupported(w, h)
+            } catch (e: Exception) {
+                false
+            }
+        }
+
+    suspend fun export(
+        project: Timeline,
+        aspect: Float,
+        settings: ExportSettings = ExportSettings(),
+        onProgress: (Float) -> Unit,
+    ): Uri = withContext(Dispatchers.Main) {
         // compound clips are rendered as the pieces inside them, placed through their framing
         val timeline = Compound.flatten(project, aspect)
         val main = timeline.main
         require(main.isNotEmpty()) { "Nothing to export" }
-        val (canvasW, canvasH) = canvasSize(aspect)
+        val (canvasW, canvasH) = settings.canvasSize(aspect)
+        if (!settings.isDefault && !encoderSupports(canvasW, canvasH, settings.fps)) {
+            throw ExportUnsupported(
+                "This phone cannot make ${settings.resolutionLabel}" + (if (settings.fps > 0) " / ${settings.fps} fps" else "") +
+                    " video ($canvasW x $canvasH). Choose a lower resolution" + (if (settings.fps > 30) " or frame rate" else "") + ".",
+            )
+        }
         // noise reduction needs each file's noise learned once (usually done already in the editor)
         for (uri in timeline.clips.filter { it.isAudible && it.audio.denoise > 0f }.map { it.sourceUri }.distinct()) {
             VoiceProcessing.ensure(context, uri)
@@ -116,7 +125,7 @@ class Exporter(private val context: Context) {
                 "Voice isolation failed. Turn it off and on again, or free storage and restart the app. Export stopped to protect your audio."
             }
         }
-        if (ExportPolicy.canCopyVideo(timeline, aspect)) {
+        if (ExportPolicy.canCopyVideo(timeline, aspect, settings)) {
             return@withContext exportIsolatedVideo(main.single(), onProgress)
         }
         // pictures / videos first, captions and texts on top of everything
@@ -124,7 +133,7 @@ class Exporter(private val context: Context) {
             .map { TimedOverlay(context, it, canvasW, canvasH) } +
             timeline.track(Track.TEXT).filter { it.kind == MediaKind.TEXT && it.text.isNotBlank() }
                 .takeIf { it.isNotEmpty() }?.let { listOf(TimedTextLayer(it, canvasW, canvasH)) }.orEmpty()
-        val composition = buildComposition(timeline, canvasW, canvasH, overlays)
+        val composition = buildComposition(timeline, canvasW, canvasH, overlays, settings.fps)
         val outFile = File(context.cacheDir, "export_${System.currentTimeMillis()}.mp4")
         val imageExecutor = Executors.newSingleThreadExecutor()
         val transformer = Transformer.Builder(context)
@@ -233,6 +242,7 @@ class Exporter(private val context: Context) {
         canvasW: Int,
         canvasH: Int,
         overlays: List<TextureOverlay>,
+        fps: Int = 0,
     ): Composition {
         val main = timeline.main
         val durationMs = timeline.durationMs
@@ -242,6 +252,8 @@ class Exporter(private val context: Context) {
         for (c in main) {
             val fit: Effect = Presentation.createForWidthAndHeight(canvasW, canvasH, Presentation.LAYOUT_SCALE_TO_FIT)
             val videoEffects = ArrayList<Effect>()
+            // a chosen frame rate: frames above it are left out (never invented)
+            if (fps > 0 && c.kind != MediaKind.IMAGE) videoEffects.add(FrameDropEffect.createDefaultFrameDropEffect(fps.toFloat()))
             var cropZoom = 1f
             if (c.isCropped) {
                 // Split screen: only the middle part of the picture. The cropped frame is then
@@ -271,7 +283,7 @@ class Exporter(private val context: Context) {
             val item = EditedMediaItem.Builder(mediaItem(c, c.sourceStartMs, c.sourceEndMs))
                 .setEffects(Effects(voice(c), videoEffects))
             if (c.kind == MediaKind.IMAGE) {
-                item.setDurationUs(c.durationMs * 1000).setFrameRate(30)
+                item.setDurationUs(c.durationMs * 1000).setFrameRate(if (fps > 0) fps else 30)
             }
             mainSequence.addItem(item.build())
         }

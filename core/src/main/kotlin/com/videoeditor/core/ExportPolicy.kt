@@ -4,8 +4,10 @@ import kotlin.math.abs
 
 /** Conservative passthrough: only an uncut video with isolated audio and no visual edits. */
 object ExportPolicy {
-    fun canCopyVideo(timeline: Timeline, aspect: Float): Boolean {
+    fun canCopyVideo(timeline: Timeline, aspect: Float, settings: ExportSettings = ExportSettings()): Boolean {
         val c = timeline.clips.singleOrNull() ?: return false
+        // a chosen resolution or frame rate means the picture has to be made anew
+        if (!settings.isDefault) return false
         return c.track == Track.MAIN && c.kind == MediaKind.VIDEO && c.isAudible && c.audio.isolate &&
             c.sourceStartMs == 0L && c.sourceEndMs == c.sourceDurationMs && c.timelineStartMs == 0L &&
             abs(c.aspect - aspect) < 0.001f && TimelineOps.mainZoom(c) == 1f &&
