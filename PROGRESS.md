@@ -1,3 +1,18 @@
+# V0.24 — native Image Search (2026-11-16)
+
+Current version: 0.24 (versionCode 24), label V0.24.
+
+- Image Search no longer shows a web page. Results are a 3-column picture grid inside the app
+  (more load by themselves on scrolling); tapping a picture opens it large with its title,
+  size and source link, an icon row (Download to Pictures/NockNock, Share, menu: open source
+  page / copy links), "Save to Overlay Folder", and "Related Images" (a search for the picture's
+  title; the other results of the query as a fallback).
+- Results come from Bing's public image results page, read by the app (media/ImageSearch.kt).
+  No API key. This depends on that page's format: if Bing changes it or blocks requests, search
+  shows "unavailable" until the parser is updated. Only https pictures are listed.
+- Downloaded pictures belong to their owners; the app only saves a copy the user asked for.
+
+---
 # V0.23 — Overlay Folder and Image Search (2026-11-16)
 
 - Overlay Folder is separate from Video FX / Sound FX / BG MUSIC and accepts images and videos.
