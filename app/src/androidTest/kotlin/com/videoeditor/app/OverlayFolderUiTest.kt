@@ -82,10 +82,18 @@ class OverlayFolderUiTest {
         rule.onNodeWithTag("imageSearchQuery").performTextInput("mimi chakraborty")
         rule.onNodeWithTag("imageSearchGo").performClick()
         rule.waitUntil(45000) { rule.onAllNodesWithTag("imageResult").fetchSemanticsNodes().isNotEmpty() }
-        android.os.SystemClock.sleep(8000)
+        // the pictures themselves are drawn in the grid (not only placeholders)
+        rule.waitUntil(60000) { rule.onAllNodesWithTag("thumbLoaded", useUnmergedTree = true).fetchSemanticsNodes().size >= 6 }
+        rule.waitForIdle()
+        android.os.SystemClock.sleep(1500)
         Shots.take("image_search")
         rule.onAllNodesWithTag("imageResult")[0].performClick()
         rule.waitUntil(45000) { rule.onAllNodesWithContentDescription("Full image").fetchSemanticsNodes().isNotEmpty() }
+        rule.waitUntil(45000) { rule.onAllNodesWithTag("thumbLoaded", useUnmergedTree = true).fetchSemanticsNodes().size >= 3 }
+        rule.waitForIdle()
+        android.os.SystemClock.sleep(1500)
         Shots.take("image_search_full")
+        rule.onNodeWithTag("downloadImage").assertIsEnabled()
+        rule.onNodeWithTag("imageMenu").assertExists()
     }
 }

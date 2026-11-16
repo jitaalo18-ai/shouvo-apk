@@ -53,7 +53,7 @@ private fun SearchThumbnail(app: App, item: SearchImage, modifier: Modifier = Mo
     }
     val ratio = bitmap?.let { it.width.toFloat()/it.height }?.coerceIn(0.45f,2f) ?: 0.72f
     Box(modifier.fillMaxWidth().aspectRatio(ratio).background(Color(0xff292d30)), contentAlignment=Alignment.Center) {
-        bitmap?.let { Image(it.asImageBitmap(),item.title,Modifier.fillMaxSize(),contentScale=ContentScale.Crop) }
+        bitmap?.let { Image(it.asImageBitmap(),item.title,Modifier.fillMaxSize().testTag("thumbLoaded"),contentScale=ContentScale.Crop) }
             ?: Icon(Icons.Default.Image, "Image thumbnail", tint=Color.Gray)
     }
 }
