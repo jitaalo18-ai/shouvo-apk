@@ -99,3 +99,28 @@ object ExportRange {
 
     const val MIN_PIECE_MS = 40L
 }
+
+/**
+ * Which frames a chosen frame rate keeps: time is cut into slots of 1 / fps; the first frame
+ * that falls into a new slot is kept, further frames in the same slot are left out. A video at
+ * or below the chosen rate keeps every frame.
+ */
+class FrameRateLimiter(private val fps: Int) {
+    private var lastSlot = Long.MIN_VALUE
+    private var lastUs = Long.MIN_VALUE
+
+    fun keep(timeUs: Long): Boolean {
+        if (fps <= 0) return true
+        val slot = Math.floorDiv(timeUs * fps + 500_000L, 1_000_000L)
+        // time going back = a new stream: start again
+        val keep = slot > lastSlot || timeUs < lastUs
+        lastUs = timeUs
+        if (keep) lastSlot = slot
+        return keep
+    }
+
+    fun reset() {
+        lastSlot = Long.MIN_VALUE
+        lastUs = Long.MIN_VALUE
+    }
+}

@@ -94,3 +94,36 @@ class ExportSettingsTests {
         assertFalse(ExportPolicy.canCopyVideo(t, 16f / 9f, ExportSettings(1080, 30)))
     }
 }
+
+class FrameRateLimiterTests {
+    private fun kept(sourceFps: Double, target: Int, seconds: Int = 10): List<Long> {
+        val l = FrameRateLimiter(target)
+        return (0 until (sourceFps * seconds).toInt()).map { Math.round(it * 1_000_000 / sourceFps) }.filter { l.keep(it) }
+    }
+
+    @Test fun keepsTheChosenNumberOfFramesEvenlySpread() {
+        for ((src, target) in listOf(30.0 to 24, 30.0 to 25, 60.0 to 30, 60.0 to 24, 60.0 to 50, 29.97 to 25, 59.94 to 30, 50.0 to 24, 120.0 to 60)) {
+            val k = kept(src, target)
+            assertTrue("$src -> $target: ${k.size} frames in 10 s", k.size in target * 10 - 1..target * 10 + 1)
+            val gaps = k.zipWithNext { a, b -> b - a }
+            // never two kept frames closer than the source's own spacing, never a hole of 2 slots or more
+            assertTrue("$src -> $target gaps ${gaps.min()}..${gaps.max()}", gaps.max() < 2_000_000L / target + 1_000_000 / src)
+        }
+    }
+
+    @Test fun neverInventsOrDropsFramesAtOrBelowTheRate() {
+        for ((src, target) in listOf(30.0 to 30, 30.0 to 50, 30.0 to 60, 24.0 to 25, 25.0 to 25, 29.97 to 30, 23.976 to 24)) {
+            assertEquals("$src -> $target", (src * 10).toInt(), kept(src, target).size)
+        }
+        assertEquals(300, kept(30.0, 0).size)
+    }
+
+    @Test fun startsAgainWhenTimeGoesBack() {
+        val l = FrameRateLimiter(25)
+        assertTrue(l.keep(5_000_000))
+        assertFalse(l.keep(5_010_000))
+        assertTrue("a new clip starting at 0", l.keep(0))
+        l.reset()
+        assertTrue(l.keep(0))
+    }
+}

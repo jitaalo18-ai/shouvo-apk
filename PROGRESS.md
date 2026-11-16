@@ -10,7 +10,8 @@ Current version: 0.28 (versionCode 28), label V0.28.
   clip"; only the part of the project under that clip is rendered and saved to the Gallery
   (Movies/VideoEditor) - with everything seen and heard there (overlays, texts / captions,
   music, each cut to that part; core ExportRange). The project is not changed.
-- Frame rate: a chosen rate leaves frames out (Media3 FrameDropEffect); it never invents
+- Frame rate: a chosen rate leaves frames out (own FrameRateLimit effect + core FrameRateLimiter;
+  Media3's FrameDropEffect was tried first and drops nothing from 30 to 24 / 25); it never invents
   frames, so a 30 fps video exported at 50 / 60 stays 30. Auto = as the videos are (as before).
 - 2K / 4K: the frame is made bigger; a video is not sharper than its original. If the phone's
   H.264 encoder cannot make the size / rate, the export is refused with a message instead of

@@ -14,7 +14,6 @@ import androidx.media3.common.MimeTypes
 import com.videoeditor.core.ExportPolicy
 import androidx.media3.common.Effect
 import android.media.MediaCodecList
-import androidx.media3.effect.FrameDropEffect
 import com.videoeditor.core.ExportSettings
 import androidx.media3.common.MediaItem
 import androidx.media3.common.audio.AudioProcessor
@@ -253,7 +252,7 @@ class Exporter(private val context: Context) {
             val fit: Effect = Presentation.createForWidthAndHeight(canvasW, canvasH, Presentation.LAYOUT_SCALE_TO_FIT)
             val videoEffects = ArrayList<Effect>()
             // a chosen frame rate: frames above it are left out (never invented)
-            if (fps > 0 && c.kind != MediaKind.IMAGE) videoEffects.add(FrameDropEffect.createDefaultFrameDropEffect(fps.toFloat()))
+            if (fps > 0 && c.kind != MediaKind.IMAGE) videoEffects.add(FrameRateLimit(fps))
             var cropZoom = 1f
             if (c.isCropped) {
                 // Split screen: only the middle part of the picture. The cropped frame is then
