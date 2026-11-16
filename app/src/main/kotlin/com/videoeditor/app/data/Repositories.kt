@@ -11,6 +11,9 @@ import com.videoeditor.core.MediaKind
 import com.videoeditor.core.Timeline
 import com.videoeditor.core.TimelineOps
 import com.videoeditor.core.Track
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.NonCancellable
+import kotlin.coroutines.coroutineContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.withContext
@@ -190,7 +193,15 @@ class LibraryRepository(private val context: Context, db: AppDatabase) {
             val target = File(dir(kind), "${System.currentTimeMillis()}_${UUID.randomUUID().toString().take(8)}.$ext")
             val copied = try {
                 context.contentResolver.openInputStream(uri)?.use { input ->
-                    target.outputStream().use { output -> input.copyTo(output) }
+                    target.outputStream().use { output ->
+                        val buffer = ByteArray(64 * 1024)
+                        while (true) {
+                            coroutineContext.ensureActive()
+                            val n = input.read(buffer)
+                            if (n < 0) break
+                            output.write(buffer, 0, n)
+                        }
+                    }
                     true
                 } ?: false
             } catch (e: kotlinx.coroutines.CancellationException) { target.delete(); throw e } catch (e: Exception) {
@@ -214,9 +225,10 @@ class LibraryRepository(private val context: Context, db: AppDatabase) {
                     addedAt = System.currentTimeMillis(),
                 )
             try {
-                val id = dao.insert(record)
+                coroutineContext.ensureActive()
+                val id = withContext(NonCancellable) { dao.insert(record) }
                 imported += record.copy(id = id)
-            } catch (e: kotlinx.coroutines.CancellationException) { throw e }
+            } catch (e: kotlinx.coroutines.CancellationException) { target.delete(); throw e }
             catch (_: Exception) { target.delete() }
         }
         imported

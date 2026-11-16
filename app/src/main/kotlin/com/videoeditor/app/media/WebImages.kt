@@ -36,7 +36,7 @@ object WebImages {
         val temp = File(context.cacheDir, "image_${UUID.randomUUID()}.part")
         try {
             if (address.startsWith("data:image/")) {
-                require(address.length < MAX_BYTES * 4 / 3) { "Image is too large (30 MB maximum)." }
+                require(address.length < 6 * 1024 * 1024) { "Embedded image is too large. Open the original image before saving." }
                 val split = address.indexOf(',')
                 require(split > 0 && address.substring(0, split).endsWith(";base64")) { "Open the full image before saving." }
                 temp.writeBytes(Base64.decode(address.substring(split + 1), Base64.DEFAULT))

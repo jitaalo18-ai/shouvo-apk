@@ -157,7 +157,7 @@ fun LibraryDialog(
                     TextButton(onClick = { previewPlayer.stop(); playingId = null; onSearch() }, modifier = Modifier.testTag("overlayImageSearch")) { Text("Image Search") }
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         for (filter in listOf("All", "Images", "Videos")) {
-                            FilterChip(selected = mediaFilter == filter, onClick = { mediaFilter = filter }, label = { Text(filter) })
+                            FilterChip(selected = mediaFilter == filter, onClick = { mediaFilter = filter; previewPlayer.stop(); playingId = null }, label = { Text(filter) })
                         }
                     }
                 }
@@ -172,7 +172,7 @@ fun LibraryDialog(
                     Spacer(Modifier.height(8.dp))
                     OutlinedTextField(
                         value = query,
-                        onValueChange = { query = it },
+                        onValueChange = { query = it; previewPlayer.stop(); playingId = null },
                         singleLine = true,
                         placeholder = { Text("Search by name") },
                         leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
