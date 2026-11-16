@@ -1,175 +1,192 @@
 package com.videoeditor.app.ui
 
-import android.annotation.SuppressLint
+import android.content.Intent
 import android.graphics.Bitmap
 import android.net.Uri
-import android.os.Handler
-import android.os.Looper
-import android.webkit.*
-import androidx.compose.foundation.Image
+import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.lazy.staggeredgrid.*
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.videoeditor.app.App
 import com.videoeditor.app.data.LibraryKind
-import com.videoeditor.app.media.WebImages
-import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.launch
+import com.videoeditor.app.media.*
+import kotlinx.coroutines.*
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import org.json.JSONArray
 import java.io.File
 
-@SuppressLint("SetJavaScriptEnabled")
+private val imageRequests = Semaphore(4)
+private val thumbs = object : android.util.LruCache<String, Bitmap>(12 * 1024 * 1024) {
+    override fun sizeOf(key: String, value: Bitmap) = value.allocationByteCount
+}
+
 @Composable
-fun ImageSearchDialog(app: App, onDismiss: () -> Unit, onSaved: () -> Unit) {
-    val scope = rememberCoroutineScope()
-    val focus = LocalFocusManager.current
-    val prefs = remember { app.getSharedPreferences("image_search", 0) }
-    var history by remember { mutableStateOf(try {
-        val a = JSONArray(prefs.getString("history", "[]")); (0 until a.length()).map { a.getString(it) }
-    } catch (_: Exception) { emptyList<String>() }) }
-    var query by remember { mutableStateOf("") }
-    var google by remember { mutableStateOf(true) }
-    var page by remember { mutableStateOf("") }
-    var progress by remember { mutableStateOf(100) }
-    var error by remember { mutableStateOf<String?>(null) }
-    var saving by remember { mutableStateOf(false) }
-    var candidate by remember { mutableStateOf<File?>(null) }
-    var bitmap by remember { mutableStateOf<Bitmap?>(null) }
-    var browser by remember { mutableStateOf<WebView?>(null) }
-    fun storeHistory(values: List<String>) {
-        history = values
-        prefs.edit().putString("history", JSONArray(values).toString()).apply()
-    }
-    fun search(term: String = query) {
-        if (term.isBlank()) return
-        focus.clearFocus()
-        query = term.trim(); error = null
-        storeHistory((listOf(query) + history.filterNot { it.equals(query, true) }).take(20))
-        page = WebImages.searchUrl(query, google)
-        browser?.loadUrl(page)
-    }
-    val selectImage: (String) -> Unit = { url ->
-        if (!saving && candidate == null) {
-            saving = true; error = null
-            scope.launch {
-                try {
-                    val file = WebImages.download(app, url)
-                    candidate = file
-                    bitmap = WebImages.preview(app, Uri.fromFile(file))
-                } catch (e: CancellationException) { throw e }
-                catch (e: Exception) { error = e.message ?: "Could not download this image." }
-                finally { saving = false }
-            }
+private fun SearchThumbnail(app: App, item: SearchImage, modifier: Modifier = Modifier) {
+    val bitmap by produceState<Bitmap?>(thumbs.get(item.thumbnail), item.thumbnail) {
+        if(value == null) imageRequests.withPermit {
+            var file: File? = null
+            try {
+                file = WebImages.download(app,item.thumbnail)
+                value = WebImages.preview(app,Uri.fromFile(file),480)
+                value?.let { thumbs.put(item.thumbnail,it) }
+            } catch(e: CancellationException) { throw e } catch(_: Exception) {} finally { file?.delete() }
         }
     }
-    val latestSelect by rememberUpdatedState(selectImage)
-    DisposableEffect(Unit) {
-        onDispose { candidate?.delete(); browser?.stopLoading(); browser?.destroy() }
+    val ratio = bitmap?.let { it.width.toFloat()/it.height }?.coerceIn(0.45f,2f) ?: 0.72f
+    Box(modifier.fillMaxWidth().aspectRatio(ratio).background(Color(0xff292d30)), contentAlignment=Alignment.Center) {
+        bitmap?.let { Image(it.asImageBitmap(),item.title,Modifier.fillMaxSize(),contentScale=ContentScale.Crop) }
+            ?: Icon(Icons.Default.Image, "Image thumbnail", tint=Color.Gray)
     }
-    Dialog(onDismissRequest = { if (!saving) onDismiss() }, properties = DialogProperties(usePlatformDefaultWidth = false)) {
-        Surface(Modifier.fillMaxSize().testTag("imageSearchScreen"), color = Bg) {
-            Column(Modifier.fillMaxSize().padding(12.dp)) {
-                Row(Modifier.fillMaxWidth()) {
-                    Text("Image Search", modifier = Modifier.weight(1f), style = MaterialTheme.typography.titleLarge)
-                    TextButton(enabled = !saving, onClick = onDismiss) { Text("Close search") }
+}
+
+@Composable
+fun ImageSearchDialog(app: App, onDismiss: () -> Unit, onSaved: () -> Unit,
+    searcher: suspend (String, Int) -> List<SearchImage> = { q, offset -> ImageSearch.search(q,offset) }) {
+    Dialog(onDismissRequest=onDismiss,properties=DialogProperties(usePlatformDefaultWidth=false)) {
+        val keyboard = LocalSoftwareKeyboardController.current
+        val scope = rememberCoroutineScope()
+        val prefs = remember { app.getSharedPreferences("image_search",0) }
+        var history by remember { mutableStateOf(try { val a=JSONArray(prefs.getString("history","[]")); (0 until a.length()).map { a.getString(it) } } catch(_:Exception) { emptyList<String>() }) }
+        var query by remember { mutableStateOf("") }
+        var submitted by remember { mutableStateOf("") }
+        var results by remember { mutableStateOf(emptyList<SearchImage>()) }
+        var selected by remember { mutableStateOf<SearchImage?>(null) }
+        var loading by remember { mutableStateOf(false) }
+        var error by remember { mutableStateOf<String?>(null) }
+        var job by remember { mutableStateOf<Job?>(null) }
+        var more by remember { mutableStateOf(true) }
+        fun search(loadMore: Boolean = false) {
+            val term = if(loadMore) submitted else query.trim()
+            if(term.isBlank()) return
+            keyboard?.hide(); job?.cancel()
+            if(!loadMore) { results=emptyList(); submitted=term; more=true; history=(listOf(term)+history.filterNot { it==term }).take(20); prefs.edit().putString("history",JSONArray(history).toString()).apply() }
+            loading=true; error=null
+            job=scope.launch {
+                try { val next=searcher(term,if(loadMore) results.size else 0); val all=(results+next).distinctBy { it.url }; more=all.size>results.size; results=all }
+                catch(e:CancellationException) { throw e } catch(e:Exception) { error=e.message ?: "Search failed. Retry." }
+                finally { loading=false }
+            }
+        }
+        BackHandler { if(selected!=null) selected=null else onDismiss() }
+        Surface(Modifier.fillMaxSize().testTag("imageSearchScreen"),color=Color(0xff181d20)) {
+            if(selected!=null) key(selected!!.url) {
+                ImageDetail(app,selected!!,results.filterNot { it.url==selected!!.url },{ selected=null },{ selected=it },onSaved)
+            } else Column(Modifier.fillMaxSize()) {
+                Row(Modifier.fillMaxWidth().padding(horizontal=4.dp),verticalAlignment=Alignment.CenterVertically) {
+                    IconButton(onClick=onDismiss) { Icon(Icons.Default.ArrowBack,"Close search") }
+                    TextField(query,{query=it},Modifier.weight(1f).testTag("imageSearchQuery"),placeholder={Text("Search images")},singleLine=true,
+                        keyboardOptions=KeyboardOptions(imeAction=ImeAction.Search),keyboardActions=KeyboardActions(onSearch={search()}),
+                        colors=TextFieldDefaults.colors(focusedContainerColor=Color.Transparent,unfocusedContainerColor=Color.Transparent))
+                    IconButton(onClick={query=""}) { Icon(Icons.Default.Close,"Clear search") }
+                    IconButton(onClick={search()},modifier=Modifier.testTag("imageSearchGo")) { Icon(Icons.Default.Search,"Search") }
                 }
-                Row(Modifier.fillMaxWidth()) {
-                    OutlinedTextField(value = query, onValueChange = { query = it }, singleLine = true,
-                        placeholder = { Text("Search images, logos, people…") }, modifier = Modifier.weight(1f).testTag("imageSearchQuery"))
-                    TextButton(enabled = query.isNotBlank() && !saving, onClick = { search() }, modifier = Modifier.testTag("imageSearchGo")) { Text("Search") }
-                }
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    FilterChip(selected = google, onClick = { google = true; if (query.isNotBlank()) { page = WebImages.searchUrl(query,true); browser?.loadUrl(page) } }, label = { Text("Google") })
-                    FilterChip(selected = !google, onClick = { google = false; if (query.isNotBlank()) { page = WebImages.searchUrl(query,false); browser?.loadUrl(page) } }, label = { Text("Bing") })
-                    TextButton(onClick = { browser?.let { if (it.canGoBack()) it.goBack() } }) { Text("Back") }
-                    TextButton(onClick = { error = null; browser?.reload() }) { Text("Reload") }
-                }
-                Text("Open an image, then press and hold it to save a copy. Choose the full-size image for best quality.", style = MaterialTheme.typography.bodySmall)
-                if (progress < 100 || saving) LinearProgressIndicator(Modifier.fillMaxWidth())
-                error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-                if (page.isBlank()) {
-                    Column(Modifier.weight(1f).verticalScroll(rememberScrollState())) {
-                        Row(Modifier.fillMaxWidth()) {
-                            Text("Search history", Modifier.weight(1f))
-                            TextButton(onClick = { storeHistory(emptyList()) }) { Text("Clear history") }
-                        }
-                        for (term in history) {
-                            Row {
-                                TextButton(onClick = { search(term) }, modifier = Modifier.weight(1f)) { Text(term) }
-                                TextButton(onClick = { storeHistory(history - term) }) { Text("Remove") }
-                            }
-                        }
-                    }
+                if(loading) LinearProgressIndicator(Modifier.fillMaxWidth())
+                error?.let { Text(it,Modifier.padding(12.dp),color=MaterialTheme.colorScheme.error); TextButton(onClick={search(results.isNotEmpty())}) { Text("Retry") } }
+                if(submitted.isBlank()) Column(Modifier.padding(16.dp).verticalScroll(rememberScrollState())) {
+                    Text("Recent searches")
+                    for(term in history) TextButton(onClick={query=term;search()}) { Text(term) }
+                    if(history.isNotEmpty()) TextButton(onClick={history=emptyList();prefs.edit().remove("history").apply()}) {Text("Clear history")}
                 } else {
-                    AndroidView(modifier = Modifier.weight(1f).fillMaxWidth(), factory = { ctx ->
-                        WebView(ctx).apply {
-                            settings.javaScriptEnabled = true
-                            settings.domStorageEnabled = true
-                            settings.allowFileAccess = false
-                            settings.allowContentAccess = false
-                            settings.mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
-                            settings.safeBrowsingEnabled = true
-                            webChromeClient = object : WebChromeClient() {
-                                override fun onProgressChanged(view: WebView?, value: Int) { progress = value }
-                            }
-                            webViewClient = object : WebViewClient() {
-                                override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean = request.url.scheme != "https"
-                                override fun onReceivedError(view: WebView, request: WebResourceRequest, failure: WebResourceError) {
-                                    if (request.isForMainFrame) { error = "Page could not load. Check your connection, reload, or try the other search provider."; progress = 100 }
-                                }
-                            }
-                            setDownloadListener { url, _, _, _, _ -> latestSelect(url) }
-                            setOnLongClickListener {
-                                val hit = hitTestResult
-                                if (hit.type == WebView.HitTestResult.IMAGE_TYPE || hit.type == WebView.HitTestResult.SRC_IMAGE_ANCHOR_TYPE) {
-                                    val fallback = hit.extra
-                                    val handler = Handler(Looper.getMainLooper()) { message ->
-                                        (message.data.getString("src") ?: fallback)?.let { latestSelect(it) }
-                                        true
-                                    }
-                                    requestFocusNodeHref(handler.obtainMessage())
-                                    true
-                                } else false
-                            }
-                            browser = this
-                            loadUrl(page)
+                    LazyVerticalStaggeredGrid(columns=StaggeredGridCells.Fixed(3),modifier=Modifier.weight(1f).testTag("imageResultsGrid"),horizontalArrangement=Arrangement.spacedBy(3.dp),verticalItemSpacing=3.dp) {
+                        items(results,key={it.url}) { item -> SearchThumbnail(app,item,Modifier.clickable { keyboard?.hide();selected=item }.testTag("imageResult")) }
+                        item(span=StaggeredGridItemSpan.FullLine) {
+                            if(more && results.isNotEmpty()) TextButton(enabled=!loading,onClick={search(true)},modifier=Modifier.fillMaxWidth()) {Text(if(loading) "Loading…" else "Load more")}
                         }
-                    }, onRelease = { it.stopLoading(); it.destroy(); if (browser === it) browser = null })
+                    }
                 }
             }
         }
-        candidate?.let { file ->
-            AlertDialog(onDismissRequest = { if (!saving) { file.delete(); candidate = null; bitmap = null } },
-                title = { Text("Save to Overlay Folder?") },
-                text = { Column {
-                    bitmap?.let { Image(it.asImageBitmap(), "Downloaded image preview", Modifier.fillMaxWidth().heightIn(max = 320.dp), contentScale = ContentScale.Fit) }
-                    Text("A separate copy will stay in the app. Use images you have permission to reuse.")
-                } },
-                confirmButton = { TextButton(enabled = !saving, onClick = {
-                    saving = true
-                    scope.launch {
-                        try {
-                            val imported = app.library.importItems(LibraryKind.OVERLAYS, listOf(Uri.fromFile(file)))
-                            check(imported.size == 1) { "Could not save this image. Check free storage." }
-                            if (query.isNotBlank()) app.library.rename(imported.single().id, query.take(120))
-                            file.delete(); candidate = null; bitmap = null; onSaved()
-                        } catch (e: CancellationException) { throw e }
-                        catch (e: Exception) { error = e.message }
-                        finally { saving = false }
-                    }
-                }) { Text(if (saving) "Saving…" else "Save image") } },
-                dismissButton = { TextButton(enabled = !saving, onClick = { file.delete(); candidate = null; bitmap = null }) { Text("Cancel") } })
+    }
+}
+
+@Composable
+private fun ImageDetail(app: App,item: SearchImage,related: List<SearchImage>,onBack:()->Unit,onSelect:(SearchImage)->Unit,onSaved:()->Unit) {
+    val scope=rememberCoroutineScope()
+    var file by remember { mutableStateOf<File?>(null) }
+    var bitmap by remember { mutableStateOf<Bitmap?>(null) }
+    var dimensions by remember { mutableStateOf("") }
+    var error by remember { mutableStateOf<String?>(null) }
+    var busy by remember { mutableStateOf(false) }
+    var message by remember { mutableStateOf<String?>(null) }
+    var retry by remember { mutableIntStateOf(0) }
+    var galleryUri by remember { mutableStateOf<Uri?>(null) }
+    LaunchedEffect(item.url,retry) {
+        error=null
+        try {
+            val downloaded=WebImages.download(app,item.url); file=downloaded
+            bitmap=WebImages.preview(app,Uri.fromFile(downloaded))
+            val bounds=android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds=true }
+            withContext(Dispatchers.IO) { android.graphics.BitmapFactory.decodeFile(downloaded.absolutePath,bounds) }
+            dimensions="${bounds.outWidth} × ${bounds.outHeight}"
+        } catch(e:CancellationException) { throw e } catch(e:Exception) { error=e.message ?: "Image could not load." }
+    }
+    DisposableEffect(Unit) { onDispose { file?.delete() } }
+    fun download(share:Boolean=false) {
+        val source=file ?: return
+        busy=true; message=null
+        scope.launch {
+            try {
+                val uri=galleryUri ?: ImageSearch.downloadToGallery(app,source).also { galleryUri=it }
+                message="Downloaded to Pictures/NockNock"
+                if(share) app.startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).apply { type=app.contentResolver.getType(uri);putExtra(Intent.EXTRA_STREAM,uri);addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION) },"Share image").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            } catch(e:CancellationException) { throw e } catch(e:Exception) { message=e.message ?: "Download failed." } finally {busy=false}
+        }
+    }
+    Column(Modifier.fillMaxSize().testTag("imageDetail").verticalScroll(rememberScrollState())) {
+        Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically) {
+            IconButton(enabled=!busy,onClick=onBack) { Icon(Icons.Default.ArrowBack,"Back to images") }
+            Column(Modifier.weight(1f).padding(8.dp)) {
+                Text(item.title,maxLines=1,overflow=TextOverflow.Ellipsis)
+                Text("$dimensions · ${Uri.parse(item.source).host.orEmpty()}",style=MaterialTheme.typography.bodySmall,color=Color.Gray,maxLines=1)
+            }
+        }
+        Box(Modifier.fillMaxWidth().heightIn(min=260.dp,max=520.dp),contentAlignment=Alignment.Center) {
+            bitmap?.let { Image(it.asImageBitmap(),"Full image",Modifier.fillMaxWidth().heightIn(max=520.dp),contentScale=ContentScale.Fit) }
+                ?: if(error==null) CircularProgressIndicator() else Text(error!!,Modifier.padding(16.dp))
+        }
+        if(error!=null) TextButton(onClick={retry++}) {Text("Retry image")}
+        HorizontalDivider()
+        Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceEvenly) {
+            TextButton(enabled=file!=null&&!busy,onClick={download()},modifier=Modifier.testTag("downloadImage")) {Icon(Icons.Default.Download,null);Text("Download")}
+            TextButton(enabled=file!=null&&!busy,onClick={download(true)}) {Icon(Icons.Default.Share,null);Text("Share")}
+        }
+        TextButton(enabled=file!=null&&!busy,onClick={
+            val source=file ?: return@TextButton
+            busy=true
+            scope.launch { try {
+                val imported=app.library.importItems(LibraryKind.OVERLAYS,listOf(Uri.fromFile(source)))
+                check(imported.size==1) {"Could not save image. Check free storage."}
+                app.library.rename(imported.single().id,item.title.take(120));onSaved()
+            } catch(e:CancellationException) {throw e} catch(e:Exception) {message=e.message} finally {busy=false} }
+        },modifier=Modifier.fillMaxWidth().testTag("saveSearchOverlay")) {Icon(Icons.Default.Add,null);Text("Save to Overlay Folder")}
+        if(busy) LinearProgressIndicator(Modifier.fillMaxWidth())
+        message?.let {Text(it,Modifier.padding(12.dp))}
+        HorizontalDivider()
+        Text("↓ Related images ↓",Modifier.align(Alignment.CenterHorizontally).padding(10.dp),style=MaterialTheme.typography.titleLarge)
+        HorizontalDivider()
+        // Same-query results stay available without opening a website or losing the search.
+        for(row in related.take(18).chunked(3)) Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(3.dp)) {
+            for(other in row) Box(Modifier.weight(1f)) {SearchThumbnail(app,other,Modifier.clickable(enabled=!busy) {onSelect(other)})}
+            repeat(3-row.size) {Spacer(Modifier.weight(1f))}
         }
     }
 }

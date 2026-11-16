@@ -45,16 +45,36 @@ class OverlayFolderUiTest {
     }
     @Test fun imageSearchOpensAndAcceptsAKeyword() {
         val app = Fixtures.target.applicationContext as App
-        rule.setContent { AppTheme { com.videoeditor.app.ui.ImageSearchDialog(app, {}, {}) } }
-        rule.onNodeWithTag("imageSearchScreen").assertExists()
+        val bytes=Fixtures.file("image_test.png").readBytes()
+        val url="data:image/png;base64,"+android.util.Base64.encodeToString(bytes,android.util.Base64.NO_WRAP)
+        val fixture=com.videoeditor.app.media.SearchImage(url,url,"Test image","https://example.com/photo")
+        rule.setContent { AppTheme { com.videoeditor.app.ui.ImageSearchDialog(app, {}, {}, searcher={q, _ ->
+            assertEquals("Tom Cruise movies",q); listOf(fixture)
+        }) } }
         rule.onNodeWithTag("imageSearchQuery").performTextInput("Tom Cruise movies")
         rule.onNodeWithTag("imageSearchGo").performClick()
-        rule.onNodeWithTag("imageSearchQuery").assertTextContains("Tom Cruise movies")
-        rule.onNodeWithText("Bing").performClick()
-        rule.onNodeWithText("Reload").assertExists()
-        rule.waitForIdle()
-        android.os.SystemClock.sleep(10000)
-        Shots.take("image_search")
+        rule.waitUntil(10000) { rule.onAllNodesWithTag("imageResult").fetchSemanticsNodes().size==1 }
+        rule.onNodeWithTag("imageResult").performClick()
+        rule.onNodeWithTag("imageDetail").assertExists()
+        rule.waitUntil(10000) { rule.onAllNodesWithContentDescription("Full image").fetchSemanticsNodes().isNotEmpty() }
+        rule.onNodeWithTag("downloadImage").performClick()
+        rule.waitUntil(10000) { rule.onAllNodesWithText("Downloaded to Pictures/NockNock").fetchSemanticsNodes().isNotEmpty() }
+        rule.onNodeWithTag("saveSearchOverlay").assertIsEnabled()
+        Shots.take("image_detail")
+        rule.onNodeWithContentDescription("Back to images").performClick()
+        rule.onNodeWithTag("imageResultsGrid").assertExists()
     }
 
+    @Test fun liveImageGridScreenshot() {
+        val app=Fixtures.target.applicationContext as App
+        rule.setContent { AppTheme { com.videoeditor.app.ui.ImageSearchDialog(app, {}, {}) } }
+        rule.onNodeWithTag("imageSearchQuery").performTextInput("mimi chakraborty")
+        rule.onNodeWithTag("imageSearchGo").performClick()
+        rule.waitUntil(45000) { rule.onAllNodesWithTag("imageResult").fetchSemanticsNodes().isNotEmpty() }
+        android.os.SystemClock.sleep(8000)
+        Shots.take("image_search")
+        rule.onAllNodesWithTag("imageResult")[0].performClick()
+        rule.waitUntil(45000) { rule.onAllNodesWithContentDescription("Full image").fetchSemanticsNodes().isNotEmpty() }
+        Shots.take("image_search_full")
+    }
 }
