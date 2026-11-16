@@ -115,7 +115,7 @@ class SplitScenesTest {
         assertEquals(5, runBlocking { app.projects.load(projectId) }.main.size)
 
         // a piece that is one shot: told, nothing changes
-        rule.runOnUiThread { editor.select(editor.timeline.main[0].id) }
+        rule.runOnUiThread { editor.timeline.main[0].let { if (!it.selected) editor.select(it.id) } }
         pause(500)
         rule.onNodeWithText("Split scenes").performScrollTo().performClick()
         waitFor("answer") { rule.onAllNodes(hasText("No scene changes were found in this clip.")).fetchSemanticsNodes().isNotEmpty() }

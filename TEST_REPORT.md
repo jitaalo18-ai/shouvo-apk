@@ -1,3 +1,26 @@
+# V0.27 validation (2026-11-17)
+
+Executed (GitHub Actions):
+- core JVM tests: 128 passed (5 new): synthetic shots with drift and noise - every hard cut found
+  at its exact frame; motion, a fast pan and a slow brightening are not cuts; a single flash
+  frame is not a cut; a 5-frame shot and a cut 0.2 s before the end are left alone; splitting at
+  the cuts keeps order, source times and total length, in one go.
+- Android 12 emulator, 48 instrumented tests (2 new in SplitScenesTest):
+  - The 7 s test video with four shots (cuts made at 2.0 / 3.5 / 5.5 s): all 210 frames decoded
+    in 0.8 s, cuts found at exactly 2000 / 3500 / 5500 ms; for a trimmed part (3.0 - 6.5 s) only
+    the two cuts inside; a 20 s single-shot 720x1280 video with motion: 600 frames in 2.0 s, no
+    cut.
+  - Button: select the clip -> "Split scenes" -> "Split into 4 scenes"; pieces start at 0 /
+    2000 / 3500 / 5500 ms, each continues where the one before ended, the following clip did not
+    move, total length unchanged; undo = one step, redo, saved in the database; on a one-shot
+    piece: "No scene changes were found", nothing changes; no player errors.
+
+Not executed / needs a real phone: real footage. The test videos are computer-made (test
+patterns, a fractal, colour bars), so how well real cuts are found - and whether fast action or
+flashing lights give wrong cuts - is not measured; fades / dissolves are not found by design;
+4K / HDR phone videos were not run.
+
+---
 # V0.26 validation (2026-11-16)
 
 Executed (GitHub Actions):
