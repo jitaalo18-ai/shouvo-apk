@@ -7,7 +7,7 @@
 - Image Search opens live Google/Bing image results inside the app, supports search history and long-press/download-to-library with a preview confirmation.
 - Image downloads stream to temporary files, validate real image bytes, reject unsupported links and oversized files, preserve original bytes/transparency, then copy into the library. Internet required; websites may limit downloads or show consent/CAPTCHA. No private image-search API key or scraped search-index endpoint is used.
 - Five new Android checks cover 50 images + video, deletion of originals, project-safe removal, transparent image downloading, image preview/insert and search-screen interactions.
-- Validation pending. Prior V0.22 caption and V0.21 large-export fixes retained.
+- Final validation: core suite (118 tests) and 36/36 Android tests passed in CI run 43799406161, tested code 8901f46b31c42c928bde87e1c8b36be7ab23939f. Signed V0.23 APK verified; same update certificate. Screenshots reviewed; live image results rendered. Prior V0.22 caption and V0.21 large-export regression tests passed. See TEST_REPORT.md for provider/physical-device limitations.
 
 # V0.22 — dynamic captions (2026-11-15)
 

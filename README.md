@@ -2,6 +2,14 @@
 
 V0.23 adds Overlay Folder (owned image/video copies, preview and playback) and in-app web Image Search with save-to-library.
 
+### Use the new tools
+- **Overlay Folder → Add Images / Videos:** choose gallery or Files media. Imports are copied into the app; deleting originals leaves these copies intact.
+- Tap an image thumbnail to preview, a video thumbnail to play, or **+** to insert at the playhead. Filter All / Images / Videos, search names, rename, or remove items. Saved-project references are protected when a library item is removed.
+- **Image Search:** enter a keyword, choose Google or Bing, open an image, then long-press it. Preview and select **Save image** to copy it into Overlay Folder. Search history stays on the device.
+- Image Search needs internet. Providers may show consent or CAPTCHA, and some source websites refuse downloads. Use full-size results where available.
+- Copies survive deletion of gallery originals, but uninstalling the app or clearing its app data removes its private files.
+
+
 Native Android video editor: Kotlin, Jetpack Compose, Media3 (ExoPlayer + Transformer), Room.
 V0.22 adds Dynamic captions: Lilita One / bold Bengali fonts, a translucent dark panel, and word-timed yellow highlighting shared by preview and export. V0.21 large-export fixes are retained. See THIRD_PARTY_CAPTIONS.md for font licenses and timing behavior.
 Read PROGRESS.md first - it is the current checkpoint. V0.20: Isolate voice (DeepFilterNet3 neural network on the phone, whole main timeline); V0.19: Voice enhance processes each file once like Edits (Processing popup, sparkles, whole-clip noise learning, video keeps playing); V0.18: Voice enhance (Auto / Volume / Enhance / Fade, noise reduction and voice EQ in preview and export); V0.17: smart alignment guides and auto-snapping (video, overlays, texts) in 9:16, 16:9, 1:1 and 4:5; V0.16: Auto Captions. Device tests run in CI (see TEST_REPORT.md).

@@ -1,3 +1,23 @@
+# V0.23 validation (2026-11-16, Bangladesh)
+
+Tested code commit: `8901f46b31c42c928bde87e1c8b36be7ab23939f`.
+CI: https://github.com/jitaalo18-ai/shouvo-apk/actions/runs/43799406161
+
+- Core JVM suite (118 tests): passed.
+- Android 12 emulator: 36/36 passed in 869 seconds.
+- Imported 50 images and one video; deleted originals and verified each private copy remains byte-identical, uniquely named, readable and correctly typed.
+- Image preview, separate insert action, name search, rename, removal, and project-reference-safe cleanup: passed.
+- Image downloader: transparent PNG byte preservation and alpha decoding; invalid URLs and invalid image bytes rejected.
+- Search UI: keyword entry and provider controls passed. Screenshot confirms live image results rendered inside the app. Automated tests do not assert third-party result contents or complete a live-site long-press download; download validation uses a deterministic embedded-image fixture.
+- Final screenshots inspected with the actual dark app theme. Search provider loads may remain in progress, and the keyboard may remain visible when switching providers.
+- Existing Bengali/English recognition, dynamic-caption export with 41 captions, database migrations, compound editing, and voice processing: passed.
+- 1 GiB isolation export: input 1,121,420,831 bytes / 66,005 ms; export completed in 13,660 ms, every encoded video sample identical.
+- APK: `com.videoeditor.app`, versionCode 23 / versionName 0.23, arm64-v8a and x86_64.
+- Signature verified; certificate SHA-256 `9ad27be4862060f72ca76fc6b6bc440ba4c61d6bfac2c98ff31fb3e202dc101b`, unchanged from previous versions.
+- APK SHA-256 `5cd51ea9fd0119838015e8c91329eea97ecf6c1f1d3a1b9d241136a15de525a2`.
+
+Limits: emulator verification, not the user's physical phone or original video. Large-export fixture uses 640x360 valid CBR filler, not 4K/HDR. Image Search requires internet; websites may show consent/CAPTCHA or refuse downloads. App-private copies survive original-file deletion, but not app uninstall or clearing app data.
+
 # V0.22 validation (2026-11-16, Bangladesh)
 
 Tested code commit: `349d46b0527f737b95fa4c40508f71d3c17b4c26`.
