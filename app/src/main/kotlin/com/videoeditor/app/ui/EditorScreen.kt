@@ -80,6 +80,7 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.RecordVoiceOver
 import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.KeyboardVoice
+import androidx.compose.material.icons.filled.MovieFilter
 import androidx.compose.material.icons.filled.TextFields
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -349,6 +350,7 @@ fun EditorScreen(app: App, projectId: Long, onBack: () -> Unit) {
                                 ToolButton(Icons.Filled.CallSplit, "Uncompound") { ctl.uncompoundSelected() }
                             } else {
                                 ToolButton(Icons.Filled.AutoFixHigh, "AutoCut") { ctl.autoCut() }
+                                if (selected.kind == MediaKind.VIDEO) ToolButton(Icons.Filled.MovieFilter, "Split scenes") { ctl.splitScenes() }
                             }
                             if (selected.isAudible) ToolButton(Icons.Filled.RecordVoiceOver, "Voice enhance") { ctl.openVoice() }
                             ToolButton(Icons.Filled.KeyboardVoice, "Isolate voice", on = ctl.isolateOn) { ctl.toggleIsolateVoice() }
@@ -379,6 +381,7 @@ fun EditorScreen(app: App, projectId: Long, onBack: () -> Unit) {
                             ToolButton(Icons.Filled.Wallpaper, "Green screen") { ctl.comingSoon("Green screen") }
                         } else if (selected.track == Track.OVERLAY) {
                             ToolButton(Icons.Filled.ContentCut, "Split") { ctl.split() }
+                            if (selected.kind == MediaKind.VIDEO && !selected.isCompound) ToolButton(Icons.Filled.MovieFilter, "Split scenes") { ctl.splitScenes() }
                             if (selected.isAudible) ToolButton(Icons.Filled.RecordVoiceOver, "Voice enhance") { ctl.openVoice() }
                             if (selected.isCompound) ToolButton(Icons.Filled.CallSplit, "Uncompound") { ctl.uncompoundSelected() }
                             ToolButton(Icons.Filled.ContentCopy, "Copy") { ctl.copySelected() }
@@ -488,6 +491,9 @@ fun EditorScreen(app: App, projectId: Long, onBack: () -> Unit) {
                         Text("${(p * 100).toInt()}%", fontSize = 12.sp, color = Color.Gray)
                     } else {
                         CircularProgressIndicator()
+                    }
+                    if (ctl.splittingScenes) {
+                        TextButton(onClick = { ctl.cancelSplitScenes() }, modifier = Modifier.testTag("splitScenesCancel")) { Text("Cancel") }
                     }
                     if (ctl.exporting) {
                         TextButton(onClick = { ctl.cancelExport() }, modifier = Modifier.testTag("exportCancel")) { Text("Cancel export") }

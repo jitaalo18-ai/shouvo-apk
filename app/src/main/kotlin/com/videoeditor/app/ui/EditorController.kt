@@ -16,6 +16,8 @@ import com.videoeditor.app.media.Exporter
 import com.videoeditor.app.media.LiveFrames
 import com.videoeditor.app.media.MediaProbe
 import com.videoeditor.app.media.PlaybackController
+import com.videoeditor.app.media.SceneSplitter
+import com.videoeditor.core.SceneSplit
 import com.videoeditor.app.media.VoiceProcessing
 import com.videoeditor.app.media.canvasSize
 import com.videoeditor.app.captions.SpeechAudio
@@ -272,6 +274,59 @@ class EditorController(private val app: App, val projectId: Long, uiScope: Corou
                     is AutoCutOutcome.Ready -> autoCutReview = outcome
                 }
             } finally {
+                busy = null
+            }
+        }
+    }
+
+    // ---- Split scenes (like CapCut's): one clip -> one clip per shot ----------------------------
+
+    private var sceneJob: Job? = null
+    /** Split scenes is looking at the video (the busy box offers Cancel). */
+    var splittingScenes by mutableStateOf(false)
+        private set
+
+    fun cancelSplitScenes() {
+        sceneJob?.cancel()
+    }
+
+    /** Finds the shot changes inside the selected video clip and splits it there (one undo step). */
+    fun splitScenes() {
+        val clip = timeline.selected ?: return
+        if (clip.isCompound) {
+            message = "Split scenes works on single video clips. Tap Uncompound first."
+            return
+        }
+        if (clip.kind != MediaKind.VIDEO) {
+            message = "Split scenes works on video clips."
+            return
+        }
+        if (busy != null) return
+        player.pause()
+        val label = "Finding the scenes…"
+        busy = Busy(label, 0f)
+        splittingScenes = true
+        sceneJob = scope.launch {
+            try {
+                val cuts = SceneSplitter.findCuts(app, Uri.parse(clip.sourceUri), clip.sourceStartMs, clip.sourceEndMs) { p -> busy = Busy(label, p) }
+                // the clip may have been changed meanwhile only by this job: map file times to the timeline
+                val now = timeline.byId(clip.id)
+                if (now == null || now.sourceStartMs != clip.sourceStartMs || now.sourceEndMs != clip.sourceEndMs) return@launch
+                val at = cuts.map { now.timelineStartMs + (it - now.sourceStartMs) }
+                val (t, pieces) = SceneSplit.apply(timeline, clip.id, at, ::newClipId)
+                if (pieces <= 1) {
+                    message = "No scene changes were found in this clip."
+                } else {
+                    commitEdit(t)
+                    message = "Split into $pieces scenes"
+                }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                message = "Split scenes cancelled"
+            } catch (e: SceneSplitter.Failed) {
+                message = e.message
+            } finally {
+                splittingScenes = false
+                sceneJob = null
                 busy = null
             }
         }
