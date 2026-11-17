@@ -137,6 +137,7 @@ fun ProjectsScreen(app: App, onOpen: (Long) -> Unit) {
     }
 
     var confirmDelete by remember { mutableStateOf<ProjectEntity?>(null) }
+    var jupiter by remember { mutableStateOf(false) }
 
     Column(Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
         Spacer(Modifier.height(16.dp))
@@ -175,17 +176,23 @@ fun ProjectsScreen(app: App, onOpen: (Long) -> Unit) {
         }
         Spacer(Modifier.height(16.dp))
         if (projects.isEmpty()) {
-            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
                 Text("No projects yet.\nTap New Project to pick videos and images.", color = Color.Gray)
             }
         } else {
-            LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp), contentPadding = PaddingValues(bottom = 24.dp)) {
+            LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(10.dp), contentPadding = PaddingValues(bottom = 12.dp)) {
                 items(projects, key = { it.id }) { project ->
                     ProjectRow(app, project, onDelete = { confirmDelete = project }) { onOpen(project.id) }
                 }
             }
         }
+        // Jupiter (like BlackHole): removes the sound from videos
+        Row(Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 20.dp)) {
+            JupiterButton(onClick = { jupiter = true })
+        }
     }
+
+    if (jupiter) JupiterScreen(app) { jupiter = false }
 
     if (chooseTarget) {
         AlertDialog(

@@ -1,6 +1,23 @@
+# V0.29 — Jupiter (like the BlackHole app) (2026-11-17)
+
+Current version: 0.29 (versionCode 29), label V0.29.
+
+- BlackHole (fawazapp, com.fawazapp.blackhole) is "a small app to remove sound from the video".
+  Jupiter does that inside Nock Nock: the "Jupiter" button at the bottom left of the Projects
+  screen opens the Jupiter screen - Choose videos (one or many, from the Gallery), each shown with
+  its picture, length and "has sound / no sound"; "Remove sound" makes a silent copy of each in
+  the Gallery, Movies/Jupiter/<name>_no_sound.mp4, with progress, Stop, and Play / Share for each
+  copy. The originals are not changed.
+- media/SoundRemover.kt: the picture is copied sample by sample (MediaExtractor -> MediaMuxer
+  straight into the Gallery file), not decoded and encoded again: same bytes, quality, size,
+  frame rate, HDR, rotation and filming place; fast. Only if the phone's MP4 writer refuses that
+  kind of video is it encoded again (Media3 Transformer, removeAudio). Stopping or a failure
+  deletes the half-written Gallery entry. A video without sound is reported, not copied.
+
+---
 # V0.28 — Export sheet (resolution, frame rate) and Export video for one clip (2026-11-17)
 
-Current version: 0.28 (versionCode 28), label V0.28.
+Version 0.28 (versionCode 28), label V0.28.
 
 - Export sheet (like CapCut's), opened by the Export button and by the badge next to it (SD /
   HD / FHD / 2K / 4K): Resolution 480p, 720p, 1080p, 2K (1440p), 4K (2160p); Frame rate Auto,
