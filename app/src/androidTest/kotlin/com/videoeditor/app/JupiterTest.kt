@@ -40,6 +40,7 @@ class JupiterTest {
 
     @After fun cleanUp() {
         SoundRemover.forceReencode = false
+        SoundRemover.testDelayPerSampleMs = 0
         Picks.picks = null
         for (u in made) try {
             ctx.contentResolver.delete(u, null, null)
@@ -199,13 +200,15 @@ class JupiterTest {
         assertEquals(setOf("noisy_test_no_sound.mp4", "rotated_test_no_sound.mp4"), files.map { it.second }.toSet())
         for (f in files) assertTrue(tracks(f.first).none { it.mime.startsWith("audio/") })
 
-        // stopped half way: nothing half-written is left
-        SoundRemover.forceReencode = true
+        // stopped half way: nothing half-written is left (600 samples x 20 ms = 12 s of copying)
+        SoundRemover.testDelayPerSampleMs = 20
         Picks.picks = listOf(Fixtures.uri("phone_test.mp4"))
         rule.onNodeWithTag("jupiterChoose").performClick()
         waitFor("third listed") { count("jupiterItem") == 3 }
         rule.onNodeWithTag("jupiterRemove").performClick()
+        waitFor("copying") { rule.onAllNodes(androidx.compose.ui.test.hasText("Removing the sound…", substring = true)).fetchSemanticsNodes().isNotEmpty() }
         Thread.sleep(1_500)
+        assertTrue("a half-written copy exists while it works", jupiterFiles().any { it.third })
         rule.onNodeWithTag("jupiterRemove").performClick()          // Stop
         waitFor("stopped") { rule.onAllNodes(androidx.compose.ui.test.hasText("Stopped", substring = true)).fetchSemanticsNodes().isNotEmpty() }
         Thread.sleep(1_000)

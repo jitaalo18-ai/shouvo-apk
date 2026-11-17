@@ -47,6 +47,10 @@ object SoundRemover {
     @Volatile
     var forceReencode = false
 
+    /** Tests: a pause after every copied picture sample, so Stop can be pressed half way. */
+    @Volatile
+    var testDelayPerSampleMs = 0L
+
     /** Whether [source] has a sound track at all. */
     fun hasSound(context: Context, source: Uri): Boolean {
         val e = MediaExtractor()
@@ -200,6 +204,7 @@ object SoundRemover {
                 }
                 extractor.advance()
                 samples++
+                if (testDelayPerSampleMs > 0) kotlinx.coroutines.delay(testDelayPerSampleMs)
             }
             if (samples == 0) throw Failed("This video has no picture to copy.")
             m.stop()

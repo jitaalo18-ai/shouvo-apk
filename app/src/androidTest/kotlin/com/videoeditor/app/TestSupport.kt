@@ -95,7 +95,12 @@ object TestProjects {
         val app = Fixtures.target.applicationContext as App
         val newest = runBlocking { app.projects.observeProjects().first().maxByOrNull { it.id } ?: error("no project") }
         val row = hasText(newest.name, substring = true)
-        rule.waitUntil(30_000) { rule.onAllNodes(row).fetchSemanticsNodes().isNotEmpty() }
+        try {
+            rule.waitUntil(30_000) { rule.onAllNodes(row).fetchSemanticsNodes().isNotEmpty() }
+        } catch (e: Throwable) {
+            Shots.take("FAILED_open_${newest.id}")
+            throw AssertionError("project \"${newest.name}\" not shown", e)
+        }
         rule.waitForIdle()
         rule.onAllNodes(row)[0].performClick()
     }
