@@ -1,3 +1,27 @@
+# V0.29 validation (2026-11-17)
+
+Executed (GitHub Actions, Android 12 emulator): 52/52 instrumented tests (2 new in JupiterTest).
+- Silent copies measured on the files: noisy_test.mp4, rotated_test.mp4 and phone_test.mp4
+  (720x1280, 20 s) -> Movies/Jupiter/<name>_no_sound.mp4 in 109-420 ms each; the copy has only
+  the picture track (video/avc, no audio); every picture sample is there (242/242, 92/92,
+  600/600) with the same sizes and times, the first 20 samples byte-for-byte the same (copied,
+  not encoded again); the turned video stays turned (270 -> 270); the original file unchanged.
+- A video without sound: "This video already has no sound.", nothing saved.
+- The encode-again way (for videos a phone cannot copy): no audio, 210 of 210 frames, 7000 ms
+  of 7000.
+- Button: "Jupiter" at the bottom left of Projects -> Jupiter screen -> two videos chosen ->
+  Remove sound -> both "Saved", "2 videos saved to Gallery > Movies/Jupiter", exactly those two
+  finished files in the Gallery (screenshots checked). Stop half way through a third: a
+  half-written entry existed while copying; after Stop only the two finished copies remain.
+- (One run had a one-off failure opening a project in an older test - VoiceProcessingUiTest -
+  before any Jupiter code ran; it passed on the rerun. The test now saves a screenshot if it
+  happens again.)
+
+Not executed / needs a real phone: very large phone videos (several GB, 4K / HDR, Samsung
+slow-motion) and HEVC copies - the copy path is the same, but only H.264 test videos were run;
+the Play / Share buttons open other apps and were not pressed in the tests.
+
+---
 # V0.28 validation (2026-11-17)
 
 Executed (GitHub Actions):
