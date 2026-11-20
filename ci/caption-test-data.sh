@@ -6,8 +6,14 @@
 set -u
 OUT=${1:-ci-data}
 mkdir -p "$OUT"
-gh release download models-v1 -p 'ggml-small-q5_1.bin' -p 'ggml-turbo-bn-q5_0.bin' -p 'ggml-silero-v6.2.0.bin' -D "$OUT" --clobber || echo "models not available"
-sudo apt-get update -qq > /dev/null 2>&1; sudo apt-get install -y -qq espeak-ng ffmpeg > /dev/null 2>&1 || true
+echo "Downloading caption models (bounded retries)"
+for attempt in 1 2 3; do
+  timeout 180 gh release download models-v1 -p 'ggml-small-q5_1.bin' -p 'ggml-turbo-bn-q5_0.bin' -p 'ggml-silero-v6.2.0.bin' -D "$OUT" --clobber && break
+  [ "$attempt" -lt 3 ] || exit 1
+done
+echo "Installing speech fixture tools"
+timeout 180 sudo apt-get -o Acquire::Retries=2 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 update -qq || true
+timeout 180 sudo apt-get -o Acquire::Retries=2 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 install -y -qq espeak-ng ffmpeg || exit 1
 TEXT="Hello everyone. Today I will show you how to make a video. First open the editor. Then add your clips and press export."
 if command -v espeak-ng > /dev/null; then
   espeak-ng -v en-us -s 150 -w "$OUT/speech.wav" "$TEXT"
@@ -17,8 +23,9 @@ if command -v espeak-ng > /dev/null; then
   echo "$TEXT" > "$OUT/speech_en.txt"
   rm -f "$OUT/speech.wav"
 fi
-curl -sSLf -o /tmp/test.tsv https://huggingface.co/datasets/google/fleurs/resolve/main/data/bn_in/test.tsv && \
-curl -sSLf -o /tmp/fleurs.tar.gz https://huggingface.co/datasets/google/fleurs/resolve/main/data/bn_in/audio/test.tar.gz && \
+echo "Downloading Bengali speech fixtures"
+curl --connect-timeout 20 --max-time 180 --retry 2 -sSLf -o /tmp/test.tsv https://huggingface.co/datasets/google/fleurs/resolve/main/data/bn_in/test.tsv && \
+curl --connect-timeout 20 --max-time 180 --retry 2 -sSLf -o /tmp/fleurs.tar.gz https://huggingface.co/datasets/google/fleurs/resolve/main/data/bn_in/audio/test.tar.gz && \
 mkdir -p /tmp/fleurs && tar -xzf /tmp/fleurs.tar.gz -C /tmp/fleurs --strip-components=1 && \
 python3 - "$OUT" <<'PY'
 import csv, os, shutil, sys
