@@ -1,12 +1,14 @@
-# Nock Nock (Android video editor) - v0.23 source
+# Nock Nock (Android video editor) - v0.25 source
 
-V0.23 adds Overlay Folder (owned image/video copies, preview and playback) and in-app web Image Search with save-to-library.
+V0.25 adds a separate Trending tab inside Video FX and saved sorting options: A–Z, Z–A, newest/oldest date added, shortest/longest duration. Tap Copy to Trending on an existing Video FX item, or add videos directly in the Trending tab. Copies have independent storage and preserve existing projects.
+
+Image Search now uses a native three-column image grid and full-image view with visible Download, Share and Save to Overlay Folder actions. Download saves the original bytes to Pictures/NockNock; related images are other results for the same search. Internet and an available search/image source are required.
 
 ### Use the new tools
 - **Overlay Folder → Add Images / Videos:** choose gallery or Files media. Imports are copied into the app; deleting originals leaves these copies intact.
 - Tap an image thumbnail to preview, a video thumbnail to play, or **+** to insert at the playhead. Filter All / Images / Videos, search names, rename, or remove items. Saved-project references are protected when a library item is removed.
-- **Image Search:** enter a keyword, choose Google or Bing, open an image, then long-press it. Preview and select **Save image** to copy it into Overlay Folder. Search history stays on the device.
-- Image Search needs internet. Providers may show consent or CAPTCHA, and some source websites refuse downloads. Use full-size results where available.
+- **Image Search:** enter a keyword, tap a thumbnail, then select **Download** for the phone gallery or **Save to Overlay Folder** for the app library. Search history stays on the device.
+- Image Search needs internet. Search-provider changes or access restrictions may interrupt results, and some source websites refuse downloads. Failed thumbnails offer retry and try the original image as a fallback.
 - Copies survive deletion of gallery originals, but uninstalling the app or clearing its app data removes its private files.
 
 

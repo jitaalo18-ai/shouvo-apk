@@ -1,3 +1,13 @@
+# V0.25 — Video FX sorting and Trending (2026-11-21, Bangladesh)
+
+- Video FX / Trending tabs with separate persistent copies; add, preview/play, insert, rename and remove retained.
+- Copy to Trending keeps the original in Video FX and creates an independent file in Trending.
+- Name ascending/descending, date added newest/oldest, duration shortest/longest; stable order and per-library saved preferences.
+- The unfinished V0.24 image-search redesign is included: native image grid, large preview, download to Pictures/NockNock, share and save to Overlay Folder. Corrected dark-screen text contrast.
+- V0.24 code e513cb106021fe567343cbe715bea916ba2dec79 passed 39 Android tests in run 43811944248, including real search/full-image retrieval and gallery byte verification.
+- Final V0.25 validation: core suite and 42/42 Android 12 emulator tests passed in run 44816811000, code 792d3036bcbdf21f6d539d2861e8ef1da14306d8. Signed APK verified with the existing update certificate. Existing media and database schema are preserved.
+- Failed image previews now try the original image and offer retry. CI fixture downloads have bounded timeouts/retries after an external setup stall. See TEST_REPORT.md for details and limits.
+
 # V0.23 — Overlay Folder and Image Search (2026-11-16)
 
 - Overlay Folder is separate from Video FX / Sound FX / BG MUSIC and accepts images and videos.

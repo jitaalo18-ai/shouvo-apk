@@ -1,3 +1,25 @@
+# V0.25 validation (2026-11-21, Bangladesh)
+
+Tested code commit: `792d3036bcbdf21f6d539d2861e8ef1da14306d8`.
+CI: https://github.com/jitaalo18-ai/shouvo-apk/actions/runs/44816811000
+
+- Core JVM suite: passed (118 existing tests).
+- Android 12 emulator: 42/42 passed in 767.448 seconds.
+- All six sorting orders, case-insensitive names, stable ties, and saved sort preference: passed.
+- Trending: separate byte-identical copy, rename, persistence through repository reopen, deletion independent of the original, and video metadata: passed.
+- Trending UI: tabs, Add Video callback, Copy to Trending, playback, stop, rename/remove controls and insert callback: passed.
+- Image Search: live results, at least three decoded thumbnails, and full-image semantic presence: passed. Native grid and white text contrast inspected. Captured full-image/download screenshots include transitional loading frames; they are not evidence of the final rendered frame.
+- Gallery download fixture: original bytes preserved, pending MediaStore row published, UI download success and enabled Save to Overlay Folder action: passed.
+- Previous 50-image/video owned-copy, captions, migrations, voice processing and editor regressions: passed.
+- Dynamic export: 41 captions, changing yellow word position verified.
+- 1 GiB isolated-video export: input 1,121,420,831 bytes / 66,005 ms; export 13,577 ms, every encoded video sample identical.
+- Earlier run 44699698690 had 41/42 passes with a thumbnail timeout. Added original-image fallback, explicit retry and diagnostic logging; final run passed. A later external fixture-setup stall motivated bounded download retries in CI.
+- APK: `com.videoeditor.app`, versionCode 25 / versionName 0.25; 107,738,978 bytes; arm64-v8a and x86_64.
+- Signature verified; certificate SHA-256 `9ad27be4862060f72ca76fc6b6bc440ba4c61d6bfac2c98ff31fb3e202dc101b`, unchanged.
+- APK SHA-256 `3d693e1299c138259a9c87a4f90872c28948023ab8d2252ace52f1a9619b8d2e`.
+
+Limits: emulator verification, not the user's physical phone or original video. The 1 GiB fixture uses 640x360 valid CBR filler, not 4K/HDR. Image Search depends on public provider metadata and source availability; results may load progressively or fail, and provider changes can require maintenance. Related images are other results from the same query. Gallery download byte tests use a deterministic image fixture. App-private copies survive original deletion, but not uninstall or clearing app data. Trending is a personal collection, not an online trends feed.
+
 # V0.23 validation (2026-11-16, Bangladesh)
 
 Tested code commit: `8901f46b31c42c928bde87e1c8b36be7ab23939f`.
