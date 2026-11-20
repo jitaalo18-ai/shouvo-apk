@@ -53,7 +53,7 @@ private fun SearchThumbnail(app: App, item: SearchImage, modifier: Modifier = Mo
     }
     val ratio = bitmap?.let { it.width.toFloat()/it.height }?.coerceIn(0.45f,2f) ?: 0.72f
     Box(modifier.fillMaxWidth().aspectRatio(ratio).background(Color(0xff292d30)), contentAlignment=Alignment.Center) {
-        bitmap?.let { Image(it.asImageBitmap(),item.title,Modifier.fillMaxSize(),contentScale=ContentScale.Crop) }
+        bitmap?.let { Image(it.asImageBitmap(),item.title,Modifier.fillMaxSize().testTag("loadedSearchThumbnail"),contentScale=ContentScale.Crop) }
             ?: Icon(Icons.Default.Image, "Image thumbnail", tint=Color.Gray)
     }
 }
@@ -87,7 +87,7 @@ fun ImageSearchDialog(app: App, onDismiss: () -> Unit, onSaved: () -> Unit,
             }
         }
         BackHandler { if(selected!=null) selected=null else onDismiss() }
-        Surface(Modifier.fillMaxSize().testTag("imageSearchScreen"),color=Color(0xff181d20)) {
+        Surface(Modifier.fillMaxSize().testTag("imageSearchScreen"),color=Color(0xff181d20),contentColor=Color.White) {
             if(selected!=null) key(selected!!.url) {
                 ImageDetail(app,selected!!,results.filterNot { it.url==selected!!.url },{ selected=null },{ selected=it },onSaved)
             } else Column(Modifier.fillMaxSize()) {
