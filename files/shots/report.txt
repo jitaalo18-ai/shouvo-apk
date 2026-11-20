@@ -1,0 +1,68 @@
+align 9:16: preview 643 x 1143 px (aspect 0.563)
+align 16:9: preview 1080 x 607 px (aspect 1.779)
+align 1:1: preview 1080 x 1080 px (aspect 1.000)
+align 4:5: preview 914 x 1143 px (aspect 0.800)
+align: overlay, text and video snap to the centre in 9:16, 16:9, 1:1 and 4:5; guides hide on release
+ui: 4 captions: 1360: Hello, everyone. Today I will show you | 4050: how to make a video. | 5500: First open the editor, then add your | 8300: clips, and press export.
+captions: long Bangla 43420 ms in 253947 ms (emulator CPU), 8 pieces, CER 9.4%, length 102% of the truth
+captions: long Bangla heard: গুরুত্বপূর্ণ সামরিক এবং অসামরিক যোগান বিচ্ছিন্ন করার কৌশলটি সফল হয়েছে, যদিও  গত দুই শতকে বিভিন্ন আন্তর্জাতিক চুক্তির মাধ্যমে আরোপিত হওয়া সাধারণভাবে, গ্রহণযোগ্য আন্তর্জাতিক নিয়মকে এই অবরধটি লঙ্ঘন করছে। যেমন, প্রত্যেক বছরই উত্তর ক্যারলিনার ব্যানেট স্কুলে ছাত্রছাত্রীরা স্টেট ক্যাপিটালে  নিজেদের টিপ নিয়ে একটি ওয়েবসাইট ডিজাইন করে, প্রত্যেক বছরই, একটি তেতে ডিজাইন  করে।। ওয়েবসাইট নতুন করে আবার ডিজাইন করা হয় কিন্তু পুরোনো ভাষণটি স্কেপ-বুকে রেখে  দেয়া হয়।
+captions: export difference where the caption is 106.1, elsewhere 0.1, before it shows 0.0
+captions: Bangla 7020 ms in 62755 ms (emulator CPU), CER 9.1%
+captions: Bangla heard: দ্বীপপুঞ্জ এবং লেগগুলোতে আবস্থিকভাবে আপনার কোনো নৌকাটির দরকার নেই।
+captions: Bangla truth: দ্বীপপুঞ্জ এবং লেকগুলোতে আবশ্যকভাবে আপনার কোন নৌকাটির দরকার নেই
+whisper: WHISPER : COREML = 0 | OPENVINO = 0 | CPU : SSE3 = 1 | SSSE3 = 1 | AVX = 1 | AVX2 = 1 | F16C = 1 | FMA = 1 | REPACK = 1 | 
+captions: English 12867 ms of audio in 10219 ms -> 4 pieces:  hello, everyone. today i will show you  how to make a video.  first open the editor, then add your  clips, and press export.
+captions: first piece 1360-4050 ms " Hello, everyone. Today I will show you"
+db: version 3 -> 6 upgrade kept the old project
+export of a compound timeline (13023 ms, 4 pieces): 18880 ms
+ui: compound made from 4 clips, 39069 ms
+ui: playing inside the compound went from 23500 to 39069 ms
+ui: multi-track compound {SFX=1, OVERLAY=1, MAIN=2, MUSIC=1}
+Dynamic captions: 41 caption export; yellow word moves 411.38442079137036 -> 576.5605222080318 px
+ui: 0 thumbnails decoded in the first 4 s after opening
+ui: position after scrub 18380 ms
+ui: main track after AutoCut has 7 clips, 22773 ms
+ui: pinch changed first clip width from 101.0 px to 303.0 px
+ui: trimEnd handle bounds Rect.fromLTRB(843.0, 1837.0, 890.0, 2037.0), clip Rect.fromLTRB(540.0, 1837.0, 843.0, 2037.0)
+ui: trim changed first clip from 3210 ms to 2480 ms; guide=null, live=null, playhead=2440
+ui: played 4901 ms of timeline in 5831 ms of real time
+ui: playing reached 7341 ms
+ui: after reopen, handles Rect.fromLTRB(493.0, 1837.0, 540.0, 2037.0) and Rect.fromLTRB(618.0, 1837.0, 665.0, 2037.0)
+isolate: clean speech 14.0 s, 204 of 1400 frames are pauses
+isolate 48000 Hz: 14.0 s of sound in 4.7 s; SI-SDR 6.3 -> 12.4 dB; pauses -40.3 -> -86.5 dBFS; voice level -0.0 -> -1.0 dB; shift input -1024, voice -1024 samples; file 15.57 s for a 15.57 s video
+isolate 44100 Hz: 14.0 s of sound in 4.8 s; SI-SDR 6.3 -> 12.4 dB; pauses -40.2 -> -85.5 dBFS; voice level -0.0 -> -1.1 dB; shift input -1115, voice -1115 samples; file 15.13 s for a 15.13 s video
+isolate preview: sound audio/raw 48000 Hz 1 ch, picture yes, errors 0
+isolate export: pauses -40.3 -> -87.0 dBFS; shift against clean speech: plain 341, isolated 341 samples (16 kHz)
+isolate button: both files processed in 65.6 s while playing
+isolate button: processed while playing, positions [303, 592, 867, 1190, 1581, 1941, 2375, 2787, 3162, 3576, 3962, 4374, 4809, 5182, 5592, 6036, 6408, 6853, 7280, 7665, 8054, 8476, 8834, 9270, 9709, 10055, 10353, 10718, 11150, 11514, 11940, 12342, 12743, 13133, 13554, 13943, 14320, 14749, 14782, 14782, 14901, 15236, 15551, 15758, 16006, 16200, 16700, 17085, 17505, 17906, 18274, 18734, 19136, 19549, 19947, 20336, 20737, 21184, 21533, 21989, 22364, 22761, 23140, 23562, 23997, 24406, 24802, 25196, 25571, 25963, 26349, 26773, 27200, 27586, 27968, 28380, 28749, 29123, 29589]
+1 GiB isolation export: input=1121420831, duration=66005, elapsed=14446 ms; every encoded video sample is identical
+thumbnails: 12 frames decoded in 388 ms
+thumbnails: 12 frames from disk cache in 10 ms
+waveform: 0 ms
+scrub: 40 moves in 1867 ms, landed at 23900
+export of 14160 ms timeline (4 pieces): 22316 ms
+autocut analysis of 24 s: 1183 ms
+autocut NORMAL keep=[MsRange(startMs=873, endMs=4163), MsRange(startMs=6373, endMs=11163), MsRange(startMs=14873, endMs=19163), MsRange(startMs=21373, endMs=23163)]
+voice ui: auto adjust volumes 1.6 / 1.6
+voice ui: voiceDenoise dragged to 0.40 -> AudioFx(volume=1.0, denoise=0.37, enhance=0.0, fadeInMs=0, fadeOutMs=0, isolate=false)
+voice ui: voiceEnhance dragged to 0.60 -> AudioFx(volume=1.0, denoise=0.37, enhance=0.58, fadeInMs=0, fadeOutMs=0, isolate=false)
+voice ui: voiceVolume dragged to 0.25 -> AudioFx(volume=0.42999998, denoise=0.37, enhance=0.58, fadeInMs=0, fadeOutMs=0, isolate=false)
+voice ui: voiceFadeIn dragged to 0.50 -> AudioFx(volume=0.42999998, denoise=0.37, enhance=0.58, fadeInMs=2000, fadeOutMs=0, isolate=false)
+voice ui: voiceFadeOut dragged to 1.00 -> AudioFx(volume=0.42999998, denoise=0.37, enhance=0.58, fadeInMs=2000, fadeOutMs=4083, isolate=false)
+voice ui: saved AudioFx(volume=0.42999998, denoise=0.37, enhance=0.58, fadeInMs=2000, fadeOutMs=4083, isolate=false)
+voice export: plain pause -41.2 dB, voice -24.8 dB
+voice export: reduce noise 100%: pause -68.5 dB, voice -25.1 dB
+voice export: reduce noise 70%: pause -61.0 dB
+voice export: first second (noise only): -42.4 dB -> -70.2 dB
+voice export: volume 50% -> -6.2 dB, during the 3 s fade in -14.2 dB
+voice export (overlay sound): pause -41.5 dB -> -68.6 dB
+voice preview: seek to 2000 ms -> first sound mapped to 2020 ms
+voice preview: seek to 9000 ms -> first sound mapped to 9002 ms
+voice preview: seek to 6000 ms -> first sound mapped to 6013 ms
+voice preview: clip with volume 50% -6.1 dB, clip at 100% -0.0 dB (frames {3893326a-67d0-4a52-b821-25d774055227=97280, ad7e9aba-019f-483a-9ed4-2f61986db50f=91136})
+voice preview: noise in a pause with Reduce noise 100% -26.9 dB; CPU for the sound 7.1% (589 ms for 8.3 s)
+voice preview: after muting the clip -148.4 dB
+voice processing: noise of the phone video -39.8 dBFS
+voice processing: 66 position checks while playing (processing included), smallest step 269 ms
+voice processing: preview noise in a pause -18.0 dB; CPU for the sound 17.8%
+voice sink: 3000 buffers, 7782 switches, every byte passed on: 15223204 of 15223204
