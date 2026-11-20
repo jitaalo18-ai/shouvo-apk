@@ -143,6 +143,7 @@ class ProjectRepository(private val db: AppDatabase) {
 
 enum class LibraryKind(val folder: String, val title: String, val addLabel: String, val mime: String) {
     OVERLAYS("overlays", "Overlay Folder", "Add Images / Videos", "*/*"),
+    TRENDING("trending", "Trending", "Add Video", "video/*"),
     VIDEO_FX("video_fx", "Video FX", "Add Video", "video/*"),
     SOUND_FX("sound_fx", "Sound FX", "Add Sound", "audio/*"),
     MUSIC("music", "BG MUSIC", "Add Music", "audio/*"),
@@ -169,13 +170,13 @@ class LibraryRepository(private val context: Context, db: AppDatabase) {
 
     fun mediaKind(item: LibraryItemEntity): MediaKind = when {
         item.mimeType?.startsWith("image/") == true -> MediaKind.IMAGE
-        item.kind == LibraryKind.VIDEO_FX.name || item.kind == LibraryKind.OVERLAYS.name -> MediaKind.VIDEO
+        item.kind == LibraryKind.TRENDING.name || item.kind == LibraryKind.VIDEO_FX.name || item.kind == LibraryKind.OVERLAYS.name -> MediaKind.VIDEO
         else -> MediaKind.AUDIO
     }
 
     private fun accepts(kind: LibraryKind, media: MediaKind): Boolean = when (kind) {
         LibraryKind.OVERLAYS -> media == MediaKind.IMAGE || media == MediaKind.VIDEO
-        LibraryKind.VIDEO_FX -> media == MediaKind.VIDEO
+        LibraryKind.VIDEO_FX, LibraryKind.TRENDING -> media == MediaKind.VIDEO
         else -> media == MediaKind.AUDIO
     }
 

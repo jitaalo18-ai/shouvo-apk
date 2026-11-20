@@ -15,8 +15,8 @@ android {
         applicationId = "com.videoeditor.app"
         minSdk = 29
         targetSdk = 35
-        versionCode = 24
-        versionName = "0.24"
+        versionCode = 25
+        versionName = "0.25"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         // speech recognition (Auto Captions) is native code: phones (arm64) and the CI emulator (x86_64)
         ndk {

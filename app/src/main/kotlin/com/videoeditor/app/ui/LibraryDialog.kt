@@ -26,6 +26,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import com.videoeditor.app.data.LibrarySort
 import androidx.compose.ui.platform.testTag
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
@@ -90,8 +93,14 @@ fun LibraryDialog(
     onAdd: () -> Unit,
     onInsert: (LibraryItemEntity) -> Unit,
     onSearch: () -> Unit = {},
+    onKindChange: (LibraryKind) -> Unit = {},
 ) {
     val scope = rememberCoroutineScope()
+    val preferences = remember { app.getSharedPreferences("library_display", 0) }
+    var sort by remember(kind) { mutableStateOf(runCatching { LibrarySort.valueOf(preferences.getString("sort_${kind.name}", "NEWEST")!!) }.getOrDefault(LibrarySort.NEWEST)) }
+    var sortMenu by remember { mutableStateOf(false) }
+    var copying by remember { mutableStateOf(false) }
+    var notice by remember { mutableStateOf<String?>(null) }
     val items by remember(kind) { app.library.observe(kind) }.collectAsState(initial = emptyList())
     var renaming by remember { mutableStateOf<LibraryItemEntity?>(null) }
     var removing by remember { mutableStateOf<RemoveCheck?>(null) }
@@ -137,15 +146,22 @@ fun LibraryDialog(
         }
     }
     var query by remember(kind) { mutableStateOf("") }
-    val shown = items.filter { (query.isBlank() || it.name.contains(query.trim(), ignoreCase = true)) &&
-        (mediaFilter == "All" || (mediaFilter == "Images") == (app.library.mediaKind(it) == MediaKind.IMAGE)) }
+    val shown = sort.apply(items.filter { (query.isBlank() || it.name.contains(query.trim(), ignoreCase = true)) &&
+        (mediaFilter == "All" || (mediaFilter == "Images") == (app.library.mediaKind(it) == MediaKind.IMAGE)) })
 
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Surface(Modifier.fillMaxSize(), color = Bg) {
             Column(Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
                 Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Text(kind.title, fontSize = 22.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                    Text(if(kind == LibraryKind.TRENDING) "Video FX" else kind.title, fontSize = 22.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
                     IconButton(onClick = onDismiss) { Icon(Icons.Filled.Close, contentDescription = "Close") }
+                }
+                if (kind == LibraryKind.VIDEO_FX || kind == LibraryKind.TRENDING) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        for (tab in listOf(LibraryKind.VIDEO_FX, LibraryKind.TRENDING)) {
+                            FilterChip(selected = kind == tab, onClick = { previewPlayer.stop(); playingId = null; query = ""; notice = null; onKindChange(tab) }, label = { Text(tab.title) }, modifier = Modifier.testTag("libraryTab_${tab.name}"))
+                        }
+                    }
                 }
                 Spacer(Modifier.height(8.dp))
                 Button(onClick = onAdd, shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth()) {
@@ -162,6 +178,16 @@ fun LibraryDialog(
                     }
                 }
                 previewError?.let { Text(it, color = Color.Red) }
+                notice?.let { Text(it, fontSize = 12.sp) }
+                Box {
+                    TextButton(onClick = { sortMenu = true }, modifier = Modifier.testTag("librarySort")) { Text("Sort: ${sort.label}") }
+                    DropdownMenu(expanded = sortMenu, onDismissRequest = { sortMenu = false }) {
+                        for (option in LibrarySort.entries) DropdownMenuItem(text = { Text(option.label) }, onClick = {
+                            sort = option; preferences.edit().putString("sort_${kind.name}", option.name).apply()
+                            previewPlayer.stop(); playingId = null; sortMenu = false
+                        })
+                    }
+                }
                 Spacer(Modifier.height(6.dp))
                 Text(
                     "${items.size} saved inside the app. Originals can be deleted from your phone. Tap + to insert at the playhead.",
@@ -207,6 +233,18 @@ fun LibraryDialog(
                                 onTogglePreview = { togglePreview(item) },
                                 onInsert = { onInsert(item) },
                                 onRename = { renaming = item },
+                                copying = copying,
+                                onCopyTrending = { scope.launch {
+                                    copying = true
+                                    try {
+                                        val saved = app.library.importItems(LibraryKind.TRENDING, listOf(Uri.fromFile(app.library.file(item))))
+                                        check(saved.size == 1) { "Could not copy. Check free storage." }
+                                        app.library.rename(saved.single().id, item.name)
+                                        notice = "Copied to Trending"
+                                    } catch(e: kotlinx.coroutines.CancellationException) { throw e }
+                                    catch(e: Exception) { notice = e.message ?: "Copy failed." }
+                                    finally { copying = false }
+                                } },
                                 onRemove = { scope.launch { removing = app.library.checkRemove(item.id) } },
                             )
                         }
@@ -280,6 +318,8 @@ private fun LibraryRow(
     onInsert: () -> Unit,
     onRename: () -> Unit,
     onRemove: () -> Unit,
+    copying: Boolean,
+    onCopyTrending: () -> Unit,
 ) {
     Row(
         Modifier
@@ -291,7 +331,7 @@ private fun LibraryRow(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         val thumb = Modifier.size(56.dp).clip(RoundedCornerShape(8.dp))
-        if (kind == LibraryKind.VIDEO_FX || kind == LibraryKind.OVERLAYS) {
+        if (kind == LibraryKind.VIDEO_FX || kind == LibraryKind.TRENDING || kind == LibraryKind.OVERLAYS) {
             val context = LocalContext.current.applicationContext
             val uri = remember(item.id) { Uri.fromFile(app.library.file(item)).toString() }
             val bitmap by produceState<Bitmap?>(initialValue = null, uri) {
@@ -350,6 +390,7 @@ private fun LibraryRow(
         Column(Modifier.weight(1f)) {
             Text(item.name, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.Medium)
             Text(if (app.library.mediaKind(item) == MediaKind.IMAGE) "Image" else formatTime(item.durationMs), fontSize = 12.sp, color = Color.Gray)
+            if (kind == LibraryKind.VIDEO_FX) TextButton(enabled = !copying, onClick = onCopyTrending, contentPadding = PaddingValues(0.dp)) { Text("Copy to Trending", fontSize = 11.sp) }
         }
         IconButton(onClick = onInsert) { Icon(Icons.Filled.Add, contentDescription = "Insert ${item.name}") }
         IconButton(onClick = onRename) { Icon(Icons.Filled.Edit, contentDescription = "Rename") }

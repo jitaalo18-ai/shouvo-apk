@@ -188,8 +188,9 @@ fun EditorScreen(app: App, projectId: Long, onBack: () -> Unit) {
     val importMain = rememberMediaImporter(videoOnly = false, multiple = true) { uris ->
         ctl.appendMedia(uris)
     }
+    var videoFxImportKind by remember { mutableStateOf(LibraryKind.VIDEO_FX) }
     val importVideoFx = rememberMediaImporter(videoOnly = true, multiple = true) { uris ->
-        ctl.importToLibrary(LibraryKind.VIDEO_FX, uris)
+        ctl.importToLibrary(videoFxImportKind, uris)
     }
 
     var showStretch by remember { mutableStateOf(false) }
@@ -453,11 +454,12 @@ fun EditorScreen(app: App, projectId: Long, onBack: () -> Unit) {
             kind = kind,
             onDismiss = { ctl.library = null },
             onAdd = { when (kind) {
-                LibraryKind.VIDEO_FX -> importVideoFx()
+                LibraryKind.VIDEO_FX, LibraryKind.TRENDING -> { videoFxImportKind = kind; importVideoFx() }
                 LibraryKind.OVERLAYS -> importOverlayLibrary()
                 else -> libraryPicker.launch(arrayOf(kind.mime))
             } },
             onSearch = { ctl.imageSearch = true },
+            onKindChange = { ctl.library = it },
             onInsert = { ctl.insertFromLibrary(kind, it) },
         )
     }

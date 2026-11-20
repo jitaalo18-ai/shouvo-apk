@@ -332,7 +332,7 @@ class EditorController(private val app: App, val projectId: Long, uiScope: Corou
             return
         }
         when (kind) {
-            LibraryKind.VIDEO_FX, LibraryKind.OVERLAYS -> {
+            LibraryKind.VIDEO_FX, LibraryKind.TRENDING, LibraryKind.OVERLAYS -> {
                 // Video FX go on the layer above the video (overlay track), at the playhead,
                 // fitted to the frame - the main video stays as it is.
                 val fit = if (info.aspect >= canvasAspect) 1f else info.aspect / canvasAspect
