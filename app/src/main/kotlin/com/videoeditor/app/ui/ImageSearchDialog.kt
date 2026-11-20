@@ -41,20 +41,38 @@ private val thumbs = object : android.util.LruCache<String, Bitmap>(12 * 1024 * 
 
 @Composable
 private fun SearchThumbnail(app: App, item: SearchImage, modifier: Modifier = Modifier) {
-    val bitmap by produceState<Bitmap?>(thumbs.get(item.thumbnail), item.thumbnail) {
-        if(value == null) imageRequests.withPermit {
-            var file: File? = null
-            try {
-                file = WebImages.download(app,item.thumbnail)
-                value = WebImages.preview(app,Uri.fromFile(file),480)
-                value?.let { thumbs.put(item.thumbnail,it) }
-            } catch(e: CancellationException) { throw e } catch(_: Exception) {} finally { file?.delete() }
+    var retry by remember(item.thumbnail) { mutableIntStateOf(0) }
+    var failed by remember(item.thumbnail) { mutableStateOf(false) }
+    val bitmap by produceState<Bitmap?>(thumbs.get(item.thumbnail), item.thumbnail, retry) {
+        if (value == null) imageRequests.withPermit {
+            failed = false
+            for (address in listOf(item.thumbnail, item.url).distinct()) {
+                var downloaded: File? = null
+                try {
+                    downloaded = WebImages.download(app, address)
+                    val decoded = WebImages.preview(app, Uri.fromFile(downloaded), 480)
+                    if (decoded != null) {
+                        value = decoded
+                        thumbs.put(item.thumbnail, decoded)
+                        break
+                    }
+                } catch (error: CancellationException) {
+                    throw error
+                } catch (error: Exception) {
+                    android.util.Log.w("ImageSearch", "Preview download failed", error)
+                } finally {
+                    downloaded?.delete()
+                }
+            }
+            failed = value == null
         }
     }
     val ratio = bitmap?.let { it.width.toFloat()/it.height }?.coerceIn(0.45f,2f) ?: 0.72f
     Box(modifier.fillMaxWidth().aspectRatio(ratio).background(Color(0xff292d30)), contentAlignment=Alignment.Center) {
         bitmap?.let { Image(it.asImageBitmap(),item.title,Modifier.fillMaxSize().testTag("loadedSearchThumbnail"),contentScale=ContentScale.Crop) }
-            ?: Icon(Icons.Default.Image, "Image thumbnail", tint=Color.Gray)
+            ?: if (failed) IconButton(onClick = { retry++ }) {
+                Icon(Icons.Default.Refresh, "Retry thumbnail", tint = Color.White)
+            } else CircularProgressIndicator(Modifier.size(24.dp))
     }
 }
 

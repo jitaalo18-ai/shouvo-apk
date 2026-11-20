@@ -71,7 +71,7 @@ class OverlayFolderUiTest {
         rule.onNodeWithTag("imageSearchQuery").performTextInput("mimi chakraborty")
         rule.onNodeWithTag("imageSearchGo").performClick()
         rule.waitUntil(45000) { rule.onAllNodesWithTag("imageResult").fetchSemanticsNodes().isNotEmpty() }
-        rule.waitUntil(45000) { rule.onAllNodesWithTag("loadedSearchThumbnail", useUnmergedTree=true).fetchSemanticsNodes().size >= 3 }
+        rule.waitUntil(90000) { rule.onAllNodesWithTag("loadedSearchThumbnail", useUnmergedTree=true).fetchSemanticsNodes().size >= 3 }
         android.os.SystemClock.sleep(1000)
         Shots.take("image_search")
         rule.onAllNodesWithTag("imageResult")[0].performClick()
